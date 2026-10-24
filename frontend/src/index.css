@@ -1,0 +1,21 @@
+/* Base shared by the storefront and the admin panel. Storefront styles live in
+   shop/captain.css under .cs; the admin panel has pages/admin/admin.css. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  line-height: 1.45;
+  background: #050506;
+  color: #eef4f8;
+}
+
+img { max-width: 100%; height: auto; }
+
+#root { min-height: 100vh; display: flex; flex-direction: column; }
+
+@keyframes spin { to { transform: rotate(360deg); } }

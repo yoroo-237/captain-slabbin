@@ -1,0 +1,416 @@
+/* Captain Slabbin storefront — dark ink, frosted silver and blood red, after
+   the original shop's tokens. Everything is scoped under .cs so the admin panel
+   keeps its own look. Mobile first; breakpoints at 640 / 960 / 1200. */
+
+.cs {
+  --ink: #050506;
+  --panel: #0c0e11;
+  --panel-2: #12161a;
+  --frost: #c6d2db;
+  --frost-hi: #e3eaef;
+  --blood: #a81f1a;
+  --blood-hi: #d0453d;
+  --text: #eef4f8;
+  --muted: #9aa6b0;
+  --ok: #4fbf7a;
+  --warn: #e0a43b;
+  --trim: rgb(198 210 219 / .22);
+  --trim-soft: rgb(198 210 219 / .12);
+  --trim-lift: rgb(198 210 219 / .34);
+  --frost-metal: linear-gradient(177deg, #fff 0%, #dde6ed 30%, #a3b1bd 54%, #7a8792 68%, #f2f8fc 100%);
+  --blood-metal: linear-gradient(178deg, #e07a6c 0%, #c53a2c 14%, #9c1a15 44%, #6d0f0d 72%, #45090a 100%);
+  --bar-liquid: linear-gradient(177deg, #eff2f4 0%, #b3c2cd 18%, #fafbfc 30%, #97a9b7 46%, #8194a3 58%, #fafbfc 74%, #a9bac6 88%, #e5eaee 100%);
+  --radius: 14px;
+  --radius-sm: 10px;
+  --shadow: 0 18px 40px rgb(0 0 0 / .45);
+  --container: 1200px;
+  --gutter: 16px;
+
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background:
+    radial-gradient(1200px 500px at 50% -120px, rgb(198 210 219 / .10), transparent 70%),
+    radial-gradient(900px 400px at 100% 0%, rgb(168 31 26 / .10), transparent 70%),
+    var(--ink);
+  color: var(--text);
+  font-size: 15px;
+}
+.cs *:focus-visible { outline: 2px solid var(--frost); outline-offset: 2px; border-radius: 6px; }
+.cs a { color: inherit; text-decoration: none; }
+.cs button { font: inherit; color: inherit; }
+.cs h1, .cs h2, .cs h3, .cs h4 { margin: 0; line-height: 1.15; letter-spacing: -.01em; }
+.cs p { margin: 0; }
+.cs main { flex: 1; }
+.cs .container { width: 100%; max-width: var(--container); margin: 0 auto; padding: 0 var(--gutter); }
+.cs .muted { color: var(--muted); }
+/* Inline icons default to text size; components that want bigger set their own */
+.cs svg:not([width]) { width: 18px; height: 18px; flex: none; vertical-align: -3px; }
+.cs .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (min-width: 960px) { .cs { --gutter: 24px; font-size: 16px; } }
+
+/* Metallic headline text, the shop's signature */
+.cs .frost-head {
+  background: var(--frost-metal); -webkit-background-clip: text; background-clip: text; color: transparent;
+  font-weight: 900; text-transform: uppercase; letter-spacing: .04em;
+}
+.cs .blood-text { color: var(--blood-hi); }
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.cs .btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 46px; padding: 0 20px; border-radius: 999px; border: 1px solid transparent;
+  font-weight: 800; font-size: 14px; letter-spacing: .06em; text-transform: uppercase;
+  cursor: pointer; transition: transform .12s ease, filter .12s ease, background .12s ease;
+  white-space: nowrap;
+}
+.cs .btn:active { transform: translateY(1px); }
+.cs .btn:disabled { opacity: .45; cursor: not-allowed; }
+.cs .btn-primary { background: var(--bar-liquid); color: #0b0d0f; box-shadow: 0 6px 22px rgb(198 210 219 / .18); }
+.cs .btn-primary:hover:not(:disabled) { filter: brightness(1.06); }
+.cs .btn-red { background: var(--blood-metal); color: #fff; box-shadow: 0 6px 22px rgb(168 31 26 / .35); }
+.cs .btn-red:hover:not(:disabled) { filter: brightness(1.1); }
+.cs .btn-outline { background: transparent; border-color: var(--trim-lift); color: var(--text); }
+.cs .btn-outline:hover:not(:disabled) { background: rgb(198 210 219 / .08); }
+.cs .btn-telegram { background: #229ed9; color: #fff; }
+.cs .btn-telegram:hover:not(:disabled) { filter: brightness(1.08); }
+.cs .btn-block { width: 100%; }
+.cs .btn-sm { min-height: 38px; padding: 0 14px; font-size: 12px; }
+.cs .btn-plain { background: none; border: 0; padding: 4px 0; color: var(--muted); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; font-size: 13px; }
+.cs .btn-plain:hover { color: var(--text); }
+
+/* ── Forms ───────────────────────────────────────────────────────────────── */
+.cs .field { display: grid; gap: 6px; margin-bottom: 14px; }
+.cs .field label { font-size: 13px; font-weight: 600; color: var(--frost-hi); }
+.cs .field .hint { font-size: 12px; color: var(--muted); }
+.cs .field .error { font-size: 12px; color: var(--blood-hi); }
+.cs .input, .cs .select, .cs .textarea {
+  width: 100%; min-height: 46px; padding: 10px 14px; border-radius: var(--radius-sm);
+  background: rgb(255 255 255 / .04); border: 1px solid var(--trim); color: var(--text);
+  font: inherit; font-size: 16px; /* 16px stops iOS zooming into fields */
+}
+.cs .textarea { min-height: 96px; resize: vertical; }
+.cs .input::placeholder, .cs .textarea::placeholder { color: #6d7882; }
+.cs .input:focus, .cs .select:focus, .cs .textarea:focus { outline: none; border-color: var(--frost); background: rgb(255 255 255 / .06); }
+.cs .input.invalid { border-color: var(--blood-hi); }
+.cs .select option { background: #111; }
+.cs .row-2 { display: grid; gap: 12px; }
+@media (min-width: 640px) { .cs .row-2 { grid-template-columns: 1fr 1fr; } .cs .row-3 { display: grid; gap: 12px; grid-template-columns: 2fr 1fr 1fr; } }
+.cs .check { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; cursor: pointer; }
+.cs .check input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--frost); flex: none; }
+
+.cs .alert { border-radius: var(--radius-sm); padding: 12px 14px; font-size: 14px; border: 1px solid var(--trim); background: var(--panel); margin-bottom: 16px; }
+.cs .alert-error { border-color: rgb(208 69 61 / .55); background: rgb(168 31 26 / .12); color: #ffd7d3; }
+.cs .alert-ok { border-color: rgb(79 191 122 / .5); background: rgb(79 191 122 / .1); color: #d3f5df; }
+.cs .alert-info { border-color: var(--trim-lift); }
+
+/* ── Panels & cards ──────────────────────────────────────────────────────── */
+.cs .panel { background: linear-gradient(180deg, rgb(255 255 255 / .035), rgb(255 255 255 / .015)); border: 1px solid var(--trim-soft); border-radius: var(--radius); padding: 18px; }
+@media (min-width: 960px) { .cs .panel { padding: 24px; } }
+.cs .panel-title { font-size: 14px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--frost-hi); margin-bottom: 14px; }
+
+/* ── Support strip & header ──────────────────────────────────────────────── */
+.cs .support-bar { background: var(--bar-liquid); color: #0b0d0f; font-size: 13px; font-weight: 700; text-align: center; }
+.cs .support-bar a { display: flex; justify-content: center; align-items: center; gap: 8px; padding: 8px var(--gutter); flex-wrap: wrap; }
+.cs .support-bar .hours { font-weight: 500; opacity: .75; }
+.cs .support-bar .num { letter-spacing: .06em; text-decoration: underline; text-underline-offset: 3px; }
+
+.cs .header { position: sticky; top: 0; z-index: 40; background: rgb(5 5 6 / .86); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-bottom: 1px solid var(--trim-soft); }
+.cs .header-row { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; min-height: 64px; }
+.cs .header-left, .cs .header-right { display: flex; align-items: center; gap: 4px; }
+.cs .header-right { justify-content: flex-end; }
+.cs .header-logo img { height: 52px; width: auto; display: block; filter: drop-shadow(0 4px 14px rgb(0 0 0 / .6)); }
+@media (min-width: 960px) { .cs .header-logo img { height: 68px; } .cs .header-row { min-height: 78px; } }
+.cs .icon-btn { position: relative; display: inline-grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; border: 0; background: transparent; cursor: pointer; color: var(--frost-hi); }
+.cs .icon-btn:hover { background: rgb(198 210 219 / .08); }
+.cs .icon-btn svg { width: 22px; height: 22px; }
+.cs .icon-btn .count { position: absolute; top: 4px; right: 2px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--blood); color: #fff; font-size: 11px; font-weight: 800; display: grid; place-items: center; }
+.cs .balance-chip { display: none; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--trim); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cs .balance-chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+@media (min-width: 640px) { .cs .balance-chip { display: inline-flex; } }
+.cs .desktop-only { display: none; }
+@media (min-width: 960px) { .cs .desktop-only { display: inline-grid; } .cs .mobile-only { display: none; } }
+
+.cs .main-nav-row { display: none; border-top: 1px solid var(--trim-soft); }
+@media (min-width: 960px) { .cs .main-nav-row { display: block; } }
+.cs .main-nav { display: flex; justify-content: center; gap: 4px; list-style: none; margin: 0; padding: 0; }
+.cs .main-nav > li { position: relative; }
+.cs .main-nav > li > a { display: block; padding: 13px 14px; font-size: 13px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--frost); }
+.cs .main-nav > li > a:hover, .cs .main-nav > li > a.active { color: #fff; }
+.cs .main-nav > li > a.fire { color: var(--blood-hi); }
+.cs .nav-sub { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); min-width: 220px; padding: 8px; list-style: none; margin: 0; background: var(--panel); border: 1px solid var(--trim); border-radius: var(--radius-sm); box-shadow: var(--shadow); opacity: 0; visibility: hidden; transition: opacity .12s; }
+.cs .main-nav > li:hover .nav-sub, .cs .main-nav > li:focus-within .nav-sub { opacity: 1; visibility: visible; }
+.cs .nav-sub a { display: block; padding: 10px 12px; border-radius: 8px; font-size: 14px; }
+.cs .nav-sub a:hover { background: rgb(198 210 219 / .08); }
+
+/* Drawer (mobile menu) */
+.cs .drawer-backdrop { position: fixed; inset: 0; z-index: 60; background: rgb(0 0 0 / .6); border: 0; }
+.cs .drawer { position: fixed; inset: 0 auto 0 0; z-index: 61; width: min(320px, 86vw); background: var(--panel); border-right: 1px solid var(--trim); padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; animation: cs-slide .18s ease-out; }
+@keyframes cs-slide { from { transform: translateX(-100%); } }
+.cs .drawer-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.cs .drawer-head img { height: 44px; }
+.cs .drawer a.drawer-link { display: flex; justify-content: space-between; padding: 13px 12px; border-radius: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; font-size: 14px; color: var(--frost); }
+.cs .drawer a.drawer-link:hover, .cs .drawer a.drawer-link.active { background: rgb(198 210 219 / .08); color: #fff; }
+.cs .drawer .drawer-sub a { padding-left: 28px; font-weight: 600; text-transform: none; letter-spacing: 0; }
+.cs .drawer hr { border: 0; border-top: 1px solid var(--trim-soft); margin: 8px 0; width: 100%; }
+
+/* ── Hero & home ─────────────────────────────────────────────────────────── */
+.cs .hero { padding: 36px 0 18px; text-align: center; }
+.cs .hero h1 { font-size: clamp(30px, 7vw, 58px); }
+.cs .hero p { color: var(--muted); max-width: 560px; margin: 12px auto 0; font-size: 15px; }
+.cs .hero-cta { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 22px; }
+.cs .trust-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 26px 0 8px; }
+@media (min-width: 960px) { .cs .trust-row { grid-template-columns: repeat(4, 1fr); } }
+.cs .trust { text-align: left; display: flex; gap: 10px; align-items: center; padding: 12px 14px; border-radius: var(--radius-sm); border: 1px solid var(--trim-soft); background: rgb(255 255 255 / .02); font-size: 13px; }
+.cs .trust svg { width: 22px; height: 22px; flex: none; color: var(--frost); }
+.cs .trust b { display: block; font-size: 13px; }
+.cs .trust span { color: var(--muted); font-size: 12px; }
+
+.cs .section { padding: 24px 0; }
+@media (min-width: 960px) { .cs .section { padding: 36px 0; } }
+.cs .section-head { display: flex; justify-content: space-between; align-items: end; gap: 12px; margin-bottom: 16px; }
+.cs .section-head h2 { font-size: 20px; }
+
+/* Shelf plates — the wide category banners of the original home page */
+.cs .category-grid { display: grid; gap: 12px; grid-template-columns: 1fr; }
+@media (min-width: 640px) { .cs .category-grid { grid-template-columns: 1fr 1fr; } }
+.cs .category-card { position: relative; display: block; aspect-ratio: 740 / 225; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--trim); background: var(--panel-2); isolation: isolate; transition: transform .15s ease, border-color .15s ease; }
+.cs .category-card:hover { transform: translateY(-2px); border-color: var(--trim-lift); }
+.cs .category-card img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cs .plate-art { position: absolute; inset: 0; z-index: -1; }
+.cs .plate-label { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; padding: 0 22px; }
+.cs .plate-label .name { font-size: clamp(22px, 5vw, 32px); }
+.cs .plate-label .meta { font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-top: 4px; }
+.cs .category-card.fire .plate-label .name { background: var(--blood-metal); -webkit-background-clip: text; background-clip: text; }
+
+.cs .cta-band { margin: 18px 0 8px; padding: 22px; border-radius: var(--radius); border: 1px solid var(--trim); background: linear-gradient(120deg, rgb(168 31 26 / .18), rgb(198 210 219 / .06)); display: grid; gap: 14px; text-align: center; }
+.cs .cta-band .actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+@media (min-width: 960px) { .cs .cta-band { grid-template-columns: 1fr auto; text-align: left; align-items: center; } }
+
+/* ── Product grid & cards ────────────────────────────────────────────────── */
+.cs .grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (min-width: 960px) { .cs .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; } }
+@media (min-width: 1200px) { .cs .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.cs .card { position: relative; display: flex; flex-direction: column; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--trim-soft); background: var(--panel); transition: border-color .15s ease, transform .15s ease; }
+.cs .card:hover { border-color: var(--trim-lift); transform: translateY(-2px); }
+.cs .card-media { position: relative; aspect-ratio: 1; background: var(--panel-2); overflow: hidden; }
+.cs .card-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cs .card-tags { position: absolute; top: 8px; left: 8px; display: flex; gap: 6px; flex-wrap: wrap; z-index: 1; }
+.cs .tag { padding: 3px 8px; border-radius: 999px; font-size: 10px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; background: rgb(5 5 6 / .75); border: 1px solid var(--trim); color: var(--frost-hi); }
+.cs .tag-sale { background: var(--blood); border-color: var(--blood-hi); color: #fff; }
+.cs .tag-out { background: #2a2f34; color: var(--muted); }
+.cs .card-body { display: grid; gap: 4px; padding: 12px; flex: 1; }
+.cs .card-cat { font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.cs .card-title { font-size: 15px; font-weight: 700; line-height: 1.25; }
+.cs .card-price { display: flex; flex-wrap: wrap; align-items: baseline; row-gap: 0; gap: 8px; margin-top: auto; padding-top: 6px; font-weight: 800; font-size: 17px; font-variant-numeric: tabular-nums; }
+.cs .card-price .was { color: var(--muted); text-decoration: line-through; font-weight: 500; font-size: 13px; }
+.cs .card-price .unit { color: var(--muted); font-size: 12px; font-weight: 500; }
+.cs .card-add { margin: 0 12px 12px; }
+
+/* Product art used when a product has no photo yet */
+.cs .art { position: absolute; inset: 0; display: grid; place-items: center; overflow: hidden; }
+.cs .art::before { content: ''; position: absolute; inset: -20%; background: var(--art-bg); filter: saturate(1.1); }
+.cs .art::after { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at 30% 20%, rgb(255 255 255 / .25), transparent 45%), linear-gradient(180deg, transparent 55%, rgb(0 0 0 / .45)); }
+.cs .art span { position: relative; z-index: 1; font-weight: 900; font-size: clamp(24px, 7vw, 44px); letter-spacing: .04em; color: rgb(255 255 255 / .9); text-shadow: 0 4px 18px rgb(0 0 0 / .5); }
+
+/* ── Breadcrumb, toolbar & filters ───────────────────────────────────────── */
+.cs .breadcrumb { padding: 14px 0 0; font-size: 13px; color: var(--muted); }
+.cs .breadcrumb a:hover { color: var(--text); }
+.cs .breadcrumb .sep { margin: 0 8px; opacity: .5; }
+.cs .breadcrumb .current { color: var(--frost-hi); }
+.cs .shop-toolbar { display: grid; gap: 12px; margin-bottom: 16px; }
+@media (min-width: 960px) { .cs .shop-toolbar { grid-template-columns: 1fr auto; align-items: end; } }
+.cs .shop-toolbar h1 { font-size: 26px; }
+.cs .count-txt { color: var(--muted); font-size: 13px; }
+.cs .shop-tools { display: flex; gap: 8px; flex-wrap: wrap; }
+.cs .search-box { position: relative; flex: 1 1 220px; }
+.cs .search-box svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; color: var(--muted); }
+.cs .search-box .input { padding-left: 38px; }
+.cs .shop-tools .select { width: auto; flex: 0 0 auto; }
+.cs .chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 14px; scrollbar-width: none; }
+.cs .chip { flex: none; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--trim); font-size: 13px; font-weight: 700; background: transparent; cursor: pointer; }
+.cs .chip.active { background: var(--bar-liquid); color: #0b0d0f; border-color: transparent; }
+.cs .shop-layout { display: grid; gap: 20px; }
+@media (min-width: 960px) { .cs .shop-layout { grid-template-columns: 240px 1fr; } }
+.cs .filters { display: none; }
+@media (min-width: 960px) { .cs .filters { display: block; position: sticky; top: 140px; align-self: start; } }
+.cs .filters.open { display: block; position: fixed; inset: auto 0 0 0; z-index: 62; max-height: 82vh; overflow-y: auto; border-radius: 18px 18px 0 0; background: var(--panel); border: 1px solid var(--trim); padding: 18px; }
+@media (min-width: 960px) { .cs .filters.open { position: sticky; inset: auto; max-height: none; border-radius: var(--radius); } .cs .filters-toggle { display: none; } }
+.cs .filters h3 { font-size: 12px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin: 16px 0 8px; }
+.cs .filter-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; font-size: 14px; }
+.cs .filter-row .count { color: var(--muted); font-size: 12px; }
+.cs .pagination { display: flex; justify-content: center; gap: 6px; margin-top: 24px; }
+.cs .pagination button { min-width: 42px; height: 42px; border-radius: 10px; border: 1px solid var(--trim); background: transparent; cursor: pointer; font-weight: 700; }
+.cs .pagination button.active { background: var(--bar-liquid); color: #0b0d0f; border-color: transparent; }
+.cs .empty { text-align: center; padding: 48px 16px; color: var(--muted); }
+.cs .empty h2 { color: var(--text); font-size: 20px; margin-bottom: 8px; }
+
+/* ── Product page ────────────────────────────────────────────────────────── */
+.cs .product-layout { display: grid; gap: 24px; padding-top: 16px; }
+@media (min-width: 960px) { .cs .product-layout { grid-template-columns: 1.05fr 1fr; gap: 40px; } }
+.cs .gallery-frame { position: relative; aspect-ratio: 1; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--trim); background: var(--panel-2); }
+.cs .gallery-frame img { width: 100%; height: 100%; object-fit: cover; display: block; cursor: zoom-in; }
+.cs .gallery-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 42px; height: 42px; border-radius: 50%; border: 1px solid var(--trim); background: rgb(5 5 6 / .7); font-size: 26px; line-height: 1; cursor: pointer; }
+.cs .gallery-nav--prev { left: 10px; } .cs .gallery-nav--next { right: 10px; }
+.cs .gallery-count { position: absolute; bottom: 10px; right: 10px; padding: 3px 9px; border-radius: 999px; background: rgb(5 5 6 / .7); font-size: 12px; }
+.cs .gallery-thumbs { display: flex; gap: 8px; margin-top: 10px; overflow-x: auto; }
+.cs .gallery-thumbs button { flex: none; width: 68px; height: 68px; border-radius: 10px; overflow: hidden; border: 2px solid transparent; padding: 0; background: var(--panel-2); cursor: pointer; }
+.cs .gallery-thumbs button.active { border-color: var(--frost); }
+.cs .gallery-thumbs img { width: 100%; height: 100%; object-fit: cover; }
+.cs .product-info { display: grid; gap: 14px; align-content: start; }
+.cs .product-title { font-size: clamp(26px, 5vw, 38px); }
+.cs .sku { font-size: 12px; color: var(--muted); letter-spacing: .08em; }
+.cs .price-big { display: flex; align-items: baseline; gap: 10px; font-size: 32px; font-weight: 900; font-variant-numeric: tabular-nums; }
+.cs .price-big .was { font-size: 18px; color: var(--muted); text-decoration: line-through; font-weight: 500; }
+.cs .price-big .unit { font-size: 14px; color: var(--muted); font-weight: 500; }
+.cs .save-pill { justify-self: start; display: inline-block; padding: 4px 10px; border-radius: 999px; background: rgb(168 31 26 / .2); border: 1px solid rgb(208 69 61 / .5); color: #ffc9c4; font-size: 12px; font-weight: 800; }
+.cs .stock-meter-track { height: 6px; border-radius: 3px; background: rgb(255 255 255 / .08); overflow: hidden; }
+.cs .stock-meter-fill { height: 100%; background: var(--frost-metal); }
+.cs .stock-meter-fill.low { background: var(--blood-metal); }
+.cs .stock-meter-label { font-size: 12px; color: var(--muted); margin-top: 6px; }
+.cs .buy-row { display: flex; gap: 10px; }
+.cs .qty-box { display: inline-flex; align-items: center; border: 1px solid var(--trim); border-radius: 999px; height: 46px; overflow: hidden; flex: none; }
+.cs .qty-box button { width: 42px; height: 100%; border: 0; background: transparent; cursor: pointer; font-size: 18px; }
+.cs .qty-box button:hover { background: rgb(198 210 219 / .08); }
+.cs .qty-box input { width: 44px; height: 100%; text-align: center; border: 0; background: transparent; color: var(--text); font: inherit; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cs .qty-box.sm { height: 38px; } .cs .qty-box.sm button { width: 34px; } .cs .qty-box.sm input { width: 36px; }
+.cs .product-desc { color: #c9d3da; font-size: 15px; line-height: 1.6; white-space: pre-line; }
+.cs .perks { display: grid; gap: 8px; font-size: 13px; color: var(--muted); }
+.cs .perks div { display: flex; gap: 8px; align-items: center; }
+.cs .perks svg { width: 18px; height: 18px; color: var(--frost); flex: none; }
+
+.cs .lightbox { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; }
+.cs .lightbox-backdrop { position: absolute; inset: 0; background: rgb(0 0 0 / .9); border: 0; }
+.cs .lightbox img { position: relative; max-width: 94vw; max-height: 88vh; border-radius: 10px; }
+.cs .lightbox-close { position: absolute; top: 14px; right: 14px; width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--trim); background: rgb(5 5 6 / .7); font-size: 26px; cursor: pointer; }
+
+/* Sticky add-to-bag bar on phones */
+.cs .sticky-buy { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; padding: 10px var(--gutter) calc(10px + env(safe-area-inset-bottom)); background: rgb(5 5 6 / .94); border-top: 1px solid var(--trim); display: flex; gap: 10px; align-items: center; }
+.cs .sticky-buy .p { font-weight: 900; font-size: 18px; font-variant-numeric: tabular-nums; }
+@media (min-width: 960px) { .cs .sticky-buy { display: none; } }
+
+/* ── Cart & checkout ─────────────────────────────────────────────────────── */
+.cs .cart-layout { display: grid; gap: 20px; }
+@media (min-width: 960px) { .cs .cart-layout { grid-template-columns: 1fr 380px; align-items: start; } .cs .cart-layout aside { position: sticky; top: 140px; } }
+.cs .cart-line { display: grid; grid-template-columns: 72px 1fr; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--trim-soft); }
+.cs .cart-thumb { position: relative; width: 72px; height: 72px; border-radius: 10px; overflow: hidden; background: var(--panel-2); }
+.cs .cart-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.cs .cart-line .line-top { display: flex; justify-content: space-between; gap: 10px; }
+.cs .cart-line .line-bottom { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; gap: 10px; flex-wrap: wrap; }
+.cs .line-price { font-weight: 800; font-variant-numeric: tabular-nums; }
+.cs .summary-row { display: flex; justify-content: space-between; padding: 7px 0; font-size: 14px; font-variant-numeric: tabular-nums; }
+.cs .summary-row.total { border-top: 1px solid var(--trim); margin-top: 6px; padding-top: 12px; font-size: 18px; font-weight: 900; }
+.cs .summary-note { font-size: 12px; color: var(--muted); margin-top: 6px; }
+.cs .ship-progress { margin: 4px 0 14px; font-size: 13px; }
+.cs .ship-progress .track { height: 6px; border-radius: 3px; background: rgb(255 255 255 / .08); overflow: hidden; margin-top: 6px; }
+.cs .ship-progress .fill { height: 100%; background: var(--frost-metal); transition: width .3s ease; }
+.cs .or-divider { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; margin: 14px 0; }
+.cs .or-divider::before, .cs .or-divider::after { content: ''; flex: 1; border-top: 1px solid var(--trim-soft); }
+.cs .invoice-text { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; line-height: 1.5; background: rgb(0 0 0 / .35); border: 1px solid var(--trim-soft); border-radius: var(--radius-sm); padding: 12px; margin: 12px 0; max-height: 260px; overflow: auto; }
+.cs .send-actions { display: grid; gap: 8px; }
+.cs .steps { display: flex; gap: 6px; margin-bottom: 18px; font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); flex-wrap: wrap; }
+.cs .steps .on { color: var(--frost-hi); }
+.cs .pay-options { display: grid; gap: 8px; }
+.cs .pay-option { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: var(--radius-sm); border: 1px solid var(--trim); cursor: pointer; }
+.cs .pay-option.on { border-color: var(--frost); background: rgb(198 210 219 / .06); }
+.cs .pay-option input { accent-color: var(--frost); width: 18px; height: 18px; }
+.cs .pay-option .amt { margin-left: auto; text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; }
+.cs .coin { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; color: #fff; font-weight: 900; font-size: 13px; flex: none; }
+.cs .success-mark { width: 72px; height: 72px; margin: 0 auto 16px; border-radius: 50%; display: grid; place-items: center; background: rgb(79 191 122 / .12); border: 1px solid rgb(79 191 122 / .5); color: var(--ok); }
+
+/* ── Account area ────────────────────────────────────────────────────────── */
+.cs .account-layout { display: grid; gap: 20px; padding-top: 16px; }
+@media (min-width: 960px) { .cs .account-layout { grid-template-columns: 220px 1fr; } }
+.cs .account-nav { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+@media (min-width: 960px) { .cs .account-nav { flex-direction: column; position: sticky; top: 140px; align-self: start; } }
+.cs .account-nav a { flex: none; display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 10px; font-weight: 700; font-size: 14px; color: var(--frost); border: 1px solid var(--trim-soft); }
+@media (min-width: 960px) { .cs .account-nav a { border-color: transparent; } }
+.cs .account-nav a.active { background: rgb(198 210 219 / .08); color: #fff; border-color: var(--trim); }
+.cs .badge-count { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--blood); color: #fff; font-size: 11px; font-weight: 800; display: inline-grid; place-items: center; }
+.cs .stat-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, 1fr); }
+@media (min-width: 960px) { .cs .stat-grid { grid-template-columns: repeat(4, 1fr); } }
+.cs .stat { padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--trim-soft); background: rgb(255 255 255 / .02); }
+.cs .stat .k { font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.cs .stat .v { font-size: 22px; font-weight: 900; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.cs .table-wrap { overflow-x: auto; }
+.cs table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
+.cs table.t th { text-align: left; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); font-weight: 800; padding: 10px 8px; border-bottom: 1px solid var(--trim); white-space: nowrap; }
+.cs table.t td { padding: 12px 8px; border-bottom: 1px solid var(--trim-soft); vertical-align: top; }
+.cs .num { font-variant-numeric: tabular-nums; }
+.cs .status { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; border: 1px solid var(--trim); }
+.cs .status.confirmed, .cs .status.delivered, .cs .status.completed { color: #b8f0cc; border-color: rgb(79 191 122 / .5); }
+.cs .status.awaiting, .cs .status.processing, .cs .status.partial, .cs .status.new { color: #ffe2a8; border-color: rgb(224 164 59 / .5); }
+.cs .status.expired, .cs .status.cancelled, .cs .status.refunded { color: var(--muted); }
+.cs .status.shipped { color: #cfe3ff; border-color: rgb(120 170 255 / .5); }
+
+.cs .holding-list { display: grid; gap: 8px; margin-top: 12px; }
+.cs .holding { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--radius-sm); background: rgb(255 255 255 / .03); border: 1px solid var(--trim-soft); font-variant-numeric: tabular-nums; }
+.cs .holding .usd { margin-left: auto; text-align: right; font-weight: 800; }
+.cs .holding .usd small { display: block; color: var(--muted); font-weight: 500; font-size: 11px; }
+.cs .live-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 8px var(--ok); margin-right: 6px; vertical-align: middle; animation: cs-pulse 2s infinite; }
+@keyframes cs-pulse { 50% { opacity: .35; } }
+.cs .qr-box { display: grid; place-items: center; padding: 14px; background: #fff; border-radius: var(--radius-sm); width: fit-content; margin: 0 auto 12px; }
+.cs .addr { display: flex; gap: 8px; align-items: center; }
+.cs .addr code { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 13px; padding: 10px 12px; border-radius: var(--radius-sm); background: rgb(0 0 0 / .35); border: 1px solid var(--trim-soft); }
+.cs .fee-box { padding: 12px 14px; border-radius: var(--radius-sm); border: 1px solid rgb(224 164 59 / .45); background: rgb(224 164 59 / .08); font-size: 13px; display: grid; gap: 2px; margin: 12px 0; }
+
+/* Messages */
+.cs .chat { display: flex; flex-direction: column; height: min(68vh, 640px); }
+.cs .chat-log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 4px 2px 12px; }
+.cs .bubble { max-width: 82%; padding: 10px 14px; border-radius: 16px; font-size: 14px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cs .bubble.me { align-self: flex-end; background: var(--bar-liquid); color: #0b0d0f; border-bottom-right-radius: 4px; }
+.cs .bubble.staff { align-self: flex-start; background: var(--panel-2); border: 1px solid var(--trim-soft); border-bottom-left-radius: 4px; }
+.cs .bubble time { display: block; font-size: 10.5px; opacity: .6; margin-top: 4px; }
+.cs .chat-form { display: flex; gap: 8px; align-items: flex-end; border-top: 1px solid var(--trim-soft); padding-top: 12px; }
+.cs .chat-form .textarea { min-height: 46px; max-height: 140px; }
+
+/* Modal */
+.cs .modal-wrap { position: fixed; inset: 0; z-index: 70; display: grid; place-items: end center; }
+@media (min-width: 640px) { .cs .modal-wrap { place-items: center; } }
+.cs .modal-backdrop { position: absolute; inset: 0; background: rgb(0 0 0 / .7); border: 0; }
+.cs .modal { position: relative; width: min(520px, 100vw); max-height: 92vh; overflow-y: auto; background: var(--panel); border: 1px solid var(--trim); border-radius: 18px 18px 0 0; padding: 22px 18px calc(18px + env(safe-area-inset-bottom)); box-shadow: var(--shadow); }
+@media (min-width: 640px) { .cs .modal { border-radius: 18px; padding: 24px; } }
+.cs .modal-close { position: absolute; top: 10px; right: 10px; }
+.cs .modal h2 { font-size: 20px; margin-bottom: 14px; padding-right: 36px; }
+
+/* Promo pop-up */
+.cs .promo-box { text-align: center; }
+.cs .promo-kicker { font-size: 12px; font-weight: 800; letter-spacing: .2em; text-transform: uppercase; color: var(--blood-hi); }
+.cs .promo-line { font-size: 26px; font-weight: 900; margin: 6px 0 14px; }
+.cs .promo-deal { display: inline-grid; padding: 14px 22px; border-radius: var(--radius); border: 1px solid var(--trim); background: rgb(255 255 255 / .03); margin-bottom: 16px; }
+.cs .promo-off { font-size: 34px; font-weight: 900; background: var(--blood-metal); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+/* Toasts */
+.cs .toasts { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 90; display: grid; gap: 8px; width: min(420px, calc(100vw - 32px)); }
+.cs .toast { padding: 12px 16px; border-radius: 12px; background: #15191d; border: 1px solid var(--trim); box-shadow: var(--shadow); font-size: 14px; display: flex; justify-content: space-between; gap: 12px; align-items: center; animation: cs-up .2s ease-out; }
+.cs .toast a { font-weight: 800; text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
+@keyframes cs-up { from { transform: translateY(10px); opacity: 0; } }
+
+/* Footer */
+.cs .footer { margin-top: 40px; border-top: 1px solid var(--trim-soft); padding: 28px 0 calc(28px + env(safe-area-inset-bottom)); font-size: 13px; color: var(--muted); }
+.cs .footer-grid { display: grid; gap: 20px; }
+@media (min-width: 960px) { .cs .footer-grid { grid-template-columns: 1.4fr 1fr 1fr; } }
+.cs .footer h4 { color: var(--frost-hi); font-size: 12px; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 10px; }
+.cs .footer ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.cs .footer a:hover { color: var(--text); }
+.cs .footer-logo { height: 52px; margin-bottom: 10px; }
+.cs .footer-legal { margin-top: 22px; font-size: 12px; line-height: 1.6; }
+
+/* ── Age gate ────────────────────────────────────────────────────────────── */
+.cs-gate { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 16px; background: radial-gradient(700px 420px at 50% 30%, rgb(198 210 219 / .10), transparent 70%), #050506; overflow-y: auto; transition: background-color .2s; }
+/* Once the smoke covers the screen the shop is mounted underneath: the gate goes
+   see-through so what clears is the real page */
+.cs-gate.covered { background: transparent; pointer-events: none; }
+.cs-gate .gate-smoke { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; }
+.cs-gate .lock-card { position: relative; z-index: 1; min-height: 0; background: none; width: min(400px, 100%); text-align: center; display: grid; gap: 18px; }
+.cs-gate .gate-logo { width: min(300px, 72vw); margin: 0 auto; filter: drop-shadow(0 10px 30px rgb(0 0 0 / .7)); animation: cs-float 6s ease-in-out infinite; }
+@keyframes cs-float { 50% { transform: translateY(-6px); } }
+.cs-gate .lock-label { font-size: 12px; font-weight: 800; letter-spacing: .24em; text-transform: uppercase; color: #c6d2db; }
+.cs-gate .lock-input { text-align: center; letter-spacing: .3em; text-transform: uppercase; font-weight: 800; }
+.cs-gate .lock-note { font-size: 12px; color: #8995a0; line-height: 1.5; }
+@media (prefers-reduced-motion: reduce) { .cs-gate .gate-logo, .cs .live-dot { animation: none; } }
+
+.cs .page-loading { display: grid; place-items: center; min-height: 40vh; }
+.cs .spinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--trim); border-top-color: var(--frost); animation: spin .8s linear infinite; }
+.cs .skeleton { background: linear-gradient(90deg, rgb(255 255 255 / .04), rgb(255 255 255 / .09), rgb(255 255 255 / .04)); background-size: 200% 100%; animation: cs-shimmer 1.2s infinite; border-radius: var(--radius); }
+@keyframes cs-shimmer { to { background-position: -200% 0; } }
