@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
+    "build": "prisma generate",
+    "db:deploy": "prisma migrate deploy && node prisma/seed.js",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
@@ -26,9 +28,10 @@
     "express-async-errors": "^3.1.1",
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.1",
-    "tiny-secp256k1": "^2.2.3"
-  },
-  "devDependencies": {
+    "tiny-secp256k1": "^2.2.3",
     "prisma": "^5.14.0"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

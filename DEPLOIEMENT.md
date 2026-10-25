@@ -141,7 +141,11 @@ Sans ces variables, les commandes passent quand même ; le client voit simplemen
 
 ### 3.2 Backend sur Railway
 1. Créez un **New Project → Deploy from GitHub repo** et choisissez le dépôt.
-2. Dans les Settings du service, mettez **Root Directory** à `backend`. C'est indispensable : le build lit `backend/railway.toml` et `backend/.nixpacks.toml`.
+2. Dans les **Settings** du service :
+   - **Root Directory** : `/backend` ;
+   - **Builder** : Railpack (par défaut). Il lance `npm ci`, `npm run build` (`prisma generate`) puis `npm start` : laissez **Build Command** et **Start Command** vides ;
+   - **Deploy → Add pre-deploy step** : `npm run db:deploy` (migrations + seed, avant chaque nouvelle version, quand la base est joignable). **Sans cette étape la base reste vide** et toutes les routes répondent « Internal server error » ;
+   - **Healthcheck Path** : `/health`.
 3. Ajoutez une base de données : **+ New → Database → PostgreSQL**.
 4. **Settings → Networking → Custom Domain** : ajoutez `api.<votre-domaine>` (ex. `api.captainslabbin.shop`). Railway affiche une cible : créez chez votre registrar un enregistrement **CNAME** `api` vers cette cible. (À défaut, **Generate Domain** donne une URL `*.up.railway.app`.)
 5. Dans les **Variables** du service backend (Raw Editor ; la liste complète est dans `backend/.env.example`) :
@@ -177,7 +181,7 @@ Ne réutilisez jamais les phrases d'un autre projet : elles contrôlent les fond
 
 ³ Les comptes staff sont créés **une seule fois**, au premier déploiement. Ensuite le seed ne les touche plus : un identifiant ou un mot de passe changé dans **Admin → My account** survit aux redéploiements. Mot de passe perdu : ajoutez `RESET_STAFF_PASSWORDS=true`, redéployez (le compte des variables est restauré avec son mot de passe), puis **retirez** la variable. Si un déploiement précédent avait créé d'autres comptes (`admin`, `superadmin`…), désactivez-les dans **Admin → Users**.
 
-6. Ce que fait chaque déploiement : au démarrage de la nouvelle version (« pre-deploy » dans `backend/railway.toml`, quand la base est joignable), `prisma migrate deploy` puis le seed. Le seed crée les réglages et les catégories sans écraser vos modifications, crée les comptes staff s'ils n'ont jamais été créés, et ajoute le catalogue de démo seulement si la base est vide.
+6. Ce que fait chaque déploiement : l'étape pre-deploy `npm run db:deploy` lance `prisma migrate deploy` puis le seed. Le seed crée les réglages et les catégories sans écraser vos modifications, crée les comptes staff s'ils n'ont jamais été créés, et ajoute le catalogue de démo seulement si la base est vide.
 7. Pour vérifier, ouvrez `https://api.<votre-domaine>/health` : la réponse doit être `{"status":"ok", ...}`.
 
 ### 3.3 Frontend sur Vercel
