@@ -5,6 +5,7 @@ import { ok } from '../../utils/response.js';
 import { appError } from '../../utils/formatters.js';
 import {
   telegramStatus, inspectBot, linkBot, brandLinkedBot, changeChat, unlinkBot, sendTelegram,
+  setPostChat, postProduct,
 } from '../../services/telegram.service.js';
 
 // Admin → Settings → Telegram: link a bot by pasting its token, pick the chat,
@@ -53,6 +54,18 @@ r.post('/test', async (req, res) => {
 
 r.post('/unlink', async (req, res) => {
   res.json(ok(await unlinkBot()));
+});
+
+// Where new products are announced ('' = nowhere)
+r.post('/post-chat', async (req, res) => {
+  await setPostChat(String(req.body?.chatId || '').trim());
+  res.json(ok({ postChatId: String(req.body?.chatId || '').trim() }));
+});
+
+// Post one product now (Admin → Products)
+r.post('/post-product/:id', async (req, res) => {
+  if (!(await postProduct(req.params.id))) throw appError('Choose where products are posted in Admin → Telegram bot first.', 400);
+  res.json(ok({ posted: true }));
 });
 
 export default r;

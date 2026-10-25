@@ -2,6 +2,7 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { prisma } from '../db.js';
 import { env } from '../config/env.js';
+import { COMMANDS } from './telegramCatalog.js';
 
 // Posts shop notifications (paid-order invoices, new customer messages) to the
 // shop's Telegram chat through a bot, and links/brands that bot.
@@ -14,7 +15,7 @@ import { env } from '../config/env.js';
 
 const KEYS = { token: 'telegram_bot_token', chatId: 'telegram_chat_id', secret: 'telegram_webhook_secret', seen: 'telegram_seen_chats', branded: 'telegram_branded' };
 // Never sent to the admin UI by the generic settings endpoint
-export const TELEGRAM_PRIVATE_KEYS = [KEYS.token, KEYS.secret, KEYS.seen];
+export const TELEGRAM_PRIVATE_KEYS = [KEYS.token, KEYS.secret, KEYS.seen, 'telegram_post_chat_id'];
 
 async function setting(key) {
   const row = await prisma.siteSetting.findUnique({ where: { key } });
@@ -82,16 +83,33 @@ export async function sendTelegram(html, buttons, chatOverride) {
 
 const chatOf = c => ({ id: String(c.id), type: c.type, title: c.title || (c.username ? `@${c.username}` : [c.first_name, c.last_name].filter(Boolean).join(' ')) });
 
-// Chats this bot was seen in through the webhook, newest first (max 10)
+// Chats this bot was seen in through the webhook, newest first (max 10).
+// A bot linked before it had a chat adopts the first group or channel it's
+// added to, so the admin doesn't have to come back and pick it.
 export async function rememberChat(chat) {
   let list = [];
   try { list = JSON.parse(await setting(KEYS.seen) || '[]'); } catch { /* reset */ }
   const c = chatOf(chat);
   list = [c, ...list.filter(x => x.id !== c.id)].slice(0, 10);
   await save(KEYS.seen, JSON.stringify(list));
+  if (c.type !== 'private' && !(await setting(KEYS.chatId)) && !env.telegram.chatId) {
+    await save(KEYS.chatId, c.id);
+    await sendTelegram("✅ This chat will receive the shop's paid orders and customer messages.", null, c.id);
+  }
 }
 
 const webhookUrl = base => `${base.replace(/\/$/, '')}/api/webhooks/telegram-bot`;
+const UPDATES = ['message', 'channel_post', 'my_chat_member', 'callback_query'];
+
+// What every linked bot gets, branded or not: the catalog commands and, on an
+// HTTPS site, an "Open shop" menu button
+async function installNavigation(token) {
+  const site = (env.frontendUrl || '').replace(/\/$/, '');
+  await tg(token, 'setMyCommands', { commands: COMMANDS });
+  if (site.startsWith('https://')) {
+    await tg(token, 'setChatMenuButton', { menu_button: { type: 'web_app', text: 'Open shop', web_app: { url: site } } });
+  }
+}
 
 // What the admin sees: the linked bot (if any) and where it posts
 export async function telegramStatus() {
@@ -101,12 +119,17 @@ export async function telegramStatus() {
   if (!cfg.token) return { linked: false, seenChats: seen };
   try {
     const [me, hook] = await Promise.all([tg(cfg.token, 'getMe'), tg(cfg.token, 'getWebhookInfo')]);
+    if (hook.url && cfg.secret && !(hook.allowed_updates || []).includes('callback_query')) {
+      await tg(cfg.token, 'setWebhook', { url: hook.url, secret_token: cfg.secret, allowed_updates: UPDATES });
+      await installNavigation(cfg.token);
+    }
     return {
       linked: true,
       bot: { username: me.username, name: me.first_name },
       chatId: cfg.chatId,
       chat: seen.find(c => c.id === String(cfg.chatId)) || null,
       branded: cfg.branded,
+      postChatId: await getPostChat(),
       webhook: { url: hook.url || null, lastError: hook.last_error_message || null },
       seenChats: seen,
     };
@@ -129,7 +152,7 @@ export async function inspectBot(token, { publicBase, takeOver = false } = {}) {
   }
   let chats = [];
   if (!hook.url) {
-    const updates = await tg(token, 'getUpdates', { allowed_updates: ['message', 'channel_post', 'my_chat_member'] });
+    const updates = await tg(token, 'getUpdates', { allowed_updates: UPDATES });
     const map = new Map();
     for (const u of updates) {
       const c = u.message?.chat || u.channel_post?.chat || u.my_chat_member?.chat;
@@ -142,34 +165,32 @@ export async function inspectBot(token, { publicBase, takeOver = false } = {}) {
   return { bot: { username: me.username, name: me.first_name }, busyElsewhere: null, chats };
 }
 
-const BRAND = (siteUrl) => [
+const BRAND = () => [
   ['setMyName', { name: 'Captain Slabbin' }],
-  ['setMyShortDescription', { short_description: 'Order notifications for the Captain Slabbin shop.' }],
-  ['setMyDescription', { description: 'Posts paid orders and customer messages from the Captain Slabbin shop. For support, message the shop from your account on the site.' }],
-  ['setMyCommands', { commands: [
-    { command: 'shop', description: 'Open the storefront' },
-    { command: 'admin', description: 'Open the admin panel' },
-  ] }],
-  ...(siteUrl?.startsWith('https://') ? [['setChatMenuButton', { menu_button: { type: 'web_app', text: 'Open shop', web_app: { url: siteUrl } } }]] : []),
+  ['setMyShortDescription', { short_description: 'Browse the Captain Slabbin shelves and deals.' }],
+  ['setMyDescription', { description: 'Browse the Captain Slabbin shelves, Fire Sale deals and products, then order on the site and pay with crypto in one tap. Tap Start.' }],
 ];
 
-// Step 2: link it. Saves token + chat, installs the webhook (HTTPS only — on a
-// local http:// backend notifications still work, commands just don't reply),
-// applies the shop's look if asked, and says hello in the chosen chat.
+// Step 2: link it. Saves token (+ chat when one is known), installs the webhook
+// (HTTPS only — on a local http:// backend notifications still work, the
+// catalog and commands just don't reply), sets the catalog commands, applies the
+// shop's look if asked, and says hello in the chosen chat. Without a chat, the
+// first group or channel the bot is added to is adopted (rememberChat).
 export async function linkBot(token, chatId, { brand = false, publicBase }) {
-  if (!chatId) throw Object.assign(new Error('Choose the chat the bot should post to'), { status: 400 });
   const me = await tg(token, 'getMe');
   const secret = crypto.randomBytes(24).toString('hex');
   let webhook = null;
   if (publicBase?.startsWith('https://')) {
-    await tg(token, 'setWebhook', { url: webhookUrl(publicBase), secret_token: secret, allowed_updates: ['message', 'my_chat_member'] });
+    await tg(token, 'setWebhook', { url: webhookUrl(publicBase), secret_token: secret, allowed_updates: UPDATES });
     webhook = webhookUrl(publicBase);
   }
+  await installNavigation(token);
+  if (brand) for (const [method, payload] of BRAND()) await tg(token, method, payload);
+
+  await Promise.all([save(KEYS.token, token), save(KEYS.chatId, chatId || ''), save(KEYS.secret, secret), save(KEYS.branded, brand ? 'true' : 'false')]);
+  if (!chatId) return { bot: { username: me.username, name: me.first_name }, webhook, branded: brand, helloDelivered: false, helloError: null, waitingForChat: true };
+
   const site = (env.frontendUrl || '').replace(/\/$/, '');
-  if (brand) for (const [method, payload] of BRAND(site)) await tg(token, method, payload);
-
-  await Promise.all([save(KEYS.token, token), save(KEYS.chatId, chatId), save(KEYS.secret, secret), save(KEYS.branded, brand ? 'true' : 'false')]);
-
   const hello = await sendTelegram(`✅ <b>${escapeHtml(me.first_name)}</b> is now linked to the shop. Paid orders and customer messages will appear here.`, site ? [{ text: 'Open admin', url: `${site}/admin` }] : null, chatId);
   return { bot: { username: me.username, name: me.first_name }, webhook, branded: brand, helloDelivered: hello.delivered, helloError: hello.reason || null };
 }
@@ -178,7 +199,8 @@ export async function linkBot(token, chatId, { brand = false, publicBase }) {
 export async function brandLinkedBot() {
   const cfg = await getTelegramConfig();
   if (!cfg.token) throw Object.assign(new Error('No bot linked'), { status: 400 });
-  for (const [method, payload] of BRAND((env.frontendUrl || '').replace(/\/$/, ''))) await tg(cfg.token, method, payload);
+  await installNavigation(cfg.token);
+  for (const [method, payload] of BRAND()) await tg(cfg.token, method, payload);
   await save(KEYS.branded, 'true');
 }
 
@@ -242,4 +264,70 @@ export async function notifyNewMessage(user, body) {
     telegram ? `✈️ ${escapeHtml(telegram)}` : null,
     escapeHtml(preview),
   ].filter(Boolean).join('\n'), link ? [{ text: '💬 Reply in admin', url: link }] : null);
+}
+
+// ─── Customers on the bot ────────────────────────────────────────────────────
+
+// A private message to a customer whose account is tied to Telegram (opened or
+// connected from the bot). Silent no-op for everyone else.
+export async function dmUser(userId, html, buttons) {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { telegramId: true } });
+  if (!user?.telegramId) return { delivered: false, reason: 'No Telegram on this account' };
+  return sendTelegram(html, buttons, user.telegramId);
+}
+
+// The linked bot's @username, for t.me links (cached per token)
+let usernameCache = { token: null, username: null };
+export async function botUsername() {
+  const { token } = await getTelegramConfig();
+  if (!token) return null;
+  if (usernameCache.token !== token) {
+    const me = await tg(token, 'getMe');
+    usernameCache = { token, username: me.username };
+  }
+  return usernameCache.username;
+}
+
+// ─── Posting products ────────────────────────────────────────────────────────
+
+const POST_KEY = 'telegram_post_chat_id';
+export const getPostChat = () => setting(POST_KEY);
+export const setPostChat = chatId => save(POST_KEY, chatId || '');
+
+// A product card (photo, price, buttons to buy in the bot or open it on the
+// site) in the chat chosen under "Post new products to". Returns false when
+// no chat is chosen.
+export async function postProduct(productId, chatOverride) {
+  const cfg = await getTelegramConfig();
+  const chatId = chatOverride || await getPostChat();
+  if (!cfg.token || !chatId) return false;
+  const p = await prisma.product.findFirst({
+    where: { id: Number(productId), isActive: true },
+    include: { images: { orderBy: { position: 'asc' } }, category: true },
+  });
+  if (!p) return false;
+  const site = (env.frontendUrl || '').replace(/\/$/, '');
+  const img = p.images.find(i => i.mediaType !== 'video');
+  const photo = img && (img.url.startsWith('http') ? img.url : env.publicUrl ? `${env.publicUrl.replace(/\/$/, '')}${img.url}` : null);
+  const was = p.compareAtPrice && Number(p.compareAtPrice) > Number(p.price) ? ` <s>${money(p.compareAtPrice)}</s>` : '';
+  const caption = [
+    `🆕 <b>${escapeHtml(p.name)}</b>`,
+    p.category ? escapeHtml(p.category.name) : null,
+    `<b>${money(p.price)}</b>${was}${p.unitLabel ? ` ${escapeHtml(p.unitLabel)}` : ''}`,
+    p.description ? escapeHtml(p.description.length > 300 ? p.description.slice(0, 300) + '…' : p.description) : null,
+  ].filter(Boolean).join('\n');
+  const name = await botUsername().catch(() => null);
+  const buttons = [
+    ...(name ? [{ text: '🛒 Buy in the bot', url: `https://t.me/${name}?start=p_${p.id}` }] : []),
+    ...(site.startsWith('http') ? [{ text: '🌐 On the site', url: `${site}/p/${encodeURIComponent((p.sku || p.slug).toLowerCase())}` }] : []),
+  ];
+  const markup = buttons.length ? { inline_keyboard: [buttons] } : undefined;
+  if (photo) {
+    try {
+      await tg(cfg.token, 'sendPhoto', { chat_id: chatId, photo, caption, parse_mode: 'HTML', reply_markup: markup });
+      return true;
+    } catch (err) { console.error('[Telegram] sendPhoto failed, posting text:', err.message); }
+  }
+  await tg(cfg.token, 'sendMessage', { chat_id: chatId, text: caption, parse_mode: 'HTML', link_preview_options: { is_disabled: true }, reply_markup: markup });
+  return true;
 }

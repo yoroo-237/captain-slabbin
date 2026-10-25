@@ -1,3 +1,4 @@
+import { dmUser } from './telegram.service.js';
 import { prisma } from '../db.js';
 
 export const notificationService = {
@@ -44,6 +45,9 @@ export const notificationService = {
   },
 
   async notifyDeposit(userId, currency, usdAmount, cryptoAmount = null) {
+    // Customers on the bot hear about it there too (best-effort)
+    dmUser(userId, `💰 <b>Deposit received</b>: ${cryptoAmount != null ? `${cryptoAmount} ${currency} ≈ ` : ''}$${Number(usdAmount).toFixed(2)} added to your wallet.`,
+      [{ text: '🛒 Shop now', callback_data: 'menu' }, { text: '💰 Wallet', callback_data: 'w' }]).catch(() => {});
     await this.create(userId, {
       type:    'deposit',
       title:   'Deposit confirmed',

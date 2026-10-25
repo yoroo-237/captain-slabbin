@@ -1,5 +1,7 @@
 import { getUserBalance } from './balance.service.js';
 import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
+import { env } from '../config/env.js';
 import { prisma } from '../db.js';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/jwt.js';
 import { appError } from '../utils/formatters.js';
@@ -46,9 +48,23 @@ export const authService = {
     if (!user)          throw appError('Invalid credentials', 401);
     if (!user.isActive) throw appError('Account disabled', 403);
 
-    const match = await bcrypt.compare(password, user.passwordHash);
+    // Accounts opened from the Telegram bot have no password ("!telegram")
+    const match = !user.passwordHash.startsWith('!') && await bcrypt.compare(password, user.passwordHash);
     if (!match) throw appError('Invalid credentials', 401);
+    return this.session(user);
+  },
 
+  // One-tap sign-in from the shop's Telegram bot (token from telegramShop.siteLoginUrl)
+  async loginWithTelegram(token) {
+    let userId;
+    try { userId = jwt.verify(String(token || ''), env.jwtSecret).tgLogin; } catch { /* expired */ }
+    if (!userId) throw appError('This sign-in link has expired. Ask the bot for a new one.', 401);
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user?.isActive) throw appError('Account disabled', 403);
+    return this.session(user);
+  },
+
+  async session(user) {
     await prisma.user.update({
       where: { id: user.id },
       data:  { lastLoginAt: new Date() },

@@ -2,6 +2,17 @@ import { prisma } from '../../db.js';
 import { ok } from '../../utils/response.js';
 import { parsePaginationParams, buildPagination } from '../../utils/pagination.js';
 import { appError } from '../../utils/formatters.js';
+import { dmUser, escapeHtml } from '../../services/telegram.service.js';
+
+const STATUS_TEXT = { processing: 'is being prepared', shipped: 'has shipped', delivered: 'was delivered', cancelled: 'was cancelled', refunded: 'was refunded' };
+
+// Customers on the bot get each status change of their order there (best-effort)
+function tellCustomer(order) {
+  const tracking = order.trackingNumber ? `
+Tracking: <code>${escapeHtml(order.trackingNumber)}</code>${order.carrier ? ` (${escapeHtml(order.carrier)})` : ''}` : '';
+  dmUser(order.userId, `📦 Your order <b>${escapeHtml(order.orderNumber)}</b> ${STATUS_TEXT[order.status] || `is now ${escapeHtml(order.status)}`}.${tracking}`,
+    [{ text: '📦 My orders', callback_data: 'o' }]).catch(() => {});
+}
 
 const VALID_STATUSES = ['processing', 'shipped', 'delivered', 'cancelled', 'refunded'];
 
@@ -53,6 +64,7 @@ export const adminOrdersController = {
       where: { id: parseInt(req.params.id, 10) },
       data:  { status },
     });
+    tellCustomer(order);
     res.json(ok(order));
   },
 
@@ -63,6 +75,7 @@ export const adminOrdersController = {
       where: { id: parseInt(req.params.id, 10) },
       data:  { trackingNumber: trackingNumber.trim(), carrier: carrier?.trim() || null, status: 'shipped' },
     });
+    tellCustomer(order);
     res.json(ok(order));
   },
 };

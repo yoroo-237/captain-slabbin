@@ -145,7 +145,13 @@ export function AccountProfile() {
   const [pw, setPw] = useState({ currentPassword: '', newPassword: '', confirm: '' })
   const [pwMsg, setPwMsg] = useState(null)
 
-  useEffect(() => { apiFetch('/profile').then(setProfile).catch(() => {}) }, [])
+  useEffect(() => {
+    const load = () => apiFetch('/profile').then(setProfile).catch(() => {})
+    load()
+    // Back from Telegram after "Connect Telegram": show it connected
+    window.addEventListener('focus', load)
+    return () => window.removeEventListener('focus', load)
+  }, [])
   if (!profile) return <div className="page-loading"><div className="spinner" /></div>
 
   const set = k => e => setProfile(p => ({ ...p, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
@@ -172,6 +178,7 @@ export function AccountProfile() {
       await apiFetch('/profile/password', { method: 'PUT', body: JSON.stringify({ currentPassword: pw.currentPassword, newPassword: pw.newPassword }) })
       setPw({ currentPassword: '', newPassword: '', confirm: '' })
       setPwMsg({ ok: 'Password updated' })
+      setProfile(p => ({ ...p, hasPassword: true }))
     } catch (err) { setPwMsg({ error: err.message }) }
   }
 
@@ -180,11 +187,14 @@ export function AccountProfile() {
       <div className="greeting"><h1 className="display">Profile</h1></div>
       <form className="panel" onSubmit={save}>
         <div className="panel-title"><Icon.telegram /> Contact</div>
-        <div className="field">
-          <label htmlFor="p-tg">Telegram username or ID</label>
-          <input id="p-tg" className="input" placeholder="@username" value={profile.telegramHandle || ''} onChange={set('telegramHandle')} />
-          <span className="hint">Added to every paid invoice we receive on Telegram, so the shop can reach you.</span>
-        </div>
+        <TelegramConnect profile={profile} onChange={setProfile} />
+        {!profile.telegramConnected && (
+          <div className="field">
+            <label htmlFor="p-tg">Or type your Telegram username or ID</label>
+            <input id="p-tg" className="input" placeholder="@username" value={profile.telegramHandle || ''} onChange={set('telegramHandle')} />
+            <span className="hint">Added to every paid invoice we receive on Telegram, so the shop can reach you.</span>
+          </div>
+        )}
         <div className="row-2">
           <div className="field">
             <label htmlFor="p-signal">Signal <span className="muted">(optional)</span></label>
@@ -204,9 +214,10 @@ export function AccountProfile() {
 
       <form className="panel" onSubmit={changePassword}>
         <div className="panel-title"><Icon.lock /> Password</div>
+        {!profile.hasPassword && <p className="hint" style={{ marginTop: 0 }}>Your account was opened from Telegram. Set a password to also sign in on the site with your username, <b>{profile.username}</b>.</p>}
         {pwMsg?.error && <div className="alert alert-error"><Icon.alert /><span>{pwMsg.error}</span></div>}
         {pwMsg?.ok && <div className="alert alert-ok"><Icon.check /><span>{pwMsg.ok}</span></div>}
-        <div className="field"><label htmlFor="pw-cur">Current password</label><input id="pw-cur" className="input" type="password" autoComplete="current-password" value={pw.currentPassword} onChange={e => setPw(p => ({ ...p, currentPassword: e.target.value }))} /></div>
+        {profile.hasPassword && <div className="field"><label htmlFor="pw-cur">Current password</label><input id="pw-cur" className="input" type="password" autoComplete="current-password" value={pw.currentPassword} onChange={e => setPw(p => ({ ...p, currentPassword: e.target.value }))} /></div>}
         <div className="row-2">
           <div className="field"><label htmlFor="pw-new">New password</label><input id="pw-new" className="input" type="password" autoComplete="new-password" minLength={8} value={pw.newPassword} onChange={e => setPw(p => ({ ...p, newPassword: e.target.value }))} /><span className="hint">At least 8 characters</span></div>
           <div className="field"><label htmlFor="pw-conf">Confirm new password</label><input id="pw-conf" className="input" type="password" autoComplete="new-password" value={pw.confirm} onChange={e => setPw(p => ({ ...p, confirm: e.target.value }))} /></div>
@@ -282,6 +293,40 @@ export function AccountMessages() {
         />
         <button className="btn btn-primary" disabled={sending || !body.trim()} aria-label="Send"><Icon.send /></button>
       </form>
+    </div>
+  )
+}
+
+// One tap ties the account to the customer's Telegram: no username to type, and
+// invoices, deposits and shipping updates arrive there. Shopping works in the bot too.
+function TelegramConnect({ profile, onChange }) {
+  const { toast } = useShop()
+  const [busy, setBusy] = useState(false)
+  async function connect() {
+    setBusy(true)
+    try {
+      const { url } = await apiFetch('/profile/telegram', { method: 'POST' })
+      window.open(url, '_blank', 'noopener')
+      toast('Tap Start in Telegram to finish')
+    } catch (err) { toast(err.message) }
+    finally { setBusy(false) }
+  }
+  async function disconnect() {
+    if (!window.confirm('Disconnect Telegram from this account?')) return
+    try {
+      await apiFetch('/profile/telegram', { method: 'DELETE' })
+      onChange(p => ({ ...p, telegramConnected: false }))
+    } catch (err) { toast(err.message) }
+  }
+  return profile.telegramConnected ? (
+    <div className="tg-connect on">
+      <span><Icon.telegram /> Connected{profile.telegramHandle ? <> as <b>{/^\d+$/.test(profile.telegramHandle) ? profile.telegramHandle : '@' + profile.telegramHandle}</b></> : ''}</span>
+      <button type="button" className="link" onClick={disconnect}>Disconnect</button>
+    </div>
+  ) : (
+    <div className="tg-connect">
+      <button type="button" className="btn btn-primary" onClick={connect} disabled={busy}><Icon.telegram /> {busy ? 'Opening…' : 'Connect Telegram'}</button>
+      <span className="hint">One tap, nothing to type. Your invoices and updates arrive on Telegram, and you can shop from the bot.</span>
     </div>
   )
 }

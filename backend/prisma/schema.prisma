@@ -23,6 +23,8 @@ model User {
   markupPct        Decimal   @default(0) @db.Decimal(5, 2)
   bio              String?
   telegramHandle   String?
+  // Telegram user id, set when the account is opened or connected from the shop's bot
+  telegramId       String?   @unique
   signalDetails    String?
   sessionDetails   String?
   btcRefundAddress String?

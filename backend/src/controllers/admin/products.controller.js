@@ -3,6 +3,7 @@ import { ok } from '../../utils/response.js';
 import { parsePaginationParams, buildPagination } from '../../utils/pagination.js';
 import { appError } from '../../utils/formatters.js';
 import { uploadToCloudinary } from '../../middlewares/upload.js';
+import { postProduct } from '../../services/telegram.service.js';
 
 // Storefront fields: SKU (shown on the invoice), strike-through price (Fire Sale
 // shelf), unit label, card badge and featured flag. Only fields sent are returned.
@@ -59,6 +60,8 @@ export const adminProductsController = {
       },
       include: { images: true, category: true },
     });
+    // Announce it on Telegram a little later, once its photos are uploaded
+    if (product.isActive !== false) setTimeout(() => postProduct(product.id).catch(err => console.error('[Telegram] post product:', err.message)), 90_000);
     res.status(201).json(ok(product));
   },
 

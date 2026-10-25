@@ -12,7 +12,7 @@ import ProductPage from './shop/pages/ProductPage.jsx'
 import CartPage from './shop/pages/CartPage.jsx'
 import CheckoutPage from './shop/pages/CheckoutPage.jsx'
 import WalletPage from './shop/pages/WalletPage.jsx'
-import { LoginPage, CreateAccountPage } from './shop/pages/AuthPages.jsx'
+import { LoginPage, CreateAccountPage, TelegramLoginPage } from './shop/pages/AuthPages.jsx'
 import AboutPage from './shop/pages/AboutPage.jsx'
 import { AccountLayout, AccountOverview, AccountOrders, AccountProfile, AccountMessages } from './shop/pages/AccountPages.jsx'
 const AdminLayout = lazy(() => import('./pages/admin/AdminLayout.jsx'))
@@ -90,6 +90,10 @@ function Storefront() {
   if (!unlocked && location.pathname === '/login') {
     return <div className="cs" style={{ justifyContent: 'center' }}><main><LoginPage /></main></div>
   }
+  // Signing in from the Telegram bot also passes the gate (the bot asked for 21+)
+  if (!unlocked && location.pathname === '/tg-login') {
+    return <div className="cs" style={{ justifyContent: 'center' }}><main><TelegramLoginPage /></main></div>
+  }
 
   return (
     <>
@@ -103,6 +107,7 @@ function Storefront() {
             <Route path="/cart" element={<CartPage />} />
             <Route path="/checkout" element={<CheckoutPage />} />
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/tg-login" element={<TelegramLoginPage />} />
             <Route path="/account/create" element={<CreateAccountPage />} />
             <Route path="/account" element={<AccountLayout />}>
               <Route index element={<AccountOverview />} />

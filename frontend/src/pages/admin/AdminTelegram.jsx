@@ -10,7 +10,7 @@ export default function AdminTelegram() {
       <div className="admin-page-header">
         <div>
           <h1 className="admin-page-title">Telegram</h1>
-          <p className="admin-page-subtitle">The bot that posts paid orders and customer messages to your shop's chat</p>
+          <p className="admin-page-subtitle">Your shop on Telegram: customers browse, buy and pay in the bot; orders and messages reach your chat</p>
         </div>
       </div>
       <div style={{ maxWidth: 760 }}>

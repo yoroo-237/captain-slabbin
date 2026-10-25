@@ -213,15 +213,17 @@ Ne réutilisez jamais les phrases d'un autre projet : elles contrôlent les fond
 
 ### 3.5 Telegram (depuis l'admin, aucune variable)
 1. Bot neuf : dans Telegram, **@BotFather** → `/newbot` → copiez le jeton. Ou prenez le jeton d'un bot existant.
-2. Ajoutez le bot au groupe ou au canal de la boutique (en admin si c'est un canal) et envoyez-y un message.
-3. **Admin → Settings → Telegram bot** : collez le jeton, **Check**.
+2. **Admin → Telegram bot** (menu System) : collez le jeton, **Check**, puis **Link this bot**. Un chat n'est pas nécessaire à ce stade.
    - Si le bot est déjà relié à une autre application, l'admin le signale ; cochez la case pour le reprendre.
-   - Choisissez le chat dans la liste.
-   - Cochez **Apply the Captain Slabbin look** pour renommer le bot et lui donner description, commandes `/shop` et `/admin` et bouton « Open shop » ; laissez décoché pour garder son nom et son profil.
-4. **Link this bot** : un message de confirmation arrive dans le chat. **Send a test message** permet de revérifier.
-5. Changer de bot : **Use another bot**, nouveau jeton, même procédure. Changer de chat : liste déroulante (le bot doit être membre du chat). **Unlink** arrête les notifications.
+   - **Apply the Captain Slabbin look** (facultatif) renomme le bot et lui donne la description de la boutique. Le catalogue, l'achat et les commandes marchent dans les deux cas.
+3. Ajoutez le bot au groupe ou au canal de la boutique (en admin pour un canal) : il le choisit tout seul pour les commandes et les messages, et y poste une confirmation. La liste **Orders and messages go to** permet d'en changer.
+4. **Post new products to** (facultatif) : un canal suivi par vos clients ; chaque nouveau produit y est publié avec sa photo, son prix et un bouton « Buy in the bot ».
 
-Ce que le bot poste : la **facture de chaque commande payée** (bouton « Open order ») et les **nouveaux messages** de la messagerie (bouton « Reply in admin »). Les commandes `/shop` et `/admin` répondent par un lien dès que le backend est en HTTPS.
+Ce que fait le bot :
+- **Pour les clients**, en conversation privée (`t.me/<bot>`) : `/start` demande la confirmation 21+ et ouvre le compte (rien à saisir, le compte est lié à leur Telegram) ; catalogue par rayon avec photos, quantité, **paiement depuis le portefeuille**, ajout de fonds (adresse BTC/LTC/ETH/DOGE/XMR), suivi des commandes (`/wallet`, `/orders`, `/deals`). Le bot les prévient quand un dépôt arrive et à chaque changement de statut de commande (avec le numéro de suivi). Le bouton « My account on the site » les connecte au site en un tap.
+- **Clients déjà inscrits sur le site** : **Account → Profile → Connect Telegram** lie leur compte en un tap.
+- **Pour la boutique**, dans le groupe : la facture de chaque commande payée (bouton « Open order ») et les nouveaux messages (bouton « Reply in admin »).
+- Les commandes passées dans le bot sont sans livraison : l'équipe organise la remise sur Telegram. Pour une livraison à une adresse, le client commande sur le site.
 
 ### 3.6 Crypto (dépôts automatiques)
 - **BTC / LTC / DOGE** : `BLOCKCYPHER_TOKEN`, `BTC_HD_SEED` et `PUBLIC_URL` (BlockCypher appelle `/api/webhooks/blockcypher`).

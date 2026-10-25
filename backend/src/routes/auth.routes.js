@@ -1,6 +1,7 @@
 import { getUserBalance } from '../services/balance.service.js';
 import { Router } from 'express';
 import { authController } from '../controllers/auth.controller.js';
+import { authService } from '../services/auth.service.js';
 import { requireAuth } from '../middlewares/auth.js';
 import { prisma } from '../db.js';
 import { ok } from '../utils/response.js';
@@ -11,6 +12,7 @@ r.post('/register', authController.register);
 r.post('/login',    authController.login);
 r.post('/refresh',  authController.refresh);
 r.post('/logout',   authController.logout);
+r.post('/telegram', async (req, res) => res.json(ok(await authService.loginWithTelegram(req.body?.token))));
 
 r.get('/me', requireAuth, async (req, res) => {
   const user = await prisma.user.findUniqueOrThrow({

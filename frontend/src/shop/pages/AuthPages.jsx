@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { apiFetch } from '../../utils/api.js'
 import { useApp } from '../../context/AppContext.jsx'
 import { SignInForm, CreateAccountForm } from '../components/AuthForms.jsx'
 import { STAFF_ROLES } from '../../utils/roles.js'
@@ -54,5 +56,25 @@ export function CreateAccountPage() {
     >
       <CreateAccountForm onDone={() => navigate(location.state?.from?.pathname || '/account/wallet', { replace: true })} />
     </AuthShell>
+  )
+}
+
+// /tg-login?t=…: the one-tap sign-in link the Telegram bot hands out
+export function TelegramLoginPage() {
+  const { login, loadUserData } = useApp()
+  const navigate = useNavigate()
+  const [error, setError] = useState('')
+  useEffect(() => {
+    const token = new URLSearchParams(window.location.search).get('t')
+    apiFetch('/auth/telegram', { method: 'POST', body: JSON.stringify({ token }) })
+      .then(async d => { login(d.accessToken, d.refreshToken, d.user); await loadUserData(); navigate('/account', { replace: true }) })
+      .catch(err => setError(err.message))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <div className="container" style={{ padding: '64px 16px', textAlign: 'center' }}>
+      {error
+        ? <><p className="gate-error" role="alert">{error}</p><p className="muted">Open the bot and tap <b>My account on the site</b> again.</p></>
+        : <div className="spinner" style={{ margin: '0 auto' }} />}
+    </div>
   )
 }

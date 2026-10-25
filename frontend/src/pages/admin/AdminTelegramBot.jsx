@@ -36,7 +36,7 @@ export default function AdminTelegramBot({ canEdit }) {
 
   const link = () => act('link', async () => {
     const r = await adminFetch('/admin/telegram/link', { method: 'POST', body: JSON.stringify({ token: token.trim(), chatId, brand }) })
-    setNotice(`@${r.bot.username} is linked.${r.helloDelivered ? ' A confirmation was posted in the chat.' : ` The confirmation message could not be posted (${r.helloError}).`}${r.webhook ? '' : ' Commands (/shop, /admin) will reply once the site runs on HTTPS.'}`)
+    setNotice(`@${r.bot.username} is linked.${r.waitingForChat ? " Now add it to your shop's group or channel: it will pick that chat by itself." : r.helloDelivered ? ' A confirmation was posted in the chat.' : ` The confirmation message could not be posted (${r.helloError}).`}${r.webhook ? '' : ' The catalog and commands will reply once the site runs on HTTPS.'}`)
     setToken(''); setFound(null); setTakeOver(false); setReplacing(false)
     load()
   })
@@ -56,7 +56,7 @@ export default function AdminTelegramBot({ canEdit }) {
     <div className="admin-card">
       <h2 className="admin-card-title">Telegram bot</h2>
       <p style={{ ...muted, marginTop: 0, marginBottom: 16 }}>
-        The bot posts every paid order and every new customer message in your shop's Telegram chat, with a button that opens it here.
+        Customers browse the shelves, buy and pay from their wallet right in the bot, with no name to type: their account is their Telegram. Every paid order and customer message is posted in your shop's chat, with a button that opens it here.
       </p>
       {error && <div className="admin-alert admin-alert-error">{error}</div>}
       {notice && <div className="admin-alert admin-alert-success">{notice}</div>}
@@ -68,17 +68,29 @@ export default function AdminTelegramBot({ canEdit }) {
           ) : (
             <div className="admin-info-row" style={{ display: 'grid', gap: 6, marginBottom: 16 }}>
               <div><b>Bot:</b> @{status.bot.username} ({status.bot.name}){status.branded ? ' · Captain Slabbin look applied' : ''}</div>
-              <div><b>Posts to:</b> {status.chat ? `${status.chat.title} (${status.chatId})` : status.chatId || 'no chat chosen'}</div>
-              <div><b>Commands:</b> {status.webhook.url ? '/shop and /admin reply' : 'off until the site runs on HTTPS'}{status.webhook.lastError ? ` · last error: ${status.webhook.lastError}` : ''}</div>
+              <div><b>Shop link for customers:</b> <a href={`https://t.me/${status.bot.username}`} target="_blank" rel="noreferrer">t.me/{status.bot.username}</a></div>
+              <div><b>Orders and messages go to:</b> {status.chat ? `${status.chat.title} (${status.chatId})` : status.chatId || "waiting: add the bot to your shop's group or channel, it picks it by itself"}</div>
+              <div><b>Commands:</b> {status.webhook.url ? 'catalog, buying and commands are on' : 'off until the site runs on HTTPS'}{status.webhook.lastError ? ` · last error: ${status.webhook.lastError}` : ''}</div>
             </div>
           )}
 
-          {status.seenChats?.length > 1 && (
+          {status.seenChats?.length > 0 && (
             <div className="admin-form-group">
-              <label className="admin-label">Post to another chat this bot is in</label>
+              <label className="admin-label">Orders and messages go to</label>
               <select className="admin-input" value={status.chatId || ''} onChange={e => post('chat', { chatId: e.target.value }, 'Chat changed. A message was posted there.')} disabled={!!busy}>
+                {!status.chatId && <option value="">Choose a chat</option>}
                 {status.seenChats.map(c => <option key={c.id} value={c.id}>{c.title} ({c.type})</option>)}
               </select>
+            </div>
+          )}
+          {status.seenChats?.length > 0 && (
+            <div className="admin-form-group">
+              <label className="admin-label">Post new products to</label>
+              <select className="admin-input" value={status.postChatId || ''} onChange={e => post('post-chat', { chatId: e.target.value }, e.target.value ? 'New products will be posted there, with a button to buy in the bot.' : 'New products are no longer posted.')} disabled={!!busy}>
+                <option value="">Don't post</option>
+                {status.seenChats.filter(c => c.type !== 'private').map(c => <option key={c.id} value={c.id}>{c.title} ({c.type})</option>)}
+              </select>
+              <div style={muted}>Each new product is posted with its photo and price about a minute after you create it. Use a channel your customers follow.</div>
             </div>
           )}
 
@@ -95,8 +107,8 @@ export default function AdminTelegramBot({ canEdit }) {
         <div style={{ display: 'grid', gap: 14 }}>
           <ol style={{ ...muted, margin: 0, paddingLeft: 18, lineHeight: 1.7 }}>
             <li>New bot: in Telegram, open <b>@BotFather</b>, send <code>/newbot</code>, copy the token. Or use the token of a bot you already have.</li>
-            <li>Add the bot to your shop's group or channel and send any message there.</li>
-            <li>Paste the token below and click <b>Check</b>.</li>
+            <li>Paste the token below, click <b>Check</b>, then <b>Link this bot</b>.</li>
+            <li>Add the bot to your shop's group or channel (as admin for a channel): it picks that chat by itself for orders and messages.</li>
           </ol>
 
           <div className="admin-form-group" style={{ margin: 0 }}>
@@ -134,7 +146,7 @@ export default function AdminTelegramBot({ canEdit }) {
                       </div>
                     ) : (
                       <div className="admin-alert admin-alert-info" style={{ margin: 0 }}>
-                        No chat seen yet. Add the bot to your shop's group or channel, send a message there, then click <b>Check</b> again.
+                        No chat yet, that's fine: link the bot now, then add it to your shop's group or channel. It will pick that chat by itself.
                       </div>
                     )}
                   </div>
@@ -143,12 +155,12 @@ export default function AdminTelegramBot({ canEdit }) {
                     <input type="checkbox" checked={brand} onChange={e => setBrand(e.target.checked)} style={{ marginTop: 3 }} />
                     <span>
                       Apply the Captain Slabbin look
-                      <div style={muted}>Renames the bot "Captain Slabbin", sets its description, the /shop and /admin commands and an "Open shop" button. Leave unticked to keep the bot's own name and profile.</div>
+                      <div style={muted}>Renames the bot "Captain Slabbin" and gives it the shop's description. The catalog, buying, wallet and commands work either way. Leave unticked to keep the bot's own name and profile.</div>
                     </span>
                   </label>
 
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button type="button" className="admin-btn admin-btn-primary" disabled={!chatId || !!busy} onClick={link}>{busy === 'link' ? 'Linking…' : 'Link this bot'}</button>
+                    <button type="button" className="admin-btn admin-btn-primary" disabled={(found.chats.length > 0 && !chatId) || !!busy} onClick={link}>{busy === 'link' ? 'Linking…' : 'Link this bot'}</button>
                     {replacing && <button type="button" className="admin-btn admin-btn-secondary" onClick={() => { setReplacing(false); setFound(null); setToken('') }}>Cancel</button>}
                   </div>
                 </>
