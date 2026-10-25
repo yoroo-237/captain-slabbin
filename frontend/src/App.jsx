@@ -35,6 +35,7 @@ const AdminGiveaways = lazy(() => import('./pages/admin/AdminGiveaways.jsx'))
 const AdminAnalytics = lazy(() => import('./pages/admin/AdminAnalytics.jsx'))
 const AdminSettings = lazy(() => import('./pages/admin/AdminSettings.jsx'))
 const AdminAccount = lazy(() => import('./pages/admin/AdminAccount.jsx'))
+const AdminTelegram = lazy(() => import('./pages/admin/AdminTelegram.jsx'))
 const AdminSuperDashboard = lazy(() => import('./pages/admin/AdminSuperDashboard.jsx'))
 const AdminInbox = lazy(() => import('./pages/admin/AdminInbox.jsx'))
 import { STAFF_ROLES } from './utils/roles.js'
@@ -152,6 +153,7 @@ export default function App() {
                 <Route path="analytics" element={<AdminAnalytics />} />
                 <Route path="settings" element={<AdminSettings />} />
                 <Route path="account" element={<AdminAccount />} />
+                <Route path="telegram" element={<AdminTelegram />} />
                 <Route path="super" element={<SuperAdminRoute><AdminSuperDashboard /></SuperAdminRoute>} />
               </Route>
               <Route path="/*" element={<Storefront />} />

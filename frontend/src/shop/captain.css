@@ -1007,7 +1007,7 @@
 @keyframes ct-drift { 50% { transform: translate(-60px, 40px); } }
 @media (min-width: 960px) { .cs .ct-box { padding: 44px 48px; } }
 .cs .ct-head h2 { font-size: clamp(32px, 5vw, 54px); font-weight: 800; letter-spacing: -.025em; line-height: 1.05; margin-bottom: 8px; }
-.cs .ct-ways { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.cs .ct-ways { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
 .cs .ct-way { display: flex; align-items: center; gap: 14px; padding: 18px; border-radius: 16px; border: 1px solid var(--line-2); background: var(--surface-2); transition: border-color .2s, transform .3s var(--ease), background-color .2s, opacity .6s var(--ease); }
 .cs .ct-way:hover { transform: perspective(700px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) translateY(-3px); border-color: var(--line-3); }
 .cs .ct-way.hot { background: var(--red); border-color: transparent; color: #fff; }
@@ -1087,3 +1087,41 @@
   .cs .word-reveal span { opacity: 1; }
 }
 .cs-gate .gate-word { color: var(--red); letter-spacing: .14em; font-weight: 800; }
+
+/* Staff only: back to the admin dashboard */
+.cs .header .staff-link { white-space: nowrap; }
+.cs .drawer-link.staff-link { color: var(--red-text); font-weight: 700; }
+
+/* ── Category banners (original shop look) ───────────────────────────────── */
+.cs .banners { padding: 28px 0 8px; }
+.cs .banners-in { display: grid; gap: 10px; justify-items: center; }
+.cs .banner { position: relative; display: grid; place-items: center; width: min(100%, 560px); aspect-ratio: 10 / 3; border-radius: 12px; overflow: hidden; background: var(--surface, #141210);
+  box-shadow: 0 0 0 2px rgb(214 170 110 / .55), 0 10px 24px -14px rgb(0 0 0 / .8);
+  animation: cs-rise .6s var(--ease) backwards; animation-delay: calc(var(--i) * 60ms);
+  transition: transform .25s var(--ease), box-shadow .25s; }
+.cs .banner:hover { transform: translateY(-3px) scale(1.01); box-shadow: 0 0 0 2px rgb(240 200 140 / .9), 0 16px 30px -14px rgb(0 0 0 / .9); }
+.cs .banner:active { transform: scale(.985); }
+.cs .banner img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cs .banner-text { gap: 2px; align-content: center; text-align: center; padding: 0 16px; color: var(--text); background: var(--bones) 0 0 / 150px 150px, linear-gradient(135deg, var(--hover), transparent); }
+.cs .banner-text .display { font-size: clamp(28px, 8vw, 44px); line-height: 1; text-transform: uppercase; display: inline-flex; align-items: center; gap: 8px; }
+.cs .banner-text small { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.cs .banner-text.fire { background: linear-gradient(135deg, #8e1610, var(--red)); color: #fff; box-shadow: 0 0 0 2px rgb(255 140 90 / .6), 0 10px 24px -14px rgb(0 0 0 / .8); }
+.cs .banner-text.fire small { color: rgb(255 255 255 / .8); }
+.cs .banners-cta { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 18px; }
+.cs .banners-cta .btn { min-width: 140px; text-transform: uppercase; letter-spacing: .08em; }
+.cs .btn-light { background: #cfd6dc; color: #111; }
+.cs .btn-light:hover { background: #e2e7eb; }
+/* Wide screens: two banners per row */
+@media (min-width: 900px) {
+  .cs .banners-in { grid-template-columns: repeat(2, minmax(0, 560px)); justify-content: center; gap: 14px; }
+  .cs .banners-cta { grid-column: 1 / -1; }
+}
+
+/* Phones and tablets: the outlined "Captain Slabbin" behind the hero fights the
+   headline for space, and section titles need the full width */
+@media (max-width: 959px) {
+  .cs .hx-words { display: none; }
+}
+@media (max-width: 600px) {
+  .cs .section-head { flex-direction: column; align-items: flex-start; gap: 6px; }
+}

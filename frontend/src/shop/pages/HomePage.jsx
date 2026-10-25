@@ -56,6 +56,9 @@ export default function HomePage() {
 
   // Desktop: the category rail scrolls sideways as the page scrolls down, so
   // its section is as tall as the rail is wide
+  // Once the admin has given the categories their banners (Admin → Categories),
+  // the home shows them stacked like the original shop instead of the rail
+  const bannerMode = shelves.categories.some(c => c.imageUrl)
   const tiles = [{ slug: 'fire-sale', name: 'Fire Sale', count: shelves.fireSale, fire: true }, ...shelves.categories]
   useLayoutEffect(() => {
     const sec = railRef.current, track = trackRef.current
@@ -69,7 +72,7 @@ export default function HomePage() {
     size()
     window.addEventListener('resize', size)
     return () => window.removeEventListener('resize', size)
-  }, [tiles.length])
+  }, [tiles.length, bannerMode])
 
   // Ad banner: the admin's lines, else the live Fire Sale deals
   const adLines = (settings.ad_banner || '').split('\n').map(l => l.trim()).filter(Boolean)
@@ -77,6 +80,7 @@ export default function HomePage() {
     ? adLines.map(text => ({ text, to: '/s/fire-sale' }))
     : deals.map(p => ({ text: p.name, tag: `−${salePct(p)}%`, price: money(p.price), to: productUrl(p) }))
   const total = shelves.categories.reduce((s, c) => s + c.count, 0)
+  const phone = settings.support_phone
   const freeAt = Number(settings.shipping_free_threshold || 0)
 
   return (
@@ -105,6 +109,31 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      {bannerMode && (
+        <section className="banners" aria-label="Shop by category">
+          <div className="container banners-in">
+            {shelves.fireSale > 0 && (
+              <Link to="/s/fire-sale" className="banner banner-text fire" style={{ '--i': 0 }}>
+                <span className="display"><Icon.fire /> Fire Sale</span><small>{shelves.fireSale} deals this week</small>
+              </Link>
+            )}
+            {shelves.categories.map((c, i) => (
+              <Link key={c.slug} to={`/s/${c.slug}`} className={'banner' + (c.imageUrl ? '' : ' banner-text')} style={{ '--i': i + 1 }} aria-label={c.name}>
+                {c.imageUrl
+                  ? <img src={c.imageUrl} alt={c.name} loading={i < 4 ? 'eager' : 'lazy'} decoding="async" />
+                  : <><span className="display">{c.name}</span><small>{c.count ? `${c.count} item${c.count === 1 ? '' : 's'}` : 'Coming soon'}</small></>}
+              </Link>
+            ))}
+            {(phone || settings.signal_url) && (
+              <div className="banners-cta">
+                {phone && <a className="btn btn-light" href={`sms:${phone.replace(/[^\d+]/g, '')}`}>Text us</a>}
+                {settings.signal_url && <a className="btn btn-outline" href={settings.signal_url} target="_blank" rel="noreferrer">Join Signal</a>}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       <section className="stat-band" aria-label="The shop in numbers">
         <div className="container stat-band-in">
@@ -143,7 +172,7 @@ export default function HomePage() {
         </section>
       )}
 
-      <section className="rail" ref={railRef} aria-label="Shop by category">
+      {!bannerMode && <section className="rail" ref={railRef} aria-label="Shop by category">
         <div className="rail-stage">
           <div className="container rail-head">
             <h2>Shop by category</h2>
@@ -160,7 +189,7 @@ export default function HomePage() {
             ))}
           </div>
         </div>
-      </section>
+      </section>}
 
       <section className="section">
         <div className="container">

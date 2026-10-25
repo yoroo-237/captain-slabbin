@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { useApp } from '../../context/AppContext.jsx'
+import { isStaff } from '../../utils/roles.js'
 import { useCart } from '../../context/CartContext.jsx'
 import { apiFetch } from '../../utils/api.js'
 import { useShop } from '../ShopContext.jsx'
@@ -164,6 +165,7 @@ export default function Layout({ children, shown, target, onSwap }) {
           </button>
           <div className="header-right">
             <button className="icon-btn mobile-only" aria-label="Search products" onClick={() => setSearching(true)}><Icon.search /></button>
+            {isStaff(user) && <Link to="/admin" className="btn btn-outline btn-sm staff-link desktop-only">Dashboard</Link>}
             {user && <BalanceChip />}
             <button className="icon-btn theme-btn desktop-only" onClick={switchTheme} aria-label={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}>
               <Icon.moon /><Icon.sun />
@@ -226,6 +228,7 @@ export default function Layout({ children, shown, target, onSwap }) {
             <hr />
             {user ? (
               <>
+                {isStaff(user) && <Link className="drawer-link staff-link" to="/admin">Admin dashboard</Link>}
                 <Link className="drawer-link" to="/account">My account</Link>
                 <Link className="drawer-link" to="/account/wallet">Wallet <span className="muted">{money(balance)}</span></Link>
                 <Link className="drawer-link" to="/account/orders">Orders</Link>
