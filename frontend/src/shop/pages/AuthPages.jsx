@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../../utils/api.js'
 import { useApp } from '../../context/AppContext.jsx'
+import { useSeo } from '../seo.js'
 import { SignInForm, CreateAccountForm } from '../components/AuthForms.jsx'
 import { STAFF_ROLES } from '../../utils/roles.js'
 import { Icon } from '../lib.jsx'
@@ -26,6 +27,7 @@ function AuthShell({ title, sub, children, footer, perks }) {
 const target = (location, user) => location.state?.from?.pathname || (STAFF_ROLES.includes(user?.role) ? '/admin' : '/account')
 
 export function LoginPage() {
+  useSeo({ title: 'Sign in', noindex: true })
   const { user } = useApp()
   const location = useLocation()
   const navigate = useNavigate()
@@ -43,6 +45,7 @@ export function LoginPage() {
 
 // The dedicated sign-up page; checkout also creates accounts inline
 export function CreateAccountPage() {
+  useSeo({ title: 'Create an account', noindex: true })
   const { user } = useApp()
   const location = useLocation()
   const navigate = useNavigate()
@@ -61,6 +64,7 @@ export function CreateAccountPage() {
 
 // /tg-login?t=…: the one-tap sign-in link the Telegram bot hands out
 export function TelegramLoginPage() {
+  useSeo({ title: 'Signing in', noindex: true })
   const { login, loadUserData } = useApp()
   const navigate = useNavigate()
   const [error, setError] = useState('')

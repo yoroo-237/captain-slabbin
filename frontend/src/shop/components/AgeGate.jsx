@@ -4,12 +4,13 @@ import { apiFetch } from '../../utils/api.js'
 import { useApp } from '../../context/AppContext.jsx'
 import { useShop } from '../ShopContext.jsx'
 import { createSmoke, GATE_TIMING } from './smoke.js'
+import { Icon } from '../lib.jsx'
 
 // Password + 21+ gate in front of the shop. Smoke drifts off the logo while it
 // waits; on the right password the smoke swallows the screen, the shop is mounted
 // behind it at its thickest (passGate), and the smoke lifts off the real page.
 // The API refuses catalog requests until the gate is passed.
-export default function AgeGate({ onFinished }) {
+export default function AgeGate({ onFinished, onClose }) {
   const { passGate, settings, shelves, unlocked } = useShop()
   const { theme } = useApp()
   const [password, setPassword] = useState('')
@@ -78,6 +79,7 @@ export default function AgeGate({ onFinished }) {
       <canvas ref={canvasRef} className="gate-smoke" aria-hidden="true" />
       {!covered && (
         <form className="lock-card cs" onSubmit={submit} autoComplete="off">
+          {onClose && <button type="button" className="icon-btn gate-close" aria-label="Back to the site" onClick={onClose}><Icon.close /></button>}
           <div className="gate-logo-wrap">
             <img ref={logoRef} className="gate-logo" src="/brand/logo.webp" alt={settings.site_name || 'Captain Slabbin'} />
             <span className="ember" aria-hidden="true" />

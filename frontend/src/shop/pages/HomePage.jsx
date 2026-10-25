@@ -6,6 +6,7 @@ import ProductCard, { CardSkeleton } from '../components/ProductCard.jsx'
 import { AboutTeaser, ContactSection } from '../components/AboutBits.jsx'
 import Testimonials from '../components/Testimonials.jsx'
 import { Icon, Coin, money, salePct, productUrl } from '../lib.jsx'
+import { useSeo, storeLd } from '../seo.js'
 import { reduceMotion, useScrollVar, Split, CountUp, magnetic, unmagnetic } from '../motion.jsx'
 
 // Banner art from the original shop, used until the admin uploads one for the
@@ -18,7 +19,13 @@ const BANNER_ART = {
 const bannerArt = c => c.imageUrl || (BANNER_ART[c.slug] ? `/brand/cats/${BANNER_ART[c.slug]}.webp` : null)
 
 export default function HomePage() {
-  const { shelves, settings } = useShop()
+  const { shelves, settings, unlocked, openGate } = useShop()
+  useSeo({
+    title: 'Top shelf weed, carts and edibles shipped across the USA',
+    description: 'Captain Slabbin: top shelf flower, concentrates, moonrocks, disposables, prerolls, edibles and shrooms. Pay with crypto in one tap, discreet tracked shipping nationwide across the US. Adults 21+.',
+    path: '/',
+    jsonLd: [storeLd(settings), { '@context': 'https://schema.org', '@type': 'WebSite', name: settings.site_name || 'Captain Slabbin', url: window.location.origin, inLanguage: 'en-US' }],
+  })
   const [featured, setFeatured] = useState(null)
   const [deals, setDeals] = useState([])
   const heroRef = useRef(null)
@@ -27,10 +34,12 @@ export default function HomePage() {
   const trackRef = useRef(null)
   const stepsRef = useRef(null)
 
+  // Products and prices only once the shop code is in
   useEffect(() => {
+    if (!unlocked) return
     apiFetch('/products?sort=featured&limit=8').then(d => setFeatured(d.products)).catch(() => setFeatured([]))
     apiFetch('/products?category=fire-sale&limit=12').then(d => setDeals(d.products || [])).catch(() => {})
-  }, [])
+  }, [unlocked])
 
   useScrollVar(heroRef)
   useScrollVar(railRef)
@@ -108,7 +117,7 @@ export default function HomePage() {
           </div>
           <div className="container hx-copy">
             <h1 className="display">
-              <Split text="Top shelf." delay={0.2} />
+              <Split text="Top shelf." delay={0.2} />{' '}
               <Split text="Delivered." delay={0.55} className="blood-text" />
             </h1>
             <p className="lead">Hand-picked flower, concentrates, edibles and more. Pay with crypto in one tap and your invoice goes straight to the shop on Telegram.</p>
@@ -205,7 +214,12 @@ export default function HomePage() {
             <h2>Captain’s picks</h2>
             <Link to="/s/all" className="see-all">See all <Icon.arrow /></Link>
           </div>
-          {featured === null ? (
+          {!unlocked ? (
+            <div className="picks-locked">
+              <p>Today's menu, prices and Fire Sale deals are for members. Type the shop code to see them.</p>
+              <button type="button" className="btn btn-primary" onClick={openGate}><Icon.lock /> Enter the shop</button>
+            </div>
+          ) : featured === null ? (
             <div className="grid">{Array.from({ length: 4 }, (_, i) => <CardSkeleton key={i} />)}</div>
           ) : featured.length ? (
             <div className="grid">{featured.map(p => <ProductCard key={p.id} product={p} />)}</div>

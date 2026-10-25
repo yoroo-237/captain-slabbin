@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { apiFetch } from '../../utils/api.js'
 import { useCart } from '../../context/CartContext.jsx'
 import { useShop } from '../ShopContext.jsx'
+import { useSeo } from '../seo.js'
 import ProductCard, { toCartItem } from '../components/ProductCard.jsx'
 import { Icon, money, isOnSale, isVideo, productMedia, salePct, ProductArt, Stars, fmtDate } from '../lib.jsx'
 import { useApp } from '../../context/AppContext.jsx'
@@ -20,6 +21,8 @@ export default function ProductPage() {
   const [error, setError] = useState('')
   const [index, setIndex] = useState(0)
   const [zoom, setZoom] = useState(false)
+  // Members-only page: named in the tab, never indexed
+  useSeo({ title: product?.name || 'Product', noindex: true })
   const [qty, setQty] = useState(1)
   const [buyHidden, setBuyHidden] = useState(false)
   const buyRef = useRef(null)

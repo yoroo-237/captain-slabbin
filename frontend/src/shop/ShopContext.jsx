@@ -1,7 +1,12 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { apiFetch } from '../utils/api.js'
 
-// Storefront state: gate pass, public settings, shelves (categories) and toasts.
+// Storefront state: gate pass, 21+ confirmation, public settings, shelves
+// (categories) and toasts.
+//
+// Two locks: the public pages (home, about, FAQ, shelf intros) only ask for a
+// 21+ confirmation, so search engines and visitors can read them; products,
+// prices, cart and account need the gate code (AgeGate), opened on demand.
 const ShopContext = createContext(null)
 
 export function ShopProvider({ children }) {
@@ -9,6 +14,8 @@ export function ShopProvider({ children }) {
   const [settings, setSettings]   = useState({})
   const [shelves, setShelves]     = useState({ categories: [], fireSale: 0 })
   const [toasts, setToasts]       = useState([])
+  const [ageOk, setAgeOk]         = useState(() => { try { return localStorage.getItem('cs_age') === '1' } catch { return false } })
+  const [gateWanted, setGateWanted] = useState(false)
   const toastId = useRef(0)
 
   // api.js drops the token and fires this when the server asks for the gate again
@@ -27,12 +34,16 @@ export function ShopProvider({ children }) {
     setGateToken(token)
   }, [])
 
+  const confirmAge = useCallback(() => {
+    try { localStorage.setItem('cs_age', '1') } catch { /* private mode */ }
+    setAgeOk(true)
+  }, [])
+
   const unlocked = !!gateToken || !!localStorage.getItem('token')
 
   useEffect(() => {
-    if (!unlocked) return
     apiFetch('/categories').then(setShelves).catch(() => {})
-  }, [unlocked])
+  }, [])
 
   const toast = useCallback((message, action) => {
     const id = ++toastId.current
@@ -41,7 +52,7 @@ export function ShopProvider({ children }) {
   }, [])
 
   return (
-    <ShopContext.Provider value={{ unlocked, passGate, settings, shelves, toasts, toast }}>
+    <ShopContext.Provider value={{ unlocked, passGate, ageOk: ageOk || unlocked, confirmAge, gateWanted, openGate: () => setGateWanted(true), closeGate: () => setGateWanted(false), settings, shelves, toasts, toast }}>
       {children}
     </ShopContext.Provider>
   )

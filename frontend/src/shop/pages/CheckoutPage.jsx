@@ -4,6 +4,7 @@ import { apiFetch } from '../../utils/api.js'
 import { useApp } from '../../context/AppContext.jsx'
 import { useCart } from '../../context/CartContext.jsx'
 import { useShop } from '../ShopContext.jsx'
+import { useSeo } from '../seo.js'
 import { SignInForm, CreateAccountForm } from '../components/AuthForms.jsx'
 import { shippingFor } from './CartPage.jsx'
 import { Icon, money, Coin, fmtCrypto, ProductArt } from '../lib.jsx'
@@ -33,6 +34,7 @@ function loadAddress() {
 // (asked only when the profile has none), and delivery is an option — choosing it
 // asks for a US address, adds shipping and puts the address on the invoice.
 export default function CheckoutPage() {
+  useSeo({ title: 'Checkout', noindex: true })
   const { items, subtotal, clearCart } = useCart()
   const { user, balance, holdings, loadUserData, refreshBalance } = useApp()
   const { settings } = useShop()

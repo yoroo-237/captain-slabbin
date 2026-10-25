@@ -2,6 +2,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useApp } from '../../context/AppContext.jsx'
 import { useCart } from '../../context/CartContext.jsx'
 import { useShop } from '../ShopContext.jsx'
+import { useSeo } from '../seo.js'
 import { Icon, money, ProductArt, productUrl } from '../lib.jsx'
 
 export function shippingFor(subtotal, settings) {
@@ -13,6 +14,7 @@ export function shippingFor(subtotal, settings) {
 // The cart. Every order is paid in the app from the crypto wallet (an account is
 // created at checkout if needed); the paid invoice then goes to Telegram.
 export default function CartPage() {
+  useSeo({ title: 'Your cart', noindex: true })
   const { items, subtotal, updateQuantity, removeItem, clearCart } = useCart()
   const { user, balance } = useApp()
   const { settings } = useShop()

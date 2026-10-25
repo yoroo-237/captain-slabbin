@@ -77,7 +77,7 @@ export function ContactSection({ title = 'Questions? Ask the crew.' }) {
   )
 }
 
-const FAQ_DEFAULT = [
+export const FAQ_DEFAULT = [
   ['How do I pay?', 'With crypto from your wallet on the site: BTC, LTC, ETH, DOGE or XMR. Add funds once, then every order is paid in one tap. The price is converted and locked at the moment you order.'],
   ['What do you need to know about me?', 'A username and a password, nothing else. Your Telegram is optional and only used so the shop can reach you about an order.'],
   ['How does delivery work?', 'At checkout choose "Ship it to me" and enter a US address: it ships in plain, unmarked packaging with tracking. Or choose no delivery and arrange it with the crew on Telegram.'],
@@ -85,22 +85,25 @@ const FAQ_DEFAULT = [
   ['How do I follow my order?', 'Your orders and tracking numbers are in your account. You can also message the shop at any time from the Messages tab.'],
 ]
 
-// Questions & answers: the ones set in Admin → FAQ, else the basics
-export function Faq() {
+// Questions & answers: the ones set in Admin → FAQ, else the basics.
+// page: the /faq page's own heading (h1); onItems: hands the list to its JSON-LD
+export function Faq({ page = false, onItems }) {
   const [items, setItems] = useState(null)
   const [open, setOpen] = useState(0)
   useEffect(() => {
     apiFetch('/content/faq')
-      .then(f => setItems(f?.length ? f.map(x => [x.question, x.answer]) : FAQ_DEFAULT))
-      .catch(() => setItems(FAQ_DEFAULT))
-  }, [])
+      .then(f => f?.length ? f.map(x => [x.question, x.answer]) : FAQ_DEFAULT)
+      .catch(() => FAQ_DEFAULT)
+      .then(list => { setItems(list); onItems?.(list) })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
   if (!items) return null
+  const Title = page ? 'h1' : 'h2'
   return (
     <section className="section faq" aria-label="Questions and answers">
       <div className="container faq-in">
         <div className="faq-head">
-          <h2>Good to know</h2>
-          <p className="muted">The questions new customers ask most.</p>
+          <Title className={page ? 'display' : undefined}>{page ? 'Questions & answers' : 'Good to know'}</Title>
+          <p className="muted">{page ? 'Ordering, paying with crypto and shipping across the US: what new customers ask most.' : 'The questions new customers ask most.'}</p>
         </div>
         <div className="faq-list">
           {items.map(([q, a], i) => (

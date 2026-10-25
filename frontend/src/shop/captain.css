@@ -319,7 +319,8 @@
   .cs .hx-logo { grid-column: 2; grid-row: 1; width: min(62vh, 470px); margin-top: 0; }
 }
 /* Split letters: each rises and unblurs, one after another */
-.cs .split { display: inline-flex; overflow: hidden; padding-bottom: .04em; }
+.cs .split { display: inline; }
+.cs .split .w { display: inline-block; overflow: hidden; padding-bottom: .04em; vertical-align: top; white-space: nowrap; }
 .cs .split .ch { display: inline-block; animation: split-in .8s var(--ease) backwards; animation-delay: calc(var(--d) + var(--i) * .035s); }
 @keyframes split-in { from { transform: translateY(105%) rotate(6deg); opacity: 0; } }
 .cs .magnet { transition: transform .2s var(--ease), background-color .15s, border-color .15s; }
@@ -1061,7 +1062,7 @@
 /* ── FAQ ─────────────────────────────────────────────────────────────────── */
 .cs .faq-in { display: grid; gap: 24px; }
 @media (min-width: 960px) { .cs .faq-in { grid-template-columns: 360px 1fr; gap: 56px; align-items: start; } .cs .faq-head { position: sticky; top: calc(var(--header-h) + 64px); } }
-.cs .faq-head h2 { font-size: clamp(32px, 5vw, 54px); font-weight: 800; letter-spacing: -.025em; line-height: 1.05; margin-bottom: 8px; }
+.cs .faq-head h2, .cs .faq-head h1 { font-size: clamp(32px, 5vw, 54px); font-weight: 800; letter-spacing: -.025em; line-height: 1.05; margin-bottom: 8px; }
 .cs .faq-list { display: grid; gap: 10px; }
 .cs .faq-item { border-radius: 14px; border: 1px solid var(--line); background: var(--surface); transition: border-color .2s; }
 .cs .faq-item.open { border-color: var(--line-3); }
@@ -1132,3 +1133,36 @@
 .cs .tg-connect .btn { gap: 8px; }
 .cs .tg-connect.on { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; background: var(--hover); }
 .cs .tg-connect.on span { display: inline-flex; align-items: center; gap: 8px; }
+
+/* Gate opened from a public page: a way back */
+.cs-gate .gate-close { position: fixed; top: 16px; right: 16px; z-index: 3; }
+
+/* Locked page (product, cart, account before the gate code) */
+.cs .locked { max-width: 520px; text-align: center; display: grid; justify-items: center; gap: 14px; padding: 48px 0; }
+.cs .locked-ic { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; background: var(--hover); color: var(--red-text); }
+.cs .locked-ic svg { width: 24px; height: 24px; }
+.cs .locked h1 { font-size: clamp(36px, 7vw, 56px); }
+.cs .locked-cta { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+
+/* 21+ confirmation over the public pages */
+.cs .age-notice { z-index: 90; }
+.cs .age-card { text-align: center; display: grid; justify-items: center; gap: 12px; max-width: 420px; }
+.cs .age-card h2 { font-size: clamp(30px, 6vw, 40px); }
+.cs .age-actions { display: grid; gap: 10px; width: 100%; }
+
+/* Home before the shop code: the picks are a call to enter */
+.cs .picks-locked { display: grid; justify-items: start; gap: 14px; padding: 28px; border: 1px dashed var(--line-3); border-radius: 18px; background: var(--hover); }
+.cs .picks-locked p { margin: 0; max-width: 560px; color: var(--text-2); }
+
+/* Public shelf intro (before the shop code) */
+.cs .shelf-public .crumbs { font-size: 13px; color: var(--muted); margin-bottom: 16px; display: flex; gap: 6px; }
+.cs .shelf-public .crumbs a:hover { color: var(--text); }
+.cs .shelf-banner { display: block; width: min(100%, 560px); height: auto; border-radius: 10px; margin-bottom: 22px; }
+.cs .shelf-public h1 { font-size: clamp(44px, 9vw, 84px); margin-bottom: 12px; }
+.cs .shelf-public .lead { max-width: 680px; font-size: 17px; color: var(--text-2); }
+.cs .shelf-types { list-style: none; padding: 0; margin: 16px 0 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.cs .shelf-types li { padding: 8px 12px; border-radius: 999px; background: var(--hover); font-size: 14px; }
+.cs .shelf-more { font-size: clamp(26px, 4vw, 36px); margin-bottom: 12px; }
+.cs .shelf-links { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 10px 18px; }
+.cs .shelf-links a { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line-3); }
+.cs .main-nav > li.nav-aside-2 { margin-left: 0; }

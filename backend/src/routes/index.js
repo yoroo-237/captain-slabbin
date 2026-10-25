@@ -26,7 +26,9 @@ router.use('/wallet',        walletRoutes);
 router.use('/orders',        orderRoutes);
 router.use('/gate',          gateRoutes);
 router.use('/products',      requireGate, productRoutes);
-router.use('/categories',    requireGate, categoryRoutes);
+// Shelf names, banners and counts are public (the storefront's indexable pages);
+// products and prices stay behind the gate
+router.use('/categories',    categoryRoutes);
 router.use('/telegram',      telegramRoutes);
 router.use('/messages',      messageRoutes);
 router.use('/notifications', notificationRoutes);

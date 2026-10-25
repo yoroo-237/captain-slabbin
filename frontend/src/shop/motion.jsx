@@ -29,12 +29,21 @@ export function useScrollVar(ref, mode = 'sticky') {
   }, [ref, mode])
 }
 
-// Letters that rise into place one after another
+// Letters that rise into place one after another. Letters sit in word boxes
+// separated by real spaces, so the text still reads "Top shelf." for screen
+// readers and search engines.
 export function Split({ text, delay = 0, className }) {
+  let i = 0
+  const words = text.split(' ')
   return (
-    <span className={'split ' + (className || '')} aria-label={text}>
-      {[...text].map((ch, i) => (
-        <span key={i} className="ch" aria-hidden="true" style={{ '--i': i, '--d': `${delay}s` }}>{ch === ' ' ? ' ' : ch}</span>
+    <span className={'split ' + (className || '')}>
+      {words.map((word, w) => (
+        <span key={w}>
+          <span className="w">
+            {[...word].map((ch, k) => <span key={k} className="ch" style={{ '--i': i++, '--d': `${delay}s` }}>{ch}</span>)}
+          </span>
+          {w < words.length - 1 && (i++, ' ')}
+        </span>
       ))}
     </span>
   )

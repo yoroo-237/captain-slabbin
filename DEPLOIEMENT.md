@@ -225,6 +225,19 @@ Ce que fait le bot :
 - **Pour la boutique**, dans le groupe : la facture de chaque commande payée (bouton « Open order ») et les nouveaux messages (bouton « Reply in admin »).
 - Les commandes passées dans le bot sont sans livraison : l'équipe organise la remise sur Telegram. Pour une livraison à une adresse, le client commande sur le site.
 
+### 3.5 bis SEO (Google, orienté USA)
+Ce qui est en place :
+- **Vitrine publique indexable** : accueil, About, FAQ et une page par rayon (`/s/flower`, `/s/fire-sale`…), avec bannière, texte et liens. Le visiteur confirme seulement « 21+ ». Produits, prix, panier et comptes restent derrière la porte (code aléatoire) et ne sont pas indexés (`noindex` + `robots.txt`).
+- **Au build** (`npm run build` → `scripts/prerender.mjs`) : une page HTML par page publique avec son titre, sa description, l'URL canonique, les aperçus de partage (Open Graph / Twitter) et les données structurées (OnlineStore, WebSite, BreadcrumbList, CollectionPage, FAQPage), plus `sitemap.xml` et `robots.txt`. Les rayons et la FAQ sont lus sur l'API au moment du build : **redéployez le frontend après avoir ajouté ou renommé un rayon**.
+- Langue `en-US`, `hreflang` en-us, `geo.region` US, textes « shipped across the USA ».
+
+À faire une fois :
+1. **Vercel → Settings → Domains** : gardez `www.captainslabbin.shop` comme domaine principal (l'autre redirige vers lui). Les URL canoniques utilisent `https://www.captainslabbin.shop` ; pour en changer, ajoutez la variable `SITE_URL` dans Vercel.
+2. **Google Search Console** (search.google.com/search-console) : *Add property* → **Domain** → `captainslabbin.shop` ; ajoutez chez votre registrar l'enregistrement **TXT** indiqué, puis **Verify**.
+3. Search Console → **Sitemaps** : soumettez `https://www.captainslabbin.shop/sitemap.xml`.
+4. **Bing Webmaster Tools** (bing.com/webmasters) : *Import from Google Search Console*.
+5. Vérifiez un aperçu : collez `https://www.captainslabbin.shop/s/flower` dans Telegram, il doit afficher la bannière et le titre.
+
 ### 3.6 Crypto (dépôts automatiques)
 - **BTC / LTC / DOGE** : `BLOCKCYPHER_TOKEN`, `BTC_HD_SEED` et `PUBLIC_URL` (BlockCypher appelle `/api/webhooks/blockcypher`).
 - **ETH** : `ETH_HD_SEED` et les clés Alchemy.

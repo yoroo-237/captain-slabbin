@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { useShop } from '../ShopContext.jsx'
+import { useSeo, storeLd } from '../seo.js'
 import Testimonials from '../components/Testimonials.jsx'
 import { ContactSection, Faq } from '../components/AboutBits.jsx'
 import { Icon, aboutParagraphs } from '../lib.jsx'
@@ -16,6 +17,12 @@ const VALUES = [
 // /about: who the shop is, how it works, what buyers say, answers, contact
 export default function AboutPage() {
   const { settings, shelves } = useShop()
+  useSeo({
+    title: 'About the crew: an online shop shipping across the USA',
+    description: 'Who is Captain Slabbin: a small crew running an online shop for adults 21+, with top shelf products, crypto checkout and discreet tracked shipping to all states we serve in the US.',
+    path: '/about',
+    jsonLd: [storeLd(settings), { '@context': 'https://schema.org', '@type': 'AboutPage', name: 'About Captain Slabbin', inLanguage: 'en-US' }],
+  })
   const [intro, ...story] = aboutParagraphs(settings)
   const storyRef = useRef(null)
   useScrollVar(storyRef, 'pass')
@@ -28,7 +35,7 @@ export default function AboutPage() {
           <div className="ab-hero-copy">
             <span className="ab-kicker">About us</span>
             <h1 className="display">
-              <Split text="Run by a crew," delay={0.15} />
+              <Split text="Run by a crew," delay={0.15} />{' '}
               <Split text="not a call center." delay={0.5} className="blood-text" />
             </h1>
             <p className="lead">{intro}</p>

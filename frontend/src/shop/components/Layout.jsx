@@ -21,7 +21,7 @@ const reduceMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)
 // page is swapped in under the thickest smoke (onSwap) and the smoke lifts.
 // Query-only changes (filters, pages of a shelf) swap at once.
 export default function Layout({ children, shown, target, onSwap }) {
-  const { settings, shelves, toasts } = useShop()
+  const { settings, shelves, toasts, unlocked, openGate } = useShop()
   const { user, balance, theme, toggleTheme } = useApp()
   const { itemCount } = useCart()
   const [drawer, setDrawer] = useState(false)
@@ -71,12 +71,14 @@ export default function Layout({ children, shown, target, onSwap }) {
     return () => window.removeEventListener('pointerdown', onDown)
   }, [])
 
-  // "/" opens the search from anywhere
+  // "/" opens the search from anywhere (the gate first, before the shop code)
+  const searchRef = useRef(null)
+  searchRef.current = () => unlocked ? setSearching(true) : openGate()
   useEffect(() => {
     const onKey = e => {
       if (e.key !== '/' || e.target.closest?.('input, textarea, select, [contenteditable]')) return
       e.preventDefault()
-      setSearching(true)
+      searchRef.current()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -160,11 +162,11 @@ export default function Layout({ children, shown, target, onSwap }) {
             </span>
             <span className="brand-name">{settings.site_name || 'Captain Slabbin'}</span>
           </Link>
-          <button className="header-search desktop-only" onClick={() => setSearching(true)}>
+          <button className="header-search desktop-only" onClick={() => unlocked ? setSearching(true) : openGate()}>
             <Icon.search /><span>Search products, strains, SKUs…</span><kbd>/</kbd>
           </button>
           <div className="header-right">
-            <button className="icon-btn mobile-only" aria-label="Search products" onClick={() => setSearching(true)}><Icon.search /></button>
+            <button className="icon-btn mobile-only" aria-label="Search products" onClick={() => unlocked ? setSearching(true) : openGate()}><Icon.search /></button>
             {isStaff(user) && <Link to="/admin" className="btn btn-outline btn-sm staff-link desktop-only">Dashboard</Link>}
             {user && <BalanceChip />}
             <button className="icon-btn theme-btn desktop-only" onClick={switchTheme} aria-label={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}>
@@ -196,7 +198,8 @@ export default function Layout({ children, shown, target, onSwap }) {
               </li>
             ))}
             <li><NavLink to="/s/all">Shop all</NavLink></li>
-            <li className="nav-aside"><NavLink to="/about">About</NavLink></li>
+            <li className="nav-aside"><NavLink to="/faq">FAQ</NavLink></li>
+            <li className="nav-aside nav-aside-2"><NavLink to="/about">About</NavLink></li>
             {tgUser && <li><a href={`https://t.me/${tgUser}`} target="_blank" rel="noreferrer"><Icon.telegram /> Telegram</a></li>}
           </ul>
         </nav>
@@ -225,6 +228,7 @@ export default function Layout({ children, shown, target, onSwap }) {
             ))}
             <NavLink to="/s/all" className="drawer-link">Shop all</NavLink>
             <NavLink to="/about" className="drawer-link">About us</NavLink>
+            <NavLink to="/faq" className="drawer-link">FAQ</NavLink>
             <hr />
             {user ? (
               <>
@@ -281,6 +285,7 @@ export default function Layout({ children, shown, target, onSwap }) {
                 <li><Link to="/account/wallet">Add funds</Link></li>
                 <li><Link to="/account/orders">Track an order</Link></li>
                 <li><Link to="/about">About us</Link></li>
+                <li><Link to="/faq">FAQ</Link></li>
               </ul>
             </div>
             <div>
@@ -472,17 +477,18 @@ function SearchSheet({ onClose }) {
 
 // Shown once per browser session, like the original shop's offer pop-up
 function PromoPopup() {
-  const { settings } = useShop()
+  const { settings, unlocked } = useShop()
   const [open, setOpen] = useState(false)
 
+  // Inside the shop only: never on top of the 21+ check or the gate
   useEffect(() => {
-    if (settings.promo_enabled !== 'true' || !settings.promo_headline) return
+    if (!unlocked || settings.promo_enabled !== 'true' || !settings.promo_headline) return
     let seen = false
     try { seen = sessionStorage.getItem('cs_promo') === '1' } catch { /* storage blocked */ }
     if (seen) return
     const id = setTimeout(() => setOpen(true), 2500)
     return () => clearTimeout(id)
-  }, [settings.promo_enabled, settings.promo_headline])
+  }, [unlocked, settings.promo_enabled, settings.promo_headline])
 
   function close() {
     setOpen(false)

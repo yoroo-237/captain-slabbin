@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../utils/api.js'
 import { useShop } from '../ShopContext.jsx'
+import { useSeo, breadcrumbLd, shelfCopy, shelfArt } from '../seo.js'
 import ProductCard, { CardSkeleton } from '../components/ProductCard.jsx'
 import { Icon } from '../lib.jsx'
 
@@ -19,7 +20,13 @@ const PER_PAGE = 24
 // /s/:slug — one shelf with search, sort, sub-shelf chips, a real price range,
 // on-sale/in-stock filters and pagination. Every filter lives in the URL so
 // links and Back work. /s/all is the whole catalog (and where header search lands).
+// Before the shop code: the shelf's public intro (indexable). After: the catalog.
 export default function ShelfPage() {
+  const { unlocked } = useShop()
+  return unlocked ? <ShelfCatalog /> : <PublicShelf />
+}
+
+function ShelfCatalog() {
   const { slug } = useParams()
   const [params, setParams] = useSearchParams()
   const { shelves } = useShop()
@@ -45,6 +52,13 @@ export default function ShelfPage() {
     : all ? { slug, name: 'Shop all', children: [] }
     : shelves.categories.find(c => c.slug === slug)
   const title = all && q ? `Results for “${q}”` : shelf?.children.find(c => c.slug === sub)?.name || shelf?.name || slug.replace(/-/g, ' ')
+  useSeo({
+    title: slug === 'fire-sale' ? 'Fire Sale deals, shipped across the USA' : `${shelf?.name || title} for sale online, shipped across the USA`,
+    description: `${shelfCopy(slug, shelf?.name || title)} Crypto checkout, discreet tracked shipping nationwide. 21+.`,
+    path: `/s/${slug}`,
+    image: shelfArt(slug, shelf?.imageUrl) || undefined,
+    noindex: all || params.toString() !== '',
+  })
 
   function update(changes) {
     const next = new URLSearchParams(params)
@@ -235,5 +249,58 @@ export default function ShelfPage() {
         </div>
       </section>
     </div>
+  )
+}
+
+// What search engines and new visitors see on /s/<slug>: the shelf's banner,
+// what it carries, its sub-shelves and the other shelves. No products or prices.
+function PublicShelf() {
+  const { slug } = useParams()
+  const { shelves, openGate } = useShop()
+  const fire = slug === 'fire-sale'
+  const shelf = fire ? { slug, name: 'Fire Sale', count: shelves.fireSale, children: [] } : shelves.categories.find(c => c.slug === slug)
+  const name = shelf?.name || slug.replace(/-/g, ' ')
+  const copy = shelfCopy(slug, name)
+  const art = shelfArt(slug, shelf?.imageUrl)
+  useSeo({
+    title: fire ? 'Fire Sale deals, shipped across the USA' : `${name} for sale online, shipped across the USA`,
+    description: `${copy} Crypto checkout, discreet tracked shipping nationwide. 21+.`,
+    path: `/s/${slug}`,
+    image: art || undefined,
+    noindex: slug === 'all' || (!shelf && !fire),
+    jsonLd: [
+      breadcrumbLd([{ name: 'Home', path: '/' }, { name, path: `/s/${slug}` }]),
+      { '@context': 'https://schema.org', '@type': 'CollectionPage', name, description: copy, inLanguage: 'en-US' },
+    ],
+  })
+  const others = shelves.categories.filter(c => c.slug !== slug)
+  return (
+    <section className="section shelf-public">
+      <div className="container">
+        <nav className="crumbs" aria-label="Breadcrumb"><Link to="/">Home</Link> <span aria-hidden="true">/</span> <span>{name}</span></nav>
+        {art && <img className="shelf-banner" src={art} alt={`${name} at Captain Slabbin`} width="740" height="225" />}
+        <h1 className={'display' + (fire ? ' blood-text' : '')}>{fire ? 'Fire Sale' : name}</h1>
+        <p className="lead">{copy}</p>
+        {shelf?.count > 0 && <p className="muted">{shelf.count} {shelf.count === 1 ? 'product' : 'products'} in stock right now, shipped discreetly across the US.</p>}
+        {shelf?.children?.length > 0 && (
+          <ul className="shelf-types">
+            {shelf.children.map(c => <li key={c.slug}><b>{c.name}</b>{c.count ? <span className="muted"> · {c.count}</span> : null}</li>)}
+          </ul>
+        )}
+        <div className="locked-cta" style={{ justifyContent: 'flex-start', margin: '22px 0 36px' }}>
+          <button type="button" className="btn btn-primary btn-lg" onClick={openGate}><Icon.lock /> See prices and products</button>
+          <Link to="/faq" className="btn btn-outline btn-lg">How ordering works</Link>
+        </div>
+        {others.length > 0 && (
+          <>
+            <h2 className="shelf-more">More shelves</h2>
+            <ul className="shelf-links">
+              {!fire && <li><Link to="/s/fire-sale">Fire Sale</Link></li>}
+              {others.map(c => <li key={c.slug}><Link to={`/s/${c.slug}`}>{c.name}</Link></li>)}
+            </ul>
+          </>
+        )}
+      </div>
+    </section>
   )
 }

@@ -24,8 +24,8 @@ const present = rv => ({
   author: shortName(rv.user?.username), product: rv.product,
 });
 
-// Latest approved reviews (home page testimonials)
-r.get('/', requireGate, async (req, res) => {
+// Latest approved reviews (home page testimonials): public, no prices in them
+r.get('/', async (req, res) => {
   const reviews = await prisma.review.findMany({
     where: { isApproved: true, comment: { not: null } },
     orderBy: { createdAt: 'desc' }, take: 12, select: PUBLIC,

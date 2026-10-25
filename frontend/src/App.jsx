@@ -14,6 +14,8 @@ import CheckoutPage from './shop/pages/CheckoutPage.jsx'
 import WalletPage from './shop/pages/WalletPage.jsx'
 import { LoginPage, CreateAccountPage, TelegramLoginPage } from './shop/pages/AuthPages.jsx'
 import AboutPage from './shop/pages/AboutPage.jsx'
+import FaqPage from './shop/pages/FaqPage.jsx'
+import { Locked, AgeNotice } from './shop/components/Locks.jsx'
 import { AccountLayout, AccountOverview, AccountOrders, AccountProfile, AccountMessages } from './shop/pages/AccountPages.jsx'
 const AdminLayout = lazy(() => import('./pages/admin/AdminLayout.jsx'))
 const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard.jsx'))
@@ -71,60 +73,55 @@ function SuperAdminRoute({ children }) {
   return children
 }
 
-// Everything in the shop sits behind the password + 21+ gate. The gate stays
-// mounted over the shop until its smoke has cleared, so the reveal shows the real
-// page. /login is reachable without the gate so returning customers and staff can
-// sign in directly (a signed-in user skips the gate).
+// Public pages (home, about, FAQ, shelf intros) are readable by everyone after a
+// 21+ confirmation, so search engines can index the shop's front. Products,
+// prices, cart and accounts sit behind the gate code (AgeGate): it opens on
+// demand ("Enter the shop", a locked page) and stays mounted until its smoke has
+// cleared, so the reveal shows the real page. A signed-in customer skips it.
 // Pages render from `shown`, which Layout moves to the router's location under
 // cover of smoke, so the old page stays put until the smoke hides the swap.
 function Storefront() {
-  const { unlocked } = useShop()
+  const { unlocked, gateWanted, closeGate } = useShop()
   const location = useLocation()
-  const [gateOpen, setGateOpen] = useState(!unlocked)
   const [shown, setShown] = useState(location)
   const latest = useRef(location)
   latest.current = location
+  // Keep the gate on screen through its reveal, even after `unlocked` flips
+  const [gateShown, setGateShown] = useState(false)
+  useEffect(() => { if (gateWanted && !unlocked) setGateShown(true) }, [gateWanted, unlocked])
 
-  useEffect(() => { if (!unlocked) setGateOpen(true) }, [unlocked])
-
-  if (!unlocked && location.pathname === '/login') {
-    return <div className="cs" style={{ justifyContent: 'center' }}><main><LoginPage /></main></div>
-  }
-  // Signing in from the Telegram bot also passes the gate (the bot asked for 21+)
-  if (!unlocked && location.pathname === '/tg-login') {
-    return <div className="cs" style={{ justifyContent: 'center' }}><main><TelegramLoginPage /></main></div>
-  }
+  const locked = (el, what) => <Locked what={what}>{el}</Locked>
 
   return (
     <>
-      {unlocked && (
-        <Layout shown={shown} target={location} onSwap={() => setShown(latest.current)}>
-          <Routes location={shown}>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/s/:slug" element={<ShelfPage />} />
-            <Route path="/p/:sku" element={<ProductPage />} />
-            <Route path="/about" element={<AboutPage />} />
-            <Route path="/cart" element={<CartPage />} />
-            <Route path="/checkout" element={<CheckoutPage />} />
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/tg-login" element={<TelegramLoginPage />} />
-            <Route path="/account/create" element={<CreateAccountPage />} />
-            <Route path="/account" element={<AccountLayout />}>
-              <Route index element={<AccountOverview />} />
-              <Route path="wallet" element={<WalletPage />} />
-              <Route path="orders" element={<AccountOrders />} />
-              <Route path="messages" element={<AccountMessages />} />
-              <Route path="profile" element={<AccountProfile />} />
-            </Route>
-            {/* Old paths from the previous shop */}
-            <Route path="/wallet" element={<Navigate to="/account/wallet" replace />} />
-            <Route path="/profile" element={<Navigate to="/account/profile" replace />} />
-            <Route path="/register" element={<Navigate to="/account/create" replace />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </Layout>
-      )}
-      {gateOpen && <AgeGate onFinished={() => setGateOpen(false)} />}
+      <Layout shown={shown} target={location} onSwap={() => setShown(latest.current)}>
+        <Routes location={shown}>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/s/:slug" element={<ShelfPage />} />
+          <Route path="/about" element={<AboutPage />} />
+          <Route path="/faq" element={<FaqPage />} />
+          <Route path="/p/:sku" element={locked(<ProductPage />, 'this product')} />
+          <Route path="/cart" element={locked(<CartPage />, 'your cart')} />
+          <Route path="/checkout" element={locked(<CheckoutPage />, 'checkout')} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/tg-login" element={<TelegramLoginPage />} />
+          <Route path="/account/create" element={<CreateAccountPage />} />
+          <Route path="/account" element={locked(<AccountLayout />, 'your account')}>
+            <Route index element={<AccountOverview />} />
+            <Route path="wallet" element={<WalletPage />} />
+            <Route path="orders" element={<AccountOrders />} />
+            <Route path="messages" element={<AccountMessages />} />
+            <Route path="profile" element={<AccountProfile />} />
+          </Route>
+          {/* Old paths from the previous shop */}
+          <Route path="/wallet" element={<Navigate to="/account/wallet" replace />} />
+          <Route path="/profile" element={<Navigate to="/account/profile" replace />} />
+          <Route path="/register" element={<Navigate to="/account/create" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+        <AgeNotice />
+      </Layout>
+      {gateShown && <AgeGate onFinished={() => { setGateShown(false); closeGate() }} onClose={() => { setGateShown(false); closeGate() }} />}
     </>
   )
 }

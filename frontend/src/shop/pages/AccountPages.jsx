@@ -3,10 +3,12 @@ import { Link, NavLink, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { apiFetch } from '../../utils/api.js'
 import { useApp } from '../../context/AppContext.jsx'
 import { useShop } from '../ShopContext.jsx'
+import { useSeo } from '../seo.js'
 import { Icon, money, fmtDate, fmtDateTime, fmtCrypto } from '../lib.jsx'
 
 // Signed-in area: overview, wallet, orders, messages and profile
 export function AccountLayout() {
+  useSeo({ title: 'Your account', noindex: true })
   const { user, loadingAuth, logout } = useApp()
   const location = useLocation()
   const [unread, setUnread] = useState(0)
