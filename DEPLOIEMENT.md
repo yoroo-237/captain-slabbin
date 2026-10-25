@@ -143,7 +143,7 @@ Sans ces variables, les commandes passent quand même ; le client voit simplemen
 1. Créez un **New Project → Deploy from GitHub repo** et choisissez le dépôt.
 2. Dans les Settings du service, mettez **Root Directory** à `backend`. C'est indispensable : le build lit `backend/railway.toml` et `backend/.nixpacks.toml`.
 3. Ajoutez une base de données : **+ New → Database → PostgreSQL**.
-4. **Settings → Networking → Custom Domain** : ajoutez `api.<votre-domaine>` (ex. `api.captainslabbin.store`). Railway affiche une cible : créez chez votre registrar un enregistrement **CNAME** `api` vers cette cible. (À défaut, **Generate Domain** donne une URL `*.up.railway.app`.)
+4. **Settings → Networking → Custom Domain** : ajoutez `api.<votre-domaine>` (ex. `api.captainslabbin.shop`). Railway affiche une cible : créez chez votre registrar un enregistrement **CNAME** `api` vers cette cible. (À défaut, **Generate Domain** donne une URL `*.up.railway.app`.)
 5. Dans les **Variables** du service backend (Raw Editor ; la liste complète est dans `backend/.env.example`) :
 
 | Variable | Valeur |
@@ -151,8 +151,8 @@ Sans ces variables, les commandes passent quand même ; le client voit simplemen
 | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` |
 | `NODE_ENV` | `production` |
 | `JWT_SECRET` / `JWT_REFRESH_SECRET` | deux chaînes aléatoires longues¹ |
-| `FRONTEND_URL` | domaine du site, ex. `https://captainslabbin.store` |
-| `PUBLIC_URL` | domaine du backend, ex. `https://api.captainslabbin.store` (webhooks crypto et Telegram) |
+| `FRONTEND_URL` | domaine du site, ex. `https://captainslabbin.shop` |
+| `PUBLIC_URL` | domaine du backend, ex. `https://api.captainslabbin.shop` (webhooks crypto et Telegram) |
 | `SITE_PASSWORD` | mot de passe de la porte d'accès (modifiable ensuite dans l'admin) |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | premier compte admin³ |
 | `SUPERADMIN_USERNAME` / `SUPERADMIN_PASSWORD` | premier compte superadmin³ |
