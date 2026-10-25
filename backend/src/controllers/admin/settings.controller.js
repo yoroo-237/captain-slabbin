@@ -1,6 +1,7 @@
 import { prisma } from '../../db.js';
 import { ok } from '../../utils/response.js';
 import { appError } from '../../utils/formatters.js';
+import { TELEGRAM_PRIVATE_KEYS } from '../../services/telegram.service.js';
 
 const ALLOWED_KEYS = new Set([
   'site_name', 'maintenance_mode', 'registration_open',
@@ -9,8 +10,10 @@ const ALLOWED_KEYS = new Set([
   'btc_address', 'ltc_address', 'doge_address', 'eth_address', 'xmr_address',
   'btc_hd_seed',
   // Storefront gate, contact & Telegram
-  'site_password', 'support_phone', 'signal_url', 'telegram_username', 'telegram_chat_id',
+  'site_password', 'support_phone', 'signal_url', 'telegram_username',
   'promo_enabled', 'promo_headline',
+  // Shop contact & US location, announcement bar, ad banner
+  'contact_email', 'store_address', 'store_city', 'store_state', 'store_zip', 'store_hours', 'announcements', 'ad_banner', 'about_text',
 ]);
 
 const ADMIN_ROLES = ['admin', 'superadmin'];
@@ -21,7 +24,8 @@ export const adminSettingsController = {
     // "super_" keys (commission sweep) have their own endpoints; the HD seed can
     // move every BTC/LTC/DOGE deposit, so moderators never receive it.
     const visible = rows.filter(r =>
-      !r.key.startsWith('super_') && (r.key !== 'btc_hd_seed' || ADMIN_ROLES.includes(req.user.role))
+      !r.key.startsWith('super_') && !TELEGRAM_PRIVATE_KEYS.includes(r.key) &&
+      (r.key !== 'btc_hd_seed' || ADMIN_ROLES.includes(req.user.role))
     );
     const settings = Object.fromEntries(visible.map(r => [r.key, r.value]));
     res.json(ok({ settings }));

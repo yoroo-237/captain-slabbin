@@ -2,9 +2,8 @@ import { Router } from 'express';
 import { prisma } from '../../db.js';
 import { ok } from '../../utils/response.js';
 import { appError } from '../../utils/formatters.js';
-import { parsePaginationParams, buildPagination } from '../../utils/pagination.js';
 
-// Staff side of the internal messaging, plus the Telegram invoices log.
+// Staff side of the internal messaging.
 const r = Router();
 
 // One row per customer thread, latest activity first, with unread counts
@@ -58,26 +57,4 @@ r.post('/messages/:userId', async (req, res) => {
 });
 
 // ─── Telegram invoices ────────────────────────────────────────────────────────
-const INVOICE_STATUSES = ['new', 'contacted', 'completed', 'cancelled'];
-
-r.get('/telegram-invoices', async (req, res) => {
-  const { page, limit, skip } = parsePaginationParams(req.query);
-  const where = INVOICE_STATUSES.includes(req.query.status) ? { status: req.query.status } : {};
-  const [invoices, total] = await Promise.all([
-    prisma.telegramInvoice.findMany({
-      where, skip, take: limit, orderBy: { createdAt: 'desc' },
-      include: { user: { select: { id: true, username: true } } },
-    }),
-    prisma.telegramInvoice.count({ where }),
-  ]);
-  res.json(ok({ invoices, pagination: buildPagination(page, limit, total) }));
-});
-
-r.patch('/telegram-invoices/:id', async (req, res) => {
-  const { status } = req.body || {};
-  if (!INVOICE_STATUSES.includes(status)) throw appError(`status must be one of ${INVOICE_STATUSES.join(', ')}`, 400);
-  const invoice = await prisma.telegramInvoice.update({ where: { id: parseInt(req.params.id, 10) }, data: { status } });
-  res.json(ok({ invoice }));
-});
-
 export default r;

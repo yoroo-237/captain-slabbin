@@ -8,7 +8,6 @@ const NAV_ITEMS = [
   { label: 'Dashboard', path: '/admin', end: true },
   { section: 'Commerce' },
   { label: 'Orders', path: '/admin/orders' },
-  { label: 'Telegram Orders', path: '/admin/telegram-orders' },
   { label: 'Products', path: '/admin/products' },
   { label: 'Categories', path: '/admin/categories' },
   { label: 'Brands', path: '/admin/brands' },
@@ -27,6 +26,7 @@ const NAV_ITEMS = [
   { section: 'System' },
   { label: 'Analytics', path: '/admin/analytics' },
   { label: 'Settings', path: '/admin/settings' },
+  { label: 'My account', path: '/admin/account' },
 ]
 
 const SUPER_NAV_ITEMS = [
@@ -115,11 +115,11 @@ export default function AdminLayout() {
             </svg>
           </button>
 
-          <div className="admin-user-chip">
+          <Link to="/admin/account" className="admin-user-chip" title="My account: change username or password" style={{ textDecoration: 'none', color: 'inherit' }}>
             <div className="admin-avatar">{initial}</div>
             <span>{username}</span>
             {user?.role && <span className="admin-text-muted">· {user.role}</span>}
-          </div>
+          </Link>
         </header>
 
         <main className="admin-content">

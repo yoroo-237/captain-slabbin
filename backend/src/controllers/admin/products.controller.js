@@ -115,7 +115,7 @@ export const adminProductsController = {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const type = file.mimetype.startsWith('video/') ? 'video' : 'image';
-      const { url, thumbnail } = await uploadToCloudinary(file.buffer, file.mimetype);
+      const { url, thumbnail } = await uploadToCloudinary(file.buffer, file.mimetype, 'captain-slabbin', `${req.protocol}://${req.get('host')}`);
       const img = await prisma.productImage.create({
         data: { productId, url, thumbnail, position: startPosition + i, mediaType: type },
       });

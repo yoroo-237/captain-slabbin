@@ -19,3 +19,6 @@ npm-debug.log*
 Thumbs.db
 .vscode/
 .idea/
+
+# Per-deployment notes with real secrets — never commit these
+*.local.md

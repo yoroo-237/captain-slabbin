@@ -5,10 +5,11 @@ const CARD_INCLUDE = { images: { orderBy: { position: 'asc' } }, category: { inc
 
 export const productService = {
   // Filters: category (slug, includes sub-shelves; "fire-sale" = discounted items),
-  // search (name or SKU), minPrice / maxPrice, inStock=1, sort.
+  // search (name or SKU), minPrice / maxPrice, inStock=1, onSale=1, sort.
+  // onSale is independent of category, so "on sale" can be combined with any shelf.
   async list(query) {
     const { page, limit, skip } = parsePaginationParams(query);
-    const { search, category, sort, minPrice, maxPrice, inStock } = query;
+    const { search, category, sort, minPrice, maxPrice, inStock, onSale } = query;
 
     const where = { isActive: true };
 
@@ -26,6 +27,7 @@ export const productService = {
       const cat = await prisma.category.findUnique({ where: { slug: category }, include: { children: true } });
       where.categoryId = { in: cat ? [cat.id, ...cat.children.map(c => c.id)] : [] };
     }
+    if ((onSale === '1' || onSale === 'true') && category !== 'fire-sale') where.compareAtPrice = { not: null };
 
     const price = {};
     if (Number(minPrice) > 0) price.gte = Number(minPrice);

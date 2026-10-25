@@ -99,7 +99,7 @@ export function CreateAccountForm({ onDone, submitLabel = 'Create account' }) {
         <input id="ca-tg" className="input" placeholder="@username" autoComplete="off" value={form.telegramHandle} onChange={set('telegramHandle')} />
         <span className="hint">Added to your orders so we can reach you fast.</span>
       </div>
-      <p className="hint" style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>Save your password somewhere safe — without an email we can’t send a reset link.</p>
+      <p className="hint" style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>Save your password somewhere safe. Without an email we can’t send a reset link.</p>
       <button className="btn btn-primary btn-block" disabled={busy}>{busy ? 'Creating…' : submitLabel}</button>
     </form>
   )

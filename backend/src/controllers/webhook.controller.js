@@ -3,6 +3,7 @@ import { prisma } from '../db.js';
 import { walletService } from '../services/wallet.service.js';
 import { ok } from '../utils/response.js';
 import { env } from '../config/env.js';
+import { getTelegramConfig, rememberChat, tg } from '../services/telegram.service.js';
 
 export const webhookController = {
   // BlockCypher webhook — BTC, LTC, DOGE (confirmed-tx on HD wallet address)
@@ -86,5 +87,47 @@ export const webhookController = {
     }
 
     res.json(ok('Processed'));
+  },
+
+  // Telegram webhook — the linked bot's updates. Remembers the chats it is added
+  // to (so Admin → Telegram can switch chat) and answers /shop and /admin.
+  // Linked from Admin → Settings → Telegram, which hands Telegram a secret
+  // token; every call is checked against it.
+  async telegramBot(req, res) {
+    const cfg = await getTelegramConfig();
+    if (!cfg.token) return res.json(ok('no bot'));
+    if (cfg.secret && req.headers['x-telegram-bot-api-secret-token'] !== cfg.secret) return res.status(401).end();
+
+    const upd = req.body || {};
+    const chat = upd.message?.chat || upd.my_chat_member?.chat;
+    if (chat) await rememberChat(chat).catch(() => {});
+
+    const msg = upd.message;
+    const text = msg?.text?.trim();
+    if (!text || !msg.chat?.id) return res.json(ok('ignored'));
+
+    const site = (env.frontendUrl || '').replace(/\/$/, '');
+    let reply;
+    if (text.startsWith('/start') || text.startsWith('/shop')) {
+      reply = { text: 'Captain Slabbin: tap below to open the shop.', button: site ? { text: 'Open shop', url: site } : null };
+    } else if (text.startsWith('/admin')) {
+      reply = { text: 'Admin panel:', button: site ? { text: 'Open admin', url: `${site}/admin` } : null };
+    } else if (msg.chat.type === 'private') {
+      reply = { text: 'This bot only posts shop notifications. For support, message the shop from your account on the site.' };
+    } else {
+      // Ordinary chatter in the shop's group: stay quiet
+      return res.json(ok('ignored'));
+    }
+
+    try {
+      await tg(cfg.token, 'sendMessage', {
+        chat_id: msg.chat.id,
+        text: reply.text,
+        ...(reply.button ? { reply_markup: { inline_keyboard: [[reply.button]] } } : {}),
+      });
+    } catch (err) {
+      console.error('[Webhook Telegram] reply failed:', err.message);
+    }
+    res.json(ok('handled'));
   },
 };

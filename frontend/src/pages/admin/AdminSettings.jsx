@@ -3,8 +3,9 @@ import { adminFetch } from './utils/api.js'
 import { useApp } from '../../context/AppContext.jsx'
 import { isAdmin } from '../../utils/roles.js'
 import { PendingTiles, SweepResult, SweepLogTable } from '../../components/admin/SweepParts.jsx'
+import AdminTelegramBot from './AdminTelegramBot.jsx'
 
-const TABS = ['General', 'Storefront', 'Shipping', 'Loyalty', 'Deposits', 'Crypto']
+const TABS = ['General', 'Storefront', 'Telegram bot', 'Shipping', 'Loyalty', 'Deposits', 'Crypto']
 
 // Mirrors getUserTier / getCashbackRate in backend/src/utils/formatters.js
 const TIERS = [
@@ -142,6 +143,7 @@ export default function AdminSettings() {
         ))}
       </div>
 
+      {tab === 'Telegram bot' ? <AdminTelegramBot canEdit={canEdit} /> : (
       <form onSubmit={handleSave}>
         <fieldset disabled={!canEdit} style={{ border: 'none', padding: 0, margin: 0, minWidth: 0 }}>
         <div className="admin-card">
@@ -175,7 +177,7 @@ export default function AdminSettings() {
 
           {tab === 'Storefront' && (
             <>
-              <h2 className="admin-card-title">Storefront &amp; Telegram</h2>
+              <h2 className="admin-card-title">Storefront</h2>
               <div className="admin-form-group">
                 <label className="admin-label">Shop password (gate)</label>
                 <input className="admin-input" value={settings.site_password || ''} onChange={e => setS('site_password', e.target.value)} autoComplete="off" />
@@ -188,12 +190,7 @@ export default function AdminSettings() {
               <div className="admin-form-group">
                 <label className="admin-label">Shop Telegram username</label>
                 <input className="admin-input" value={settings.telegram_username || ''} onChange={e => setS('telegram_username', e.target.value)} placeholder="@captainslabbin" />
-                <div className="admin-text-muted" style={{ fontSize: '0.78rem', marginTop: 4 }}>Opened by the “Send order on Telegram” button, prefilled with the invoice.</div>
-              </div>
-              <div className="admin-form-group">
-                <label className="admin-label">Telegram chat ID for notifications</label>
-                <input className="admin-input" value={settings.telegram_chat_id || ''} onChange={e => setS('telegram_chat_id', e.target.value)} placeholder="-1001234567890" />
-                <div className="admin-text-muted" style={{ fontSize: '0.78rem', marginTop: 4 }}>The bot (TELEGRAM_BOT_TOKEN on the server) posts Telegram invoices, paid orders and new customer messages here.</div>
+                <div className="admin-text-muted" style={{ fontSize: '0.78rem', marginTop: 4 }}>Opened by the “Open Telegram” button after payment, prefilled with the paid invoice.</div>
               </div>
               <div className="admin-form-group">
                 <label className="admin-label">Signal link</label>
@@ -206,6 +203,42 @@ export default function AdminSettings() {
                   <span style={{ fontSize: '0.875rem', color: '#555' }}>{flag(settings.promo_enabled) ? 'Shown once per visit' : 'Hidden'}</span>
                 </div>
                 <input className="admin-input" style={{ marginTop: 8 }} value={settings.promo_headline || ''} onChange={e => setS('promo_headline', e.target.value)} placeholder="$50 off per unit on every order placed through the website" />
+              </div>
+
+              <h2 className="admin-card-title" style={{ marginTop: 24 }}>Shop contact &amp; location</h2>
+              <div className="admin-form-group">
+                <label className="admin-label">Contact email</label>
+                <input className="admin-input" type="email" value={settings.contact_email || ''} onChange={e => setS('contact_email', e.target.value)} placeholder="support@captainslabbin.com" />
+              </div>
+              <div className="admin-form-group">
+                <label className="admin-label">Street address (optional, shown with a “Get directions” link)</label>
+                <input className="admin-input" value={settings.store_address || ''} onChange={e => setS('store_address', e.target.value)} placeholder="1200 Ocean Ave" />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12 }}>
+                <div className="admin-form-group"><label className="admin-label">City</label><input className="admin-input" value={settings.store_city || ''} onChange={e => setS('store_city', e.target.value)} placeholder="Los Angeles" /></div>
+                <div className="admin-form-group"><label className="admin-label">State</label><input className="admin-input" maxLength={2} value={settings.store_state || ''} onChange={e => setS('store_state', e.target.value.toUpperCase())} placeholder="CA" /></div>
+                <div className="admin-form-group"><label className="admin-label">ZIP</label><input className="admin-input" value={settings.store_zip || ''} onChange={e => setS('store_zip', e.target.value)} placeholder="90001" /></div>
+              </div>
+              <div className="admin-form-group">
+                <label className="admin-label">Hours</label>
+                <input className="admin-input" value={settings.store_hours || ''} onChange={e => setS('store_hours', e.target.value)} placeholder="Open 24/7 · Text anytime" />
+              </div>
+
+              <div className="admin-form-group">
+                <label className="admin-label">About the shop (About page and home page; blank lines start a new paragraph)</label>
+                <textarea className="admin-input" rows={6} value={settings.about_text || ''} onChange={e => setS('about_text', e.target.value)} placeholder="Leave empty for the default text" />
+              </div>
+
+              <h2 className="admin-card-title" style={{ marginTop: 24 }}>Announcement bar &amp; ad banner</h2>
+              <div className="admin-form-group">
+                <label className="admin-label">Announcement bar (one message per line, they rotate at the top of every page)</label>
+                <textarea className="admin-input" rows={4} value={settings.announcements || ''} onChange={e => setS('announcements', e.target.value)} placeholder={'Free shipping on orders over $1,000\nFire Sale: up to 25% off this week'} />
+                <div className="admin-text-muted" style={{ fontSize: '0.78rem', marginTop: 4 }}>Leave empty to use automatic messages (Fire Sale, free shipping, crypto, support phone).</div>
+              </div>
+              <div className="admin-form-group">
+                <label className="admin-label">Ad banner on the home page (one item per line)</label>
+                <textarea className="admin-input" rows={3} value={settings.ad_banner || ''} onChange={e => setS('ad_banner', e.target.value)} placeholder={'New drop: Lemon Cherry Gelato\nBulk pricing on request'} />
+                <div className="admin-text-muted" style={{ fontSize: '0.78rem', marginTop: 4 }}>Leave empty to scroll the current Fire Sale deals.</div>
               </div>
             </>
           )}
@@ -339,6 +372,7 @@ export default function AdminSettings() {
         </div>
         </fieldset>
       </form>
+      )}
 
       {tab === 'Crypto' && canEdit && (
         <>

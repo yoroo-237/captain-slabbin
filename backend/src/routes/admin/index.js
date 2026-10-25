@@ -13,6 +13,7 @@ import settingsRoutes     from './settings.routes.js';
 import contentRoutes      from './content.routes.js';
 import sweepRoutes        from './sweep.routes.js';
 import inboxRoutes        from './inbox.routes.js';
+import telegramRoutes     from './telegram.routes.js';
 
 const r = Router();
 
@@ -28,6 +29,7 @@ r.use('/transactions', transactionsRoutes);
 r.use('/support',      supportRoutes);
 r.use('/analytics',    analyticsRoutes);
 r.use('/settings',     settingsRoutes);
+r.use('/telegram',     telegramRoutes);
 r.use('/',             sweepRoutes);
 r.use('/',             inboxRoutes);
 r.use('/',             contentRoutes);

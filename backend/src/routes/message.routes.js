@@ -34,7 +34,7 @@ r.post('/', async (req, res) => {
   const message = await prisma.message.create({
     data: { userId: req.user.sub, senderId: req.user.sub, isStaff: false, body }, select: SELECT,
   });
-  const user = await prisma.user.findUnique({ where: { id: req.user.sub }, select: { username: true, telegramHandle: true } });
+  const user = await prisma.user.findUnique({ where: { id: req.user.sub }, select: { id: true, username: true, telegramHandle: true } });
   notifyNewMessage(user, body).catch(() => {});
   res.status(201).json(ok({ message }));
 });

@@ -7,13 +7,28 @@ import { priceCart } from './pricing.service.js';
 import { notifyWalletOrder } from './telegram.service.js';
 
 export const orderService = {
-  async createOrder(userId, { items, shippingAddress, paymentMethod, name, email, payCurrency }) {
+  // No customer details are required: the Telegram username/ID is optional (saved
+  // to the profile when given at checkout). Delivery is an option: with it the
+  // customer gives a US address, shipping is charged and the address goes on the
+  // invoice; without it, nothing is asked and the shop arranges it on Telegram.
+  async createOrder(userId, { items, paymentMethod, payCurrency, telegram, delivery }) {
     if (!items?.length)     throw appError('Cart is empty', 400);
-    if (!shippingAddress)   throw appError('Shipping address is required', 400);
-    if (!paymentMethod)     throw appError('Payment method is required', 400);
-    if (!name?.trim())      throw appError('Name is required', 400);
 
-    const { lines, shippingFee, total: totalAmount } = await priceCart(items);
+    let shipTo = null;
+    if (delivery) {
+      const d = Object.fromEntries(['name', 'street', 'apt', 'city', 'state', 'zip'].map(k => [k, String(delivery[k] || '').trim().slice(0, 120)]));
+      if (!d.name || !d.street || !d.city || !/^[A-Z]{2}$/.test(d.state) || !/^\d{5}(-\d{4})?$/.test(d.zip)) {
+        throw appError('Please complete the delivery address (name, street, city, state and 5-digit ZIP).', 400);
+      }
+      shipTo = { name: d.name, address: `${d.street}${d.apt ? `, ${d.apt}` : ''}, ${d.city}, ${d.state} ${d.zip}, US` };
+    }
+
+    const handle = String(telegram || '').trim().replace(/^@/, '').slice(0, 64);
+    if (handle) {
+      await prisma.user.updateMany({ where: { id: userId, telegramHandle: null }, data: { telegramHandle: handle } });
+    }
+
+    const { lines, shippingFee, total: totalAmount } = await priceCart(items, { delivery: !!shipTo });
     const orderItems = lines.map(({ productId, name, price, quantity }) => ({ productId, name, price, quantity }));
 
     // Freeze the conversion now: these prices and quantities are what the order
@@ -21,7 +36,7 @@ export const orderService = {
     const holdings = await balanceService.getHoldings(userId);
     const prices   = await getCachedUsdPrices(holdings.map(h => h.currency));
     if (holdings.length && !holdings.some(h => prices[h.currency])) {
-      throw appError('Live prices are unavailable right now — please try again in a minute.', 503);
+      throw appError('Live prices are unavailable right now. Please try again in a minute.', 503);
     }
     let payments;
     try {
@@ -40,7 +55,7 @@ export const orderService = {
           where: { id: item.productId, stock: { gte: item.quantity } },
           data:  { stock: { decrement: item.quantity } },
         });
-        if (count === 0) throw appError(`"${item.name}" just sold out — please review your cart.`, 409);
+        if (count === 0) throw appError(`"${item.name}" just sold out. Please review your cart.`, 409);
       }
       await tx.user.update({
         where: { id: userId },
@@ -51,12 +66,12 @@ export const orderService = {
         data: {
           orderNumber:    'TEMP',
           userId,
-          paymentMethod,
+          paymentMethod:   paymentMethod || 'wallet',
           totalAmount,
           shippingFee,
-          shippingAddress: shippingAddress.trim(),
-          name:            name.trim(),
-          email:           email?.trim() || null,
+          shippingAddress: shipTo?.address || '',
+          name:            shipTo?.name || '',
+          email:           null,
           payments,
           items:           { create: orderItems },
         },
@@ -91,10 +106,21 @@ export const orderService = {
     });
 
     await notificationService.notifyOrder(userId, result.orderNumber);
-    const buyer = await prisma.user.findUnique({ where: { id: userId }, select: { username: true, telegramHandle: true } });
-    notifyWalletOrder(result, buyer, payments).catch(() => {});
-
-    const { balance } = await balanceService.getUserBalance(userId);
-    return { order: result, payments, newBalance: balance };
+    const buyer = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, username: true, telegramHandle: true } });
+    // Paid in the app, invoiced on Telegram (best-effort: never fails the order)
+    const [invoice, contact, { balance }] = await Promise.all([
+      notifyWalletOrder(result, buyer, payments).catch(() => null),
+      prisma.siteSetting.findUnique({ where: { key: 'telegram_username' } }),
+      balanceService.getUserBalance(userId),
+    ]);
+    const shopUsername = contact?.value?.replace(/^@/, '').trim();
+    return {
+      order: result, payments, newBalance: balance,
+      invoice: invoice && {
+        text: invoice.text,
+        delivered: invoice.delivered,
+        shopTelegramUrl: shopUsername ? `https://t.me/${shopUsername}?text=${encodeURIComponent(invoice.text)}` : null,
+      },
+    };
   },
 };

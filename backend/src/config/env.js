@@ -37,7 +37,8 @@ export const env = {
   // Access password of the storefront gate; Admin → Settings can override it
   sitePassword: process.env.SITE_PASSWORD || 'CSC',
   telegram: {
-    botToken: process.env.TELEGRAM_BOT_TOKEN || '',
-    chatId:   process.env.TELEGRAM_CHAT_ID || '',
+    botToken:      process.env.TELEGRAM_BOT_TOKEN || '',
+    chatId:        process.env.TELEGRAM_CHAT_ID || '',
+    webhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET || '',
   },
 };

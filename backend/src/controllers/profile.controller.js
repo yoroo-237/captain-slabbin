@@ -4,6 +4,7 @@ import { getUserBalance } from '../services/balance.service.js';
 import { prisma } from '../db.js';
 import { ok } from '../utils/response.js';
 import { getUserTier } from '../utils/formatters.js';
+import { signAccessToken } from '../utils/jwt.js';
 
 const PROFILE_SELECT = {
   id: true, username: true, role: true, bio: true,
@@ -48,5 +49,19 @@ export const profileController = {
     if (!(await bcrypt.compare(String(currentPassword || ''), user.passwordHash))) throw appError('Current password is incorrect', 400);
     await prisma.user.update({ where: { id: user.id }, data: { passwordHash: await bcrypt.hash(String(newPassword), 12) } });
     res.json(ok({ message: 'Password updated' }));
+  },
+
+  // New sign-in name, confirmed with the current password. Returns a fresh
+  // access token since the old one carries the old username.
+  async changeUsername(req, res) {
+    const username = String(req.body?.username || '').trim();
+    if (username.length < 3) throw appError('Username too short (min 3 characters)', 400);
+    if (!/^[A-Za-z0-9_.-]+$/.test(username)) throw appError('Letters, numbers, . _ - only', 400);
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: req.user.sub } });
+    if (!(await bcrypt.compare(String(req.body?.currentPassword || ''), user.passwordHash))) throw appError('Current password is incorrect', 400);
+    if (username !== user.username && await prisma.user.findUnique({ where: { username } })) throw appError('That username is taken', 409);
+    const updated = await prisma.user.update({ where: { id: user.id }, data: { username } });
+    const accessToken = signAccessToken({ sub: updated.id, role: updated.role, username: updated.username });
+    res.json(ok({ username: updated.username, accessToken }));
   },
 };

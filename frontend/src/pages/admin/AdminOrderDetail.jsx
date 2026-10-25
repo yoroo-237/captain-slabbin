@@ -97,10 +97,9 @@ export default function AdminOrderDetail() {
                 {order.user?.telegramHandle && <span className="admin-text-muted"> · TG {order.user.telegramHandle}</span>}
               </span>
             </div>
-            <div className="admin-info-row"><span className="admin-info-label">Name</span><span className="admin-info-value">{order.name || '—'}</span></div>
-            <div className="admin-info-row"><span className="admin-info-label">Email</span><span className="admin-info-value">{order.email || '—'}</span></div>
             <div className="admin-info-row"><span className="admin-info-label">Payment</span><span className="admin-info-value">{order.paymentMethod || '—'} (wallet balance)</span></div>
-            <div className="admin-info-row"><span className="admin-info-label">Shipping To</span><span className="admin-info-value" style={{ whiteSpace: 'pre-wrap' }}>{order.shippingAddress || '—'}</span></div>
+            <div className="admin-info-row"><span className="admin-info-label">Delivery</span><span className="admin-info-value" style={{ whiteSpace: 'pre-wrap' }}>{order.shippingAddress ? `${order.name}
+${order.shippingAddress}` : 'None — arrange on Telegram'}</span></div>
             <div className="admin-info-row"><span className="admin-info-label">Tracking</span><span className="admin-info-value">{order.trackingNumber ? `${order.trackingNumber}${order.carrier ? ` (${order.carrier})` : ''}` : '—'}</span></div>
             {order.note && <div className="admin-info-row"><span className="admin-info-label">Note</span><span className="admin-info-value">{order.note}</span></div>}
           </div>

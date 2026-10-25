@@ -9,6 +9,7 @@ import notificationRoutes from './notification.routes.js';
 import ticketRoutes       from './ticket.routes.js';
 import apikeyRoutes       from './apikey.routes.js';
 import contentRoutes      from './content.routes.js';
+import reviewRoutes       from './review.routes.js';
 import webhookRoutes      from './webhook.routes.js';
 import adminRoutes        from './admin/index.js';
 import gateRoutes         from './gate.routes.js';
@@ -32,6 +33,7 @@ router.use('/notifications', notificationRoutes);
 router.use('/tickets',       ticketRoutes);
 router.use('/api-keys',      apikeyRoutes);
 router.use('/content',       contentRoutes);
+router.use('/reviews',       reviewRoutes);
 router.use('/webhooks',      webhookRoutes);
 router.use('/admin',         adminRoutes);
 

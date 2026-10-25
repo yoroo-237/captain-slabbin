@@ -5,5 +5,6 @@ const r = Router();
 
 r.post('/blockcypher', webhookController.blockcypher);
 r.post('/alchemy',     webhookController.alchemy);
+r.post('/telegram-bot', webhookController.telegramBot);
 
 export default r;

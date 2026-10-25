@@ -8,5 +8,6 @@ r.use(requireAuth);
 r.get('/', profileController.get);
 r.put('/', profileController.update);
 r.put('/password', profileController.changePassword);
+r.put('/username', profileController.changeUsername);
 
 export default r;

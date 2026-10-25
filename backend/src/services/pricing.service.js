@@ -1,9 +1,9 @@
 import { prisma } from '../db.js';
 import { appError } from '../utils/formatters.js';
 
-// Prices a cart server-side — the client's prices are never trusted. Shared by
-// wallet checkout and Telegram invoices so both always charge the same amount.
-export async function priceCart(items) {
+// Prices a cart server-side — the client's prices are never trusted. Shipping
+// is only charged when the customer chose delivery.
+export async function priceCart(items, { delivery = true } = {}) {
   if (!Array.isArray(items) || !items.length) throw appError('Cart is empty', 400);
   if (items.length > 50) throw appError('Too many lines in one order.', 400);
 
@@ -16,7 +16,7 @@ export async function priceCart(items) {
   const productIds = [...new Set(items.map(i => Number(i.productId)))];
   const products   = await prisma.product.findMany({ where: { id: { in: productIds }, isActive: true } });
   if (products.length !== productIds.length) {
-    throw appError('One or more products are no longer available — please review your cart.', 400);
+    throw appError('One or more products are no longer available. Please review your cart.', 400);
   }
   const byId = Object.fromEntries(products.map(p => [p.id, p]));
 
@@ -34,7 +34,7 @@ export async function priceCart(items) {
   });
 
   subtotal = Math.round(subtotal * 100) / 100;
-  const shippingFee = (freeThreshold > 0 && subtotal >= freeThreshold) ? 0 : shippingCost;
+  const shippingFee = !delivery || (freeThreshold > 0 && subtotal >= freeThreshold) ? 0 : shippingCost;
   const total = Math.round((subtotal + shippingFee) * 100) / 100;
   return { lines, subtotal, shippingFee, total };
 }

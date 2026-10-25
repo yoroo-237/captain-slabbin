@@ -21,6 +21,7 @@ Les modifications de shop-react et de clone sont **déjà commitées et fusionn�
   - le **superadmin** balaie la commission vers l'adresse de réserve ;
   - l'admin ne voit plus aucune donnée de commission.
 - **Achat** : le total en USD est converti au cours du moment, et cette quantité de crypto est débitée (conversion figée).
+- **Commande** : toujours payée dans l'app, puis la facture part sur Telegram (bot vers le chat de la boutique, et bouton « Open Telegram » sur la confirmation). Aucune information client n'est demandée : seul le Telegram, facultatif, s'il n'est pas déjà dans le profil.
 - **Anciens soldes en USD** : ils sont convertis en crypto par le script `scripts/convert-balances-to-crypto.js`, au cours du jour de la conversion.
 
 ---
@@ -77,6 +78,17 @@ Connectez-vous en **superadmin** → page **Super Admin** :
 
 L'admin, lui, renseigne les adresses de la boutique dans **Settings → Crypto**.
 
+### 1.5 Facture Telegram
+Après chaque paiement, le bot poste la facture dans le chat Telegram de la boutique. Variables du backend :
+
+| Variable | Valeur |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | jeton du bot : **@BotFather** → `/newbot` |
+| `TELEGRAM_CHAT_ID` | id du chat : ajoutez le bot au groupe, envoyez un message, ouvrez `https://api.telegram.org/bot<JETON>/getUpdates` et relevez `chat.id` (négatif pour un groupe) |
+| `TELEGRAM_SHOP_USERNAME` | nom d'utilisateur Telegram public de la boutique, pour le bouton « Open Telegram » (ou réglage `telegram_username` en base) |
+
+Sans ces variables, les commandes passent quand même ; le client voit simplement un message lui demandant d'ouvrir Telegram.
+
 ---
 
 ## 2. clone (BOTB)
@@ -102,6 +114,18 @@ node scripts/convert-balances-to-crypto.js --apply
 ### 2.3 Régler la commission
 Connectez-vous en **superadmin** → **Deposit Commission** : taux et adresses de réserve.
 
+### 2.4 Facture Telegram
+Après chaque paiement, le bot poste la facture dans le chat Telegram de la boutique. Variables du backend :
+
+| Variable | Valeur |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | jeton du bot : **@BotFather** → `/newbot` |
+| `TELEGRAM_CHAT_ID` | id du chat : ajoutez le bot au groupe, envoyez un message, ouvrez `https://api.telegram.org/bot<JETON>/getUpdates` et relevez `chat.id` (négatif pour un groupe) |
+| `TELEGRAM_SHOP_USERNAME` | nom d'utilisateur Telegram public de la boutique, pour le bouton « Open Telegram » (ou réglage `telegram_username` en base) |
+
+Sans ces variables, les commandes passent quand même ; le client voit simplement un message lui demandant d'ouvrir Telegram.
+
+
 ---
 
 ## 3. Captain Slabbin (nouveau projet)
@@ -111,7 +135,7 @@ Connectez-vous en **superadmin** → **Deposit Commission** : taux et adresses d
 2. Poussez le code :
    ```
    cd M:\Travail\mario
-   git remote add origin https://github.com/<votre-compte>/<nom-du-depot>.git
+   git remote add origin https://github.com/yoroo-237/captain-slabbin.git
    git push -u origin main
    ```
 
@@ -119,83 +143,89 @@ Connectez-vous en **superadmin** → **Deposit Commission** : taux et adresses d
 1. Créez un **New Project → Deploy from GitHub repo** et choisissez le dépôt.
 2. Dans les Settings du service, mettez **Root Directory** à `backend`. C'est indispensable : le build lit `backend/railway.toml` et `backend/.nixpacks.toml`.
 3. Ajoutez une base de données : **+ New → Database → PostgreSQL**.
-4. Dans **Networking → Generate Domain**, générez l'URL publique du backend.
-5. Dans les **Variables** du service backend (la liste complète est dans `backend/.env.example`) :
+4. **Settings → Networking → Custom Domain** : ajoutez `api.<votre-domaine>` (ex. `api.captainslabbin.store`). Railway affiche une cible : créez chez votre registrar un enregistrement **CNAME** `api` vers cette cible. (À défaut, **Generate Domain** donne une URL `*.up.railway.app`.)
+5. Dans les **Variables** du service backend (Raw Editor ; la liste complète est dans `backend/.env.example`) :
 
 | Variable | Valeur |
 |---|---|
 | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` |
 | `NODE_ENV` | `production` |
-| `JWT_SECRET` | chaîne aléatoire longue¹ |
-| `JWT_REFRESH_SECRET` | une autre chaîne aléatoire longue¹ |
-| `FRONTEND_URL` | URL Vercel exacte, ex. `https://captain-slabbin.vercel.app` |
-| `PUBLIC_URL` | URL Railway du backend (pour les webhooks crypto) |
-| `SITE_PASSWORD` | `CSC` (mot de passe de la porte d'accès) |
-| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | compte admin |
-| `SUPERADMIN_USERNAME` / `SUPERADMIN_PASSWORD` | compte superadmin |
+| `JWT_SECRET` / `JWT_REFRESH_SECRET` | deux chaînes aléatoires longues¹ |
+| `FRONTEND_URL` | domaine du site, ex. `https://captainslabbin.store` |
+| `PUBLIC_URL` | domaine du backend, ex. `https://api.captainslabbin.store` (webhooks crypto et Telegram) |
+| `SITE_PASSWORD` | mot de passe de la porte d'accès (modifiable ensuite dans l'admin) |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | premier compte admin³ |
+| `SUPERADMIN_USERNAME` / `SUPERADMIN_PASSWORD` | premier compte superadmin³ |
 | `SEED_DEMO_PRODUCTS` | `true` (20 produits de démo) ou `false` |
-| `TELEGRAM_BOT_TOKEN` | jeton du bot (voir 3.5) |
-| `TELEGRAM_CHAT_ID` | id du chat de la boutique (voir 3.5) |
-| `BLOCKCYPHER_TOKEN` | compte blockcypher.com |
-| `BTC_HD_SEED` / `ETH_HD_SEED` | phrases BIP39 de 12 mots (à garder secrètes) |
-| `ALCHEMY_API_KEY`, `ALCHEMY_SIGNING_KEY`, `ALCHEMY_AUTH_TOKEN`, `ALCHEMY_WEBHOOK_ID` | compte alchemy.com (ETH) |
-| `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | hébergement des images produits² |
+| `BLOCKCYPHER_TOKEN` | jeton **actif** du compte blockcypher.com |
+| `BTC_HD_SEED` / `ETH_HD_SEED` | deux phrases BIP39 de 12 mots, propres à ce projet¹ |
+| `ALCHEMY_API_KEY` | clé de l'app Alchemy de ce projet (voir 3.6) |
+| `ALCHEMY_AUTH_TOKEN` | jeton Notify du compte Alchemy (`alcht_…`) |
+| `ALCHEMY_SIGNING_KEY` / `ALCHEMY_WEBHOOK_ID` | du webhook créé pour ce projet (`whsec_…` / `wh_…`) |
+| `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | compte Cloudinary² |
+| `XMR_ADDRESS` | adresse Monero de réception |
 
-¹ Pour générer une chaîne : `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
-² Sans Cloudinary, les images envoyées dans `uploads/` sont **perdues à chaque redéploiement** Railway.
+Le bot Telegram ne se configure plus par variables : tout se fait dans l'admin (voir 3.5).
 
-6. Définissez `ADMIN_PASSWORD` et `SUPERADMIN_PASSWORD` **avant** le premier déploiement. Sinon, des mots de passe aléatoires sont générés et n'apparaissent qu'une fois dans les logs du build.
-7. Ce que fait chaque déploiement : `prisma migrate deploy`, puis le seed. Le seed crée les réglages et les catégories sans écraser vos modifications, crée les comptes staff s'ils n'existent pas, et ajoute le catalogue de démo seulement si la base est vide.
-8. Pour vérifier, ouvrez `https://<backend>.up.railway.app/health` : la réponse doit être `{"status":"ok", ...}`.
+¹ Pour générer les secrets, depuis `backend/` (pas `frontend/`) :
+```
+node -e "const c=require('crypto'),b=require('bip39');console.log('JWT_SECRET='+c.randomBytes(32).toString('hex'));console.log('JWT_REFRESH_SECRET='+c.randomBytes(32).toString('hex'));console.log('BTC_HD_SEED='+b.generateMnemonic(128));console.log('ETH_HD_SEED='+b.generateMnemonic(128))"
+```
+Ne réutilisez jamais les phrases d'un autre projet : elles contrôlent les fonds.
+
+² Un compte Cloudinary peut servir à plusieurs projets (mêmes trois valeurs) ; Captain Slabbin range ses fichiers dans le dossier `captain-slabbin/`. Le backend envoie les fichiers directement avec la clé et le secret : aucun « upload preset » n'est nécessaire. Sans Cloudinary, les images vont dans `uploads/` et sont **perdues à chaque redéploiement** Railway.
+
+³ Les comptes staff sont créés **une seule fois**, au premier déploiement. Ensuite le seed ne les touche plus : un identifiant ou un mot de passe changé dans **Admin → My account** survit aux redéploiements. Mot de passe perdu : ajoutez `RESET_STAFF_PASSWORDS=true`, redéployez (le compte des variables est restauré avec son mot de passe), puis **retirez** la variable. Si un déploiement précédent avait créé d'autres comptes (`admin`, `superadmin`…), désactivez-les dans **Admin → Users**.
+
+6. Ce que fait chaque déploiement : `prisma migrate deploy`, puis le seed. Le seed crée les réglages et les catégories sans écraser vos modifications, crée les comptes staff s'ils n'ont jamais été créés, et ajoute le catalogue de démo seulement si la base est vide.
+7. Pour vérifier, ouvrez `https://api.<votre-domaine>/health` : la réponse doit être `{"status":"ok", ...}`.
 
 ### 3.3 Frontend sur Vercel
 1. Faites **Add New → Project** et importez le même dépôt.
 2. Réglez le projet :
    - **Root Directory** : `frontend` ;
    - **Framework Preset** : Vite (build `vite build`, sortie `dist`) ;
-   - **Environment Variable** : `VITE_API_URL` = `https://<backend>.up.railway.app` (sans `/api` à la fin).
+   - **Environment Variable** : `VITE_API_URL` = `https://api.<votre-domaine>` (sans `/api` à la fin).
 3. Lancez **Deploy**. Le fichier `vercel.json` gère déjà les routes de l'application (`/s/...`, `/p/...`, `/account/...`, `/admin/...`).
-4. Si vous ajoutez un domaine personnalisé, mettez `FRONTEND_URL` à jour sur Railway puis redéployez le backend.
+4. **Settings → Domains** : ajoutez `<votre-domaine>` et `www.<votre-domaine>`, et créez chez votre registrar les enregistrements que Vercel indique.
 
-> **CORS** : le backend n'accepte que `FRONTEND_URL` et sa variante `www`. Les URL de prévisualisation Vercel (`…-git-…vercel.app`) seront refusées : testez sur l'URL de production.
+> **CORS** : le backend n'accepte que `FRONTEND_URL` et sa variante `www`. Les URL de prévisualisation Vercel (`…-git-…vercel.app`) seront refusées : testez sur le domaine de production.
 
 ### 3.4 Premier passage dans l'admin
 1. Ouvrez `<site>/login`. Cette page est accessible sans le mot de passe de la porte.
-2. Connectez-vous avec le compte admin : vous arrivez sur `/admin`.
-3. **Admin → Settings**, onglet **Storefront** :
+2. Connectez-vous avec le compte admin : vous arrivez sur `/admin`. Le superadmin a accès à tout ce que fait l'admin, plus la page **Deposit Commission**.
+3. **Admin → My account** (ou clic sur votre nom en haut) : changez identifiant et mot de passe si besoin.
+4. **Admin → Settings**, onglet **Storefront** :
    - mot de passe de la boutique (vide = porte désactivée) ;
-   - numéro de téléphone du bandeau « Text us now » ;
-   - nom d'utilisateur Telegram de la boutique, ouvert par le bouton « Send order on Telegram » ;
-   - id du chat Telegram pour les notifications ;
-   - lien Signal ;
-   - pop-up promo (activée ou non, et son texte).
-4. Onglet **Shipping** : frais de livraison et seuil de livraison gratuite (30 $ et 1 000 $ par défaut).
-5. Onglet **Crypto** : adresses de destination de la boutique (BTC, LTC, DOGE, ETH, XMR).
-6. Avec le compte **superadmin**, page **Deposit Commission** : taux de commission et adresses de réserve.
-7. **Products** : remplacez les produits de démo. Pour chaque produit :
-   - SKU ;
-   - prix « Was price » : s'il est renseigné, le produit apparaît dans **Fire Sale** ;
-   - unité (« per lb ») et badge ;
-   - case « Featured » pour l'afficher sur l'accueil.
-8. **Categories** : vous pouvez ajouter une image de bannière (740×225) par catégorie. Sans image, une plaque métallisée est générée automatiquement.
+   - téléphone, nom d'utilisateur Telegram public de la boutique (ouvert par « Open Telegram » après paiement), lien Signal ;
+   - email, adresse, ville, État, ZIP et horaires de la boutique ;
+   - texte About, messages du bandeau d'annonces, lignes de la bannière promo, pop-up promo.
+5. Onglet **Telegram bot** : voir 3.5.
+6. Onglet **Shipping** : frais de livraison et seuil de livraison gratuite (30 $ et 1 000 $ par défaut).
+7. Onglet **Crypto** : adresses de destination de la boutique (BTC, LTC, DOGE, ETH, XMR).
+8. Avec le compte **superadmin**, page **Deposit Commission** : taux de commission et adresses de réserve.
+9. **Products** : remplacez les produits de démo (SKU, prix barré = Fire Sale, unité, badge, « Featured », photos et vidéos).
+10. **Categories** : image de bannière facultative par catégorie.
 
-### 3.5 Telegram
-1. Dans Telegram, ouvrez **@BotFather**, tapez `/newbot` et récupérez le jeton → variable `TELEGRAM_BOT_TOKEN`.
-2. Créez un groupe ou un canal pour la boutique et **ajoutez-y le bot** (en admin si c'est un canal).
-3. Envoyez un message dans ce groupe, puis ouvrez `https://api.telegram.org/bot<JETON>/getUpdates` et relevez `chat.id` (un groupe a un id négatif, ex. `-1001234567890`).
-4. Collez cet id dans **Admin → Settings → Storefront → Telegram chat ID**, ou dans la variable `TELEGRAM_CHAT_ID`.
-5. Pour tester, ajoutez un produit au panier puis cliquez sur « Send order on Telegram ». La commande doit apparaître dans le groupe, et dans **Admin → Telegram Orders** avec la mention « delivered ».
+### 3.5 Telegram (depuis l'admin, aucune variable)
+1. Bot neuf : dans Telegram, **@BotFather** → `/newbot` → copiez le jeton. Ou prenez le jeton d'un bot existant.
+2. Ajoutez le bot au groupe ou au canal de la boutique (en admin si c'est un canal) et envoyez-y un message.
+3. **Admin → Settings → Telegram bot** : collez le jeton, **Check**.
+   - Si le bot est déjà relié à une autre application, l'admin le signale ; cochez la case pour le reprendre.
+   - Choisissez le chat dans la liste.
+   - Cochez **Apply the Captain Slabbin look** pour renommer le bot et lui donner description, commandes `/shop` et `/admin` et bouton « Open shop » ; laissez décoché pour garder son nom et son profil.
+4. **Link this bot** : un message de confirmation arrive dans le chat. **Send a test message** permet de revérifier.
+5. Changer de bot : **Use another bot**, nouveau jeton, même procédure. Changer de chat : liste déroulante (le bot doit être membre du chat). **Unlink** arrête les notifications.
 
-Ce que le bot poste dans le groupe :
-- les **commandes Telegram** (y compris celles des invités), avec le Telegram du client s'il est connecté et l'a renseigné dans son profil ;
-- les **commandes payées** avec le wallet ;
-- les **nouveaux messages** de la messagerie interne.
+Ce que le bot poste : la **facture de chaque commande payée** (bouton « Open order ») et les **nouveaux messages** de la messagerie (bouton « Reply in admin »). Les commandes `/shop` et `/admin` répondent par un lien dès que le backend est en HTTPS.
 
 ### 3.6 Crypto (dépôts automatiques)
-- **BTC / LTC / DOGE** : il faut `BLOCKCYPHER_TOKEN`, `BTC_HD_SEED` et `PUBLIC_URL` (pour que BlockCypher appelle `/api/webhooks/blockcypher`).
-- **ETH** : il faut `ETH_HD_SEED` et les clés Alchemy. Dans Alchemy, créez un webhook « Address Activity » qui pointe vers `https://<backend>/api/webhooks/alchemy`.
-- **XMR** : renseignez l'adresse dans **Settings → Crypto**. Les dépôts XMR sont confirmés à la main dans **Admin → Deposits**.
-- Avant d'ouvrir au public, faites **un petit dépôt de test**, puis un **sweep admin** et un **sweep superadmin**, et vérifiez les transactions sur un explorateur de blocs.
+- **BTC / LTC / DOGE** : `BLOCKCYPHER_TOKEN`, `BTC_HD_SEED` et `PUBLIC_URL` (BlockCypher appelle `/api/webhooks/blockcypher`).
+- **ETH** : `ETH_HD_SEED` et les clés Alchemy.
+  1. Alchemy → **Create new app**, chaîne **Ethereum → Mainnet** ; les services cochés par défaut conviennent (seul Webhooks sert). La clé de l'app → `ALCHEMY_API_KEY`.
+  2. **Notify → Create Webhook → Address Activity**, Ethereum Mainnet, URL `https://api.<votre-domaine>/api/webhooks/alchemy`. Le webhook créé donne le **Signing Key** (`whsec_…`) et le **Webhook ID** (`wh_…`). Le jeton Notify du compte (`alcht_…`) est en haut de la page Notify.
+- **XMR** : `XMR_ADDRESS` et l'adresse dans **Settings → Crypto**. Les dépôts XMR sont confirmés à la main dans **Admin → Deposits**.
+- Avant d'ouvrir au public : **un petit dépôt de test** par crypto, un **sweep admin**, un **sweep superadmin**, et vérification sur un explorateur de blocs.
 
 ---
 
@@ -208,7 +238,9 @@ Ce que le bot poste dans le groupe :
 - [ ] Les montants « à balayer » côté admin correspondent à la part des clients.
 - [ ] Les montants « à balayer » côté superadmin correspondent à la commission.
 - [ ] Les anciens clients ont retrouvé leur solde, converti en crypto.
-- [ ] Captain Slabbin : la porte (mot de passe CSC + 21 ans) et sa fumée s'affichent, `/login` est accessible directement, une facture Telegram arrive dans le groupe, et la messagerie fonctionne dans les deux sens.
+- [ ] Pour les 3 projets : une commande payée envoie sa facture dans le groupe Telegram, et le checkout ne demande rien d'autre que le Telegram (facultatif).
+- [ ] Captain Slabbin : la porte (mot de passe + 21 ans) et sa fumée s'affichent, le logo de l'en-tête fume, le footer brûle, les changements de page et de thème passent par la fumée, `/login` est accessible directement, la messagerie fonctionne dans les deux sens, et **Send a test message** (onglet Telegram bot) arrive dans le groupe.
+- [ ] Captain Slabbin : un identifiant et un mot de passe changés dans **My account** tiennent après un redéploiement.
 
 ---
 

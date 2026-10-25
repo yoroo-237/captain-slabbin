@@ -75,17 +75,31 @@ const slugify = s => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/
 
 // Staff accounts come from the environment; when no password is set a random
 // one is generated and printed once — it is never written in the code.
+// Staff accounts come from ADMIN_* / SUPERADMIN_* once: created on the first
+// deploy, then left alone, so a username or password changed from the admin
+// profile survives every redeploy (the seed runs on each build). Set
+// RESET_STAFF_PASSWORDS=true for one deploy to get back in after a lost
+// password: the environment's account is restored with its password.
 async function ensureStaff(username, password, role) {
+  const flag = `seeded_${role}`;
   const existing = await prisma.user.findUnique({ where: { username } });
-  if (existing) {
-    if (password) {
-      await prisma.user.update({ where: { username }, data: { passwordHash: await bcrypt.hash(password, 12), role, isActive: true } });
-      console.log(`✅ ${role} "${username}" — password reset from the environment`);
-    }
+
+  if (process.env.RESET_STAFF_PASSWORDS === 'true' && password) {
+    const passwordHash = await bcrypt.hash(password, 12);
+    if (existing) await prisma.user.update({ where: { username }, data: { passwordHash, role, isActive: true } });
+    else await prisma.user.create({ data: { username, passwordHash, role } });
+    console.log(`✅ ${role} "${username}" restored from the environment (RESET_STAFF_PASSWORDS) — remove that variable now`);
     return;
+  }
+
+  const done = await prisma.siteSetting.findUnique({ where: { key: flag } });
+  if (existing || done) {
+    if (!done) await prisma.siteSetting.create({ data: { key: flag, value: 'true' } });
+    return; // already set up (and maybe renamed or given a new password since)
   }
   const pwd = password || crypto.randomBytes(9).toString('base64url');
   await prisma.user.create({ data: { username, passwordHash: await bcrypt.hash(pwd, 12), role } });
+  await prisma.siteSetting.create({ data: { key: flag, value: 'true' } });
   console.log(`✅ ${role} "${username}" created${password ? '' : ` — generated password: ${pwd} (change it after signing in)`}`);
 }
 

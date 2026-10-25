@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { CartProvider } from './context/CartContext.jsx'
 import { AppProvider, useApp } from './context/AppContext.jsx'
@@ -13,6 +13,7 @@ import CartPage from './shop/pages/CartPage.jsx'
 import CheckoutPage from './shop/pages/CheckoutPage.jsx'
 import WalletPage from './shop/pages/WalletPage.jsx'
 import { LoginPage, CreateAccountPage } from './shop/pages/AuthPages.jsx'
+import AboutPage from './shop/pages/AboutPage.jsx'
 import { AccountLayout, AccountOverview, AccountOrders, AccountProfile, AccountMessages } from './shop/pages/AccountPages.jsx'
 const AdminLayout = lazy(() => import('./pages/admin/AdminLayout.jsx'))
 const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard.jsx'))
@@ -33,9 +34,9 @@ const AdminFaq = lazy(() => import('./pages/admin/AdminFaq.jsx'))
 const AdminGiveaways = lazy(() => import('./pages/admin/AdminGiveaways.jsx'))
 const AdminAnalytics = lazy(() => import('./pages/admin/AdminAnalytics.jsx'))
 const AdminSettings = lazy(() => import('./pages/admin/AdminSettings.jsx'))
+const AdminAccount = lazy(() => import('./pages/admin/AdminAccount.jsx'))
 const AdminSuperDashboard = lazy(() => import('./pages/admin/AdminSuperDashboard.jsx'))
 const AdminInbox = lazy(() => import('./pages/admin/AdminInbox.jsx'))
-const AdminTelegramInvoices = lazy(() => import('./pages/admin/AdminTelegramInvoices.jsx'))
 import { STAFF_ROLES } from './utils/roles.js'
 
 function LoadingScreen() {
@@ -73,25 +74,31 @@ function SuperAdminRoute({ children }) {
 // mounted over the shop until its smoke has cleared, so the reveal shows the real
 // page. /login is reachable without the gate so returning customers and staff can
 // sign in directly (a signed-in user skips the gate).
+// Pages render from `shown`, which Layout moves to the router's location under
+// cover of smoke, so the old page stays put until the smoke hides the swap.
 function Storefront() {
   const { unlocked } = useShop()
   const location = useLocation()
   const [gateOpen, setGateOpen] = useState(!unlocked)
+  const [shown, setShown] = useState(location)
+  const latest = useRef(location)
+  latest.current = location
 
   useEffect(() => { if (!unlocked) setGateOpen(true) }, [unlocked])
 
   if (!unlocked && location.pathname === '/login') {
-    return <div className="cs" style={{ justifyContent: 'center' }}><LoginPage /></div>
+    return <div className="cs" style={{ justifyContent: 'center' }}><main><LoginPage /></main></div>
   }
 
   return (
     <>
       {unlocked && (
-        <Layout>
-          <Routes>
+        <Layout shown={shown} target={location} onSwap={() => setShown(latest.current)}>
+          <Routes location={shown}>
             <Route path="/" element={<HomePage />} />
             <Route path="/s/:slug" element={<ShelfPage />} />
             <Route path="/p/:sku" element={<ProductPage />} />
+            <Route path="/about" element={<AboutPage />} />
             <Route path="/cart" element={<CartPage />} />
             <Route path="/checkout" element={<CheckoutPage />} />
             <Route path="/login" element={<LoginPage />} />
@@ -131,7 +138,6 @@ export default function App() {
                 <Route path="transactions" element={<AdminTransactions />} />
                 <Route path="orders" element={<AdminOrders />} />
                 <Route path="orders/:id" element={<AdminOrderDetail />} />
-                <Route path="telegram-orders" element={<AdminTelegramInvoices />} />
                 <Route path="messages" element={<AdminInbox />} />
                 <Route path="messages/:userId" element={<AdminInbox />} />
                 <Route path="products" element={<AdminProducts />} />
@@ -145,6 +151,7 @@ export default function App() {
                 <Route path="giveaways" element={<AdminGiveaways />} />
                 <Route path="analytics" element={<AdminAnalytics />} />
                 <Route path="settings" element={<AdminSettings />} />
+                <Route path="account" element={<AdminAccount />} />
                 <Route path="super" element={<SuperAdminRoute><AdminSuperDashboard /></SuperAdminRoute>} />
               </Route>
               <Route path="/*" element={<Storefront />} />

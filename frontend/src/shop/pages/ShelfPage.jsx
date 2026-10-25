@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../utils/api.js'
 import { useShop } from '../ShopContext.jsx'
-import ProductCard from '../components/ProductCard.jsx'
+import ProductCard, { CardSkeleton } from '../components/ProductCard.jsx'
 import { Icon } from '../lib.jsx'
 
 const SORTS = [
@@ -12,13 +12,13 @@ const SORTS = [
   ['latest',     'Newest'],
   ['name',       'Name A–Z'],
 ]
-const PRICE_BANDS = [
-  ['', '', 'Any price'], ['', '50', 'Under $50'], ['50', '250', '$50 – $250'], ['250', '1000', '$250 – $1,000'], ['1000', '', '$1,000+'],
-]
+// Quick picks fill the min/max inputs; the inputs themselves take any value
+const PRICE_PICKS = [['', '50', 'Under $50'], ['50', '250', '$50 – $250'], ['250', '1000', '$250 – $1,000'], ['1000', '', '$1,000+']]
 const PER_PAGE = 24
 
-// /s/:slug — one shelf with search, sort, sub-shelf chips, price/stock filters
-// and pagination. Every filter lives in the URL so links and Back work.
+// /s/:slug — one shelf with search, sort, sub-shelf chips, a real price range,
+// on-sale/in-stock filters and pagination. Every filter lives in the URL so
+// links and Back work. /s/all is the whole catalog (and where header search lands).
 export default function ShelfPage() {
   const { slug } = useParams()
   const [params, setParams] = useSearchParams()
@@ -27,6 +27,8 @@ export default function ShelfPage() {
   const [error, setError] = useState('')
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [search, setSearch] = useState(params.get('q') || '')
+  // Local price text so typing doesn't refetch on every keystroke
+  const [priceText, setPriceText] = useState({ min: params.get('min') || '', max: params.get('max') || '' })
 
   const sub = params.get('sub') || ''
   const sort = params.get('sort') || 'featured'
@@ -34,12 +36,15 @@ export default function ShelfPage() {
   const min = params.get('min') || ''
   const max = params.get('max') || ''
   const inStock = params.get('stock') === '1'
+  const onSale = params.get('sale') === '1'
   const q = params.get('q') || ''
 
+  const all = slug === 'all'
   const shelf = slug === 'fire-sale'
     ? { slug, name: 'Fire Sale', children: [] }
+    : all ? { slug, name: 'Shop all', children: [] }
     : shelves.categories.find(c => c.slug === slug)
-  const title = shelf?.children.find(c => c.slug === sub)?.name || shelf?.name || slug.replace(/-/g, ' ')
+  const title = all && q ? `Results for “${q}”` : shelf?.children.find(c => c.slug === sub)?.name || shelf?.name || slug.replace(/-/g, ' ')
 
   function update(changes) {
     const next = new URLSearchParams(params)
@@ -48,6 +53,9 @@ export default function ShelfPage() {
     setParams(next, { replace: !('page' in changes) })
   }
 
+  useEffect(() => { setSearch(s => s.trim() === q ? s : q) }, [q]) // header search lands here with a new ?q
+  useEffect(() => { setPriceText({ min, max }) }, [min, max])      // a quick pick or "clear" overrides typing
+
   // Search as you type, without a request per keystroke
   useEffect(() => {
     if (search === q) return
@@ -55,14 +63,24 @@ export default function ShelfPage() {
     return () => clearTimeout(id)
   }, [search]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Price text as you type, same debounce — and only numbers make it into the URL
+  useEffect(() => {
+    const t = { min: priceText.min.replace(/[^\d]/g, ''), max: priceText.max.replace(/[^\d]/g, '') }
+    if (t.min === min && t.max === max) return
+    const id = setTimeout(() => update({ min: t.min, max: t.max }), 500)
+    return () => clearTimeout(id)
+  }, [priceText]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const query = useMemo(() => {
-    const qs = new URLSearchParams({ category: sub || slug, sort, page: String(page), limit: String(PER_PAGE) })
+    const qs = new URLSearchParams({ sort, page: String(page), limit: String(PER_PAGE) })
+    if (!all || sub) qs.set('category', sub || slug)
     if (q) qs.set('search', q)
     if (min) qs.set('minPrice', min)
     if (max) qs.set('maxPrice', max)
     if (inStock) qs.set('inStock', '1')
+    if (onSale) qs.set('onSale', '1')
     return qs.toString()
-  }, [slug, sub, sort, page, q, min, max, inStock])
+  }, [slug, all, sub, sort, page, q, min, max, inStock, onSale])
 
   useEffect(() => {
     let live = true
@@ -74,17 +92,21 @@ export default function ShelfPage() {
     return () => { live = false }
   }, [query])
 
-  const activeFilters = [min || max, inStock, q].filter(Boolean).length
+  const activeFilters = [min || max, inStock, onSale, q].filter(Boolean).length
   const totalPages = data?.pagination?.totalPages || 1
+  const priceLabel = min && max ? `$${min} – $${max}` : min ? `$${min}+` : `Under $${max}`
+  const clearAll = () => { setSearch(''); setPriceText({ min: '', max: '' }); update({ q: '', min: '', max: '', stock: '', sale: '' }) }
 
   const filters = (
     <aside className={'filters panel' + (filtersOpen ? ' open' : '')} aria-label="Filters">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span className="panel-title" style={{ margin: 0 }}>Filters</span>
+      <div className="filters-head">
+        <span className="panel-title" style={{ margin: 0 }}><Icon.filter /> Filters</span>
+        {activeFilters > 0 && <button type="button" className="btn-plain" onClick={clearAll}>Clear all</button>}
         {filtersOpen && <button className="icon-btn" aria-label="Close filters" onClick={() => setFiltersOpen(false)}><Icon.close /></button>}
       </div>
+
       {shelf?.children?.length > 0 && (
-        <>
+        <div className="filter-group">
           <h3>Type</h3>
           {[{ slug: '', name: `All ${shelf.name}`, count: shelf.count }, ...shelf.children].map(c => (
             <label key={c.slug || 'all'} className="filter-row">
@@ -92,22 +114,40 @@ export default function ShelfPage() {
               <span className="count">{c.count}</span>
             </label>
           ))}
-        </>
+        </div>
       )}
-      <h3>Price</h3>
-      {PRICE_BANDS.map(([lo, hi, label]) => (
-        <label key={label} className="filter-row">
-          <span className="check"><input type="radio" name="price" checked={min === lo && max === hi} onChange={() => update({ min: lo, max: hi })} /> {label}</span>
+
+      <div className="filter-group">
+        <h3>Price</h3>
+        <div className="price-range">
+          <label className="price-field">
+            <span>Min</span>
+            <span className="price-input"><span>$</span><input type="text" inputMode="numeric" placeholder="0" value={priceText.min} onChange={e => setPriceText(p => ({ ...p, min: e.target.value }))} aria-label="Minimum price" /></span>
+          </label>
+          <span className="price-sep">–</span>
+          <label className="price-field">
+            <span>Max</span>
+            <span className="price-input"><span>$</span><input type="text" inputMode="numeric" placeholder="Any" value={priceText.max} onChange={e => setPriceText(p => ({ ...p, max: e.target.value }))} aria-label="Maximum price" /></span>
+          </label>
+        </div>
+        <div className="price-picks">
+          {PRICE_PICKS.map(([lo, hi, label]) => (
+            <button key={label} type="button" className={'chip' + (min === lo && max === hi ? ' active' : '')} onClick={() => update({ min: lo, max: hi })}>{label}</button>
+          ))}
+        </div>
+      </div>
+
+      <div className="filter-group">
+        <h3>Availability</h3>
+        <label className="filter-row">
+          <span className="check"><input type="checkbox" checked={inStock} onChange={e => update({ stock: e.target.checked ? '1' : '' })} /> In stock only</span>
         </label>
-      ))}
-      <h3>Availability</h3>
-      <label className="filter-row">
-        <span className="check"><input type="checkbox" checked={inStock} onChange={e => update({ stock: e.target.checked ? '1' : '' })} /> In stock only</span>
-      </label>
-      {activeFilters > 0 && (
-        <button className="btn btn-outline btn-sm btn-block" style={{ marginTop: 14 }} onClick={() => { setSearch(''); update({ q: '', min: '', max: '', stock: '' }) }}>Clear filters</button>
-      )}
-      {filtersOpen && <button className="btn btn-primary btn-block" style={{ marginTop: 10 }} onClick={() => setFiltersOpen(false)}>Show results</button>}
+        <label className="filter-row">
+          <span className="check"><input type="checkbox" checked={onSale} onChange={e => update({ sale: e.target.checked ? '1' : '' })} /> On sale</span>
+        </label>
+      </div>
+
+      {filtersOpen && <button className="btn btn-primary btn-block" style={{ marginTop: 10 }} onClick={() => setFiltersOpen(false)}>Show {data ? data.pagination.total : ''} results</button>}
     </aside>
   )
 
@@ -115,6 +155,7 @@ export default function ShelfPage() {
     <div className="container" id="shelf">
       <div className="breadcrumb">
         <Link to="/">Home</Link><span className="sep">/</span>
+        {all && q ? <><Link to="/s/all">Shop all</Link><span className="sep">/</span></> : null}
         {sub && shelf ? <><Link to={`/s/${slug}`}>{shelf.name}</Link><span className="sep">/</span></> : null}
         <span className="current">{title}</span>
       </div>
@@ -122,13 +163,13 @@ export default function ShelfPage() {
       <section className="section" style={{ paddingTop: 14 }}>
         <div className="shop-toolbar">
           <div>
-            <h1 className={'frost-head' + (slug === 'fire-sale' ? ' blood-text' : '')}>{title}</h1>
+            <h1 className={'display' + (slug === 'fire-sale' ? ' blood-text' : '')}>{title}</h1>
             <span className="count-txt">{data ? `${data.pagination.total} product${data.pagination.total === 1 ? '' : 's'}` : 'Loading…'}</span>
           </div>
           <div className="shop-tools">
             <div className="search-box">
               <Icon.search />
-              <input className="input" type="search" placeholder="Search name or SKU" value={search} onChange={e => setSearch(e.target.value)} aria-label="Search products" />
+              <input className="input" type="search" placeholder={all ? 'Search the whole shop' : `Search ${shelf?.name || 'this shelf'}`} value={search} onChange={e => setSearch(e.target.value)} aria-label="Search products" />
             </div>
             <select className="select" value={sort} onChange={e => update({ sort: e.target.value === 'featured' ? '' : e.target.value })} aria-label="Sort products">
               {SORTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
@@ -141,10 +182,20 @@ export default function ShelfPage() {
 
         {shelf?.children?.length > 0 && (
           <div className="chips" role="tablist" aria-label="Type">
-            <button className={'chip' + (!sub ? ' active' : '')} onClick={() => update({ sub: '' })}>All</button>
+            <button className={'chip' + (!sub ? ' active' : '')} onClick={() => update({ sub: '' })}>All <span className="n">{shelf.count}</span></button>
             {shelf.children.map(c => (
-              <button key={c.slug} className={'chip' + (sub === c.slug ? ' active' : '')} onClick={() => update({ sub: c.slug })}>{c.name}</button>
+              <button key={c.slug} className={'chip' + (sub === c.slug ? ' active' : '')} onClick={() => update({ sub: c.slug })}>{c.name} <span className="n">{c.count}</span></button>
             ))}
+          </div>
+        )}
+
+        {activeFilters > 0 && (
+          <div className="active-filters" aria-label="Active filters">
+            {q && <button className="chip" onClick={() => { setSearch(''); update({ q: '' }) }}>“{q}” <Icon.close /></button>}
+            {(min || max) && <button className="chip" onClick={() => { setPriceText({ min: '', max: '' }); update({ min: '', max: '' }) }}>{priceLabel} <Icon.close /></button>}
+            {onSale && <button className="chip" onClick={() => update({ sale: '' })}>On sale <Icon.close /></button>}
+            {inStock && <button className="chip" onClick={() => update({ stock: '' })}>In stock <Icon.close /></button>}
+            <button className="btn-plain" onClick={clearAll}>Clear all</button>
           </div>
         )}
 
@@ -155,23 +206,27 @@ export default function ShelfPage() {
             {error ? (
               <div className="alert alert-error">{error}</div>
             ) : !data ? (
-              <div className="grid">{Array.from({ length: 8 }, (_, i) => <div key={i} className="skeleton" style={{ aspectRatio: '3 / 4' }} />)}</div>
+              <div className="grid">{Array.from({ length: 6 }, (_, i) => <CardSkeleton key={i} />)}</div>
             ) : data.products.length === 0 ? (
               <div className="empty">
-                <h2>Nothing here{activeFilters ? ' with these filters' : ' yet'}</h2>
-                <p>{activeFilters ? 'Try removing a filter.' : 'New drops land every week — check the other shelves meanwhile.'}</p>
-                {activeFilters > 0 && <button className="btn btn-outline" style={{ marginTop: 16 }} onClick={() => { setSearch(''); update({ q: '', min: '', max: '', stock: '' }) }}>Clear the filters</button>}
+                <span className="ic">{q ? <Icon.search /> : <Icon.box />}</span>
+                <h2>{q ? `No matches for “${q}”` : `Nothing here${activeFilters ? ' with these filters' : ' yet'}`}</h2>
+                <p>{activeFilters ? 'Try a shorter word or loosen a filter.' : 'New drops land every week. Check the other shelves meanwhile.'}</p>
+                <div className="hero-cta">
+                  {activeFilters > 0 && <button className="btn btn-outline" onClick={clearAll}>Clear filters</button>}
+                  <Link to="/s/fire-sale" className="btn btn-red"><Icon.fire /> Fire Sale</Link>
+                </div>
               </div>
             ) : (
               <>
                 <div className="grid">{data.products.map(p => <ProductCard key={p.id} product={p} />)}</div>
                 {totalPages > 1 && (
                   <nav className="pagination" aria-label="Pages">
-                    <button disabled={page <= 1} onClick={() => update({ page: String(page - 1) })} aria-label="Previous page">←</button>
+                    <button disabled={page <= 1} onClick={() => update({ page: String(page - 1) })} aria-label="Previous page"><Icon.chevL /></button>
                     {Array.from({ length: totalPages }, (_, i) => i + 1)
                       .filter(n => n === 1 || n === totalPages || Math.abs(n - page) <= 1)
                       .map(n => <button key={n} className={n === page ? 'active' : ''} onClick={() => update({ page: String(n) })} aria-current={n === page ? 'page' : undefined}>{n}</button>)}
-                    <button disabled={page >= totalPages} onClick={() => update({ page: String(page + 1) })} aria-label="Next page">→</button>
+                    <button disabled={page >= totalPages} onClick={() => update({ page: String(page + 1) })} aria-label="Next page"><Icon.chevR /></button>
                   </nav>
                 )}
               </>

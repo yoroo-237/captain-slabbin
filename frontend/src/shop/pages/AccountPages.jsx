@@ -3,7 +3,7 @@ import { Link, NavLink, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { apiFetch } from '../../utils/api.js'
 import { useApp } from '../../context/AppContext.jsx'
 import { useShop } from '../ShopContext.jsx'
-import { money, fmtDate, fmtDateTime, fmtCrypto } from '../lib.jsx'
+import { Icon, money, fmtDate, fmtDateTime, fmtCrypto } from '../lib.jsx'
 
 // Signed-in area: overview, wallet, orders, messages and profile
 export function AccountLayout() {
@@ -20,14 +20,20 @@ export function AccountLayout() {
 
   return (
     <div className="container account-layout">
-      <nav className="account-nav" aria-label="Account">
-        <NavLink to="/account" end>Overview</NavLink>
-        <NavLink to="/account/wallet">Wallet</NavLink>
-        <NavLink to="/account/orders">Orders</NavLink>
-        <NavLink to="/account/messages">Messages {unread > 0 && <span className="badge-count">{unread}</span>}</NavLink>
-        <NavLink to="/account/profile">Profile</NavLink>
-        <a href="/login" onClick={e => { e.preventDefault(); logout() }}>Sign out</a>
-      </nav>
+      <div className="account-side">
+        <div className="account-id">
+          <span className="avatar" aria-hidden="true">{user.username?.[0]?.toUpperCase()}</span>
+          <div><b>{user.username}</b><span>{user.tier || 'Member'}</span></div>
+        </div>
+        <nav className="account-nav" aria-label="Account">
+          <NavLink to="/account" end><Icon.home /> Overview</NavLink>
+          <NavLink to="/account/wallet"><Icon.wallet /> Wallet</NavLink>
+          <NavLink to="/account/orders"><Icon.box /> Orders</NavLink>
+          <NavLink to="/account/messages"><Icon.chat /> Messages {unread > 0 && <span className="badge-count">{unread}</span>}</NavLink>
+          <NavLink to="/account/profile"><Icon.user /> Profile</NavLink>
+          <a href="/login" onClick={e => { e.preventDefault(); logout() }}><Icon.logout /> Sign out</a>
+        </nav>
+      </div>
       <div style={{ minWidth: 0 }}><Outlet /></div>
     </div>
   )
@@ -44,51 +50,71 @@ export function AccountOverview() {
   }, [])
 
   return (
-    <div style={{ display: 'grid', gap: 16 }}>
-      <h1 className="frost-head" style={{ fontSize: 26 }}>Hi, {user.username}</h1>
+    <div className="stack">
+      <div className="greeting">
+        <h1 className="display">Welcome back, {user.username}</h1>
+      </div>
       <div className="stat-grid">
-        <div className="stat"><div className="k"><span className="live-dot" />Balance</div><div className="v">{money(balance)}</div></div>
-        <div className="stat"><div className="k">Cryptos held</div><div className="v">{holdings.length}</div></div>
-        <div className="stat"><div className="k">Total spent</div><div className="v">{money(wallet?.totalSpent)}</div></div>
-        <div className="stat"><div className="k">Tier</div><div className="v" style={{ textTransform: 'capitalize' }}>{wallet?.tier || '—'}</div></div>
+        <Link to="/account/wallet" className="stat"><span className="ic"><Icon.wallet /></span><div className="k"><span className="live-dot" />Balance</div><div className="v">{money(balance)}</div></Link>
+        <div className="stat"><span className="ic"><Icon.bolt /></span><div className="k">Coins held</div><div className="v">{holdings.length}</div></div>
+        <div className="stat"><span className="ic"><Icon.box /></span><div className="k">Total spent</div><div className="v">{money(wallet?.totalSpent)}</div></div>
+        <div className="stat"><span className="ic"><Icon.star /></span><div className="k">Tier</div><div className="v" style={{ textTransform: 'capitalize' }}>{wallet?.tier || 'Basic'}</div></div>
       </div>
       <div className="panel">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <span className="panel-title" style={{ margin: 0 }}>Recent orders</span>
-          <Link to="/account/orders" className="btn-plain">All orders</Link>
+        <div className="panel-head">
+          <span className="panel-title"><Icon.box /> Recent orders</span>
+          <Link to="/account/orders" className="see-all">All orders <Icon.arrow /></Link>
         </div>
         {orders === null ? <div className="spinner" /> : orders.length === 0 ? (
-          <p className="muted">No orders yet. <Link to="/" style={{ textDecoration: 'underline' }}>Start shopping</Link></p>
-        ) : <OrdersTable orders={orders} />}
+          <div className="empty" style={{ padding: '24px 0' }}>
+            <span className="ic"><Icon.bag /></span>
+            <p>No orders yet.</p>
+            <div className="hero-cta"><Link to="/s/all" className="btn btn-primary btn-sm">Start shopping</Link></div>
+          </div>
+        ) : <Orders orders={orders} />}
       </div>
-      <div className="cta-band" style={{ margin: 0 }}>
-        <div><b>Need help with an order?</b><p className="muted" style={{ marginTop: 4 }}>Message the shop directly — we reply fast.</p></div>
-        <div className="actions"><Link to="/account/messages" className="btn btn-primary">Message us</Link><Link to="/account/wallet" className="btn btn-outline">Add funds</Link></div>
+      <div className="help-strip">
+        <div><h2>Need help with an order?</h2><p className="muted">Message the shop directly. A real person answers, day or night.</p></div>
+        <div className="actions"><Link to="/account/messages" className="btn btn-primary"><Icon.chat /> Message us</Link><Link to="/account/wallet" className="btn btn-outline">Add funds</Link></div>
       </div>
     </div>
   )
 }
 
 const STATUS_LABEL = { processing: 'Processing', shipped: 'Shipped', delivered: 'Delivered', cancelled: 'Cancelled', refunded: 'Refunded' }
+const paidWith = o => Array.isArray(o.payments) && o.payments.length > 0 ? o.payments.map(p => `${fmtCrypto(p.amount)} ${p.currency}`).join(' + ') : null
 
-function OrdersTable({ orders }) {
+// A table on wide screens, a stack of cards on phones
+function Orders({ orders }) {
   return (
-    <div className="table-wrap">
-      <table className="t">
-        <thead><tr><th>Order</th><th>Date</th><th>Items</th><th>Total</th><th>Status</th></tr></thead>
-        <tbody>
-          {orders.map(o => (
-            <tr key={o.id}>
-              <td><b>{o.orderNumber}</b>{o.trackingNumber && <div className="muted" style={{ fontSize: 12 }}>{o.carrier ? `${o.carrier} · ` : ''}{o.trackingNumber}</div>}</td>
-              <td>{fmtDate(o.placedAt)}</td>
-              <td>{o.items.map(i => `${i.quantity} × ${i.name}`).join(', ')}</td>
-              <td className="num">{money(o.totalAmount)}{Array.isArray(o.payments) && o.payments.length > 0 && <div className="muted" style={{ fontSize: 12 }}>{o.payments.map(p => `${fmtCrypto(p.amount)} ${p.currency}`).join(' + ')}</div>}</td>
-              <td><span className={'status ' + o.status}>{STATUS_LABEL[o.status] || o.status}</span></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <>
+      <div className="table-wrap only-wide">
+        <table className="t">
+          <thead><tr><th>Order</th><th>Date</th><th>Items</th><th>Total</th><th>Status</th></tr></thead>
+          <tbody>
+            {orders.map(o => (
+              <tr key={o.id}>
+                <td><b>{o.orderNumber}</b>{o.trackingNumber && <div className="muted" style={{ fontSize: 12 }}>{o.carrier ? `${o.carrier} · ` : ''}{o.trackingNumber}</div>}</td>
+                <td>{fmtDate(o.placedAt)}</td>
+                <td>{o.items.map(i => `${i.quantity} × ${i.name}`).join(', ')}</td>
+                <td className="num"><b>{money(o.totalAmount)}</b>{paidWith(o) && <div className="muted" style={{ fontSize: 12 }}>{paidWith(o)}</div>}</td>
+                <td><span className={'status ' + o.status}>{STATUS_LABEL[o.status] || o.status}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="order-list only-narrow">
+        {orders.map(o => (
+          <div key={o.id} className="order-card">
+            <div className="top"><b>{o.orderNumber}</b><span className={'status ' + o.status}>{STATUS_LABEL[o.status] || o.status}</span></div>
+            <div className="items">{o.items.map(i => `${i.quantity} × ${i.name}`).join(', ')}</div>
+            {o.trackingNumber && <div className="muted" style={{ fontSize: 12 }}><Icon.truck /> {o.carrier ? `${o.carrier} · ` : ''}{o.trackingNumber}</div>}
+            <div className="bottom"><span>{fmtDate(o.placedAt)}{paidWith(o) ? ` · ${paidWith(o)}` : ''}</span><b>{money(o.totalAmount)}</b></div>
+          </div>
+        ))}
+      </div>
+    </>
   )
 }
 
@@ -96,11 +122,18 @@ export function AccountOrders() {
   const [orders, setOrders] = useState(null)
   useEffect(() => { apiFetch('/orders?limit=50').then(d => setOrders(d.orders || [])).catch(() => setOrders([])) }, [])
   return (
-    <div className="panel">
-      <div className="panel-title">Your orders</div>
-      {orders === null ? <div className="spinner" /> : orders.length === 0
-        ? <p className="muted">No orders yet. Orders sent on Telegram are confirmed by message.</p>
-        : <OrdersTable orders={orders} />}
+    <div className="stack">
+      <div className="greeting"><h1 className="display">Your orders</h1></div>
+      <div className="panel">
+        {orders === null ? <div className="spinner" /> : orders.length === 0 ? (
+          <div className="empty" style={{ padding: '24px 0' }}>
+            <span className="ic"><Icon.box /></span>
+            <h2>No orders yet</h2>
+            <p>Once you check out, your orders and tracking numbers show up here.</p>
+            <div className="hero-cta"><Link to="/s/all" className="btn btn-primary">Start shopping</Link></div>
+          </div>
+        ) : <Orders orders={orders} />}
+      </div>
     </div>
   )
 }
@@ -143,41 +176,48 @@ export function AccountProfile() {
   }
 
   return (
-    <div style={{ display: 'grid', gap: 16 }}>
+    <div className="stack">
+      <div className="greeting"><h1 className="display">Profile</h1></div>
       <form className="panel" onSubmit={save}>
-        <div className="panel-title">Contact</div>
+        <div className="panel-title"><Icon.telegram /> Contact</div>
         <div className="field">
           <label htmlFor="p-tg">Telegram username or ID</label>
           <input id="p-tg" className="input" placeholder="@username" value={profile.telegramHandle || ''} onChange={set('telegramHandle')} />
-          <span className="hint">Included automatically when you send an order on Telegram, and on your paid orders, so the shop can reach you.</span>
+          <span className="hint">Added to every paid invoice we receive on Telegram, so the shop can reach you.</span>
         </div>
-        <div className="field">
-          <label htmlFor="p-signal">Signal <span className="muted">(optional)</span></label>
-          <input id="p-signal" className="input" value={profile.signalDetails || ''} onChange={set('signalDetails')} />
+        <div className="row-2">
+          <div className="field">
+            <label htmlFor="p-signal">Signal <span className="muted">(optional)</span></label>
+            <input id="p-signal" className="input" value={profile.signalDetails || ''} onChange={set('signalDetails')} />
+          </div>
+          <div className="field">
+            <label htmlFor="p-btc">BTC refund address <span className="muted">(optional)</span></label>
+            <input id="p-btc" className="input" value={profile.btcRefundAddress || ''} onChange={set('btcRefundAddress')} />
+          </div>
         </div>
-        <div className="field">
-          <label htmlFor="p-btc">BTC refund address <span className="muted">(optional)</span></label>
-          <input id="p-btc" className="input" value={profile.btcRefundAddress || ''} onChange={set('btcRefundAddress')} />
+        <div className="stack" style={{ gap: 10, marginBottom: 18 }}>
+          <label className="check"><input type="checkbox" checked={!!profile.notifOrders} onChange={set('notifOrders')} /> Notify me about my orders</label>
+          <label className="check"><input type="checkbox" checked={!!profile.notifDeposits} onChange={set('notifDeposits')} /> Notify me when a deposit is credited</label>
         </div>
-        <label className="check" style={{ marginBottom: 8 }}><input type="checkbox" checked={!!profile.notifOrders} onChange={set('notifOrders')} /> Notify me about my orders</label>
-        <label className="check" style={{ marginBottom: 14 }}><input type="checkbox" checked={!!profile.notifDeposits} onChange={set('notifDeposits')} /> Notify me when a deposit is credited</label>
-        <button className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+        <button className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</button>
       </form>
 
       <form className="panel" onSubmit={changePassword}>
-        <div className="panel-title">Password</div>
-        {pwMsg?.error && <div className="alert alert-error">{pwMsg.error}</div>}
-        {pwMsg?.ok && <div className="alert alert-ok">{pwMsg.ok}</div>}
+        <div className="panel-title"><Icon.lock /> Password</div>
+        {pwMsg?.error && <div className="alert alert-error"><Icon.alert /><span>{pwMsg.error}</span></div>}
+        {pwMsg?.ok && <div className="alert alert-ok"><Icon.check /><span>{pwMsg.ok}</span></div>}
         <div className="field"><label htmlFor="pw-cur">Current password</label><input id="pw-cur" className="input" type="password" autoComplete="current-password" value={pw.currentPassword} onChange={e => setPw(p => ({ ...p, currentPassword: e.target.value }))} /></div>
         <div className="row-2">
-          <div className="field"><label htmlFor="pw-new">New password</label><input id="pw-new" className="input" type="password" autoComplete="new-password" minLength={8} value={pw.newPassword} onChange={e => setPw(p => ({ ...p, newPassword: e.target.value }))} /></div>
-          <div className="field"><label htmlFor="pw-conf">Confirm</label><input id="pw-conf" className="input" type="password" autoComplete="new-password" value={pw.confirm} onChange={e => setPw(p => ({ ...p, confirm: e.target.value }))} /></div>
+          <div className="field"><label htmlFor="pw-new">New password</label><input id="pw-new" className="input" type="password" autoComplete="new-password" minLength={8} value={pw.newPassword} onChange={e => setPw(p => ({ ...p, newPassword: e.target.value }))} /><span className="hint">At least 8 characters</span></div>
+          <div className="field"><label htmlFor="pw-conf">Confirm new password</label><input id="pw-conf" className="input" type="password" autoComplete="new-password" value={pw.confirm} onChange={e => setPw(p => ({ ...p, confirm: e.target.value }))} /></div>
         </div>
         <button className="btn btn-outline" disabled={!pw.currentPassword || pw.newPassword.length < 8}>Update password</button>
       </form>
     </div>
   )
 }
+
+const QUICK_ASKS = ['Is this item back in stock?', 'Where is my order?', 'Do you offer bulk pricing?']
 
 // One conversation with the shop staff; polls for replies while open
 export function AccountMessages() {
@@ -186,6 +226,7 @@ export function AccountMessages() {
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
   const logRef = useRef(null)
+  const inputRef = useRef(null)
 
   const load = () => apiFetch('/messages').then(d => setMessages(d.messages)).catch(e => setError(e.message))
   useEffect(() => {
@@ -193,7 +234,7 @@ export function AccountMessages() {
     const id = setInterval(() => document.visibilityState === 'visible' && load(), 10000)
     return () => clearInterval(id)
   }, [])
-  useEffect(() => { logRef.current?.scrollTo(0, logRef.current.scrollHeight) }, [messages?.length])
+  useEffect(() => { logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: 'smooth' }) }, [messages?.length])
 
   async function send(e) {
     e?.preventDefault()
@@ -210,10 +251,20 @@ export function AccountMessages() {
 
   return (
     <div className="panel chat">
-      <div className="panel-title">Messages with the shop</div>
+      <div className="chat-head">
+        <img src="/brand/logo.webp" alt="" />
+        <div><b>Captain Slabbin</b><span><span className="live-dot" />Usually replies within minutes</span></div>
+      </div>
       <div className="chat-log" ref={logRef} aria-live="polite">
-        {messages === null ? <div className="spinner" /> : messages.length === 0 ? (
-          <p className="muted" style={{ margin: 'auto', textAlign: 'center' }}>Ask us anything — stock, bulk pricing, an order.<br />We usually reply within minutes.</p>
+        {messages === null ? <div className="spinner" style={{ margin: 'auto' }} /> : messages.length === 0 ? (
+          <div className="chat-empty">
+            <span className="ic"><Icon.chat /></span>
+            <b style={{ color: 'var(--text)' }}>Ask us anything</b>
+            <span>Stock, bulk pricing, an order: we’re here 24/7.</span>
+            <div className="quick-asks">
+              {QUICK_ASKS.map(q => <button key={q} type="button" className="chip" onClick={() => { setBody(q); inputRef.current?.focus() }}>{q}</button>)}
+            </div>
+          </div>
         ) : messages.map(m => (
           <div key={m.id} className={'bubble ' + (m.isStaff ? 'staff' : 'me')}>
             {m.body}
@@ -221,16 +272,16 @@ export function AccountMessages() {
           </div>
         ))}
       </div>
-      {error && <div className="alert alert-error">{error}</div>}
+      {error && <div className="alert alert-error"><Icon.alert /><span>{error}</span></div>}
       <form className="chat-form" onSubmit={send}>
         <textarea
+          ref={inputRef}
           className="textarea" rows={1} maxLength={2000} placeholder="Write a message…" aria-label="Message"
           value={body} onChange={e => setBody(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
         />
-        <button className="btn btn-primary" disabled={sending || !body.trim()}>Send</button>
+        <button className="btn btn-primary" disabled={sending || !body.trim()} aria-label="Send"><Icon.send /></button>
       </form>
     </div>
   )
 }
-

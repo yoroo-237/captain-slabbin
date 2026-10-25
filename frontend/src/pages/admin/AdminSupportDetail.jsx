@@ -120,7 +120,7 @@ export default function AdminSupportDetail() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {messages.map((m, i) => {
-              const isAdmin = m.isAdmin || m.role === 'admin' || m.role === 'moderator'
+              const isAdmin = m.isAdmin || ['admin', 'moderator', 'superadmin'].includes(m.role)
               return (
                 <div key={m.id || i} style={{
                   padding: '14px',

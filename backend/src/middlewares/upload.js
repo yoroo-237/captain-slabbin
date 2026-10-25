@@ -1,6 +1,11 @@
 import multer from 'multer';
+import crypto from 'crypto';
+import fs from 'fs/promises';
+import path from 'path';
 import { v2 as cloudinary } from 'cloudinary';
 import { env } from '../config/env.js';
+
+const cloudinaryReady = !!(env.cloudinary.cloudName && env.cloudinary.apiKey && env.cloudinary.apiSecret);
 
 // Configure Cloudinary if credentials are present
 if (env.cloudinary.cloudName && env.cloudinary.apiKey && env.cloudinary.apiSecret) {
@@ -39,8 +44,26 @@ export const uploadMedia = multer({
   fileFilter: mediaFilter,
 });
 
-// Upload a buffer to Cloudinary and return { url, thumbnail }
-export async function uploadToCloudinary(buffer, mimetype, folder = 'botb') {
+const EXT = {
+  'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
+  'video/mp4': 'mp4', 'video/webm': 'webm', 'video/ogg': 'ogv', 'video/quicktime': 'mov', 'video/x-msvideo': 'avi', 'video/x-matroska': 'mkv',
+};
+
+// Without Cloudinary (local development, or before the keys are set) files are
+// written to the uploads folder the server already serves. Note: a Railway disk
+// is wiped on redeploy, so production needs Cloudinary.
+async function saveLocally(buffer, mimetype, baseUrl) {
+  const dir  = path.resolve(env.uploadDir, 'products');
+  const name = `${crypto.randomUUID()}.${EXT[mimetype] || 'bin'}`;
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, name), buffer);
+  const url = `${(env.publicUrl || baseUrl || '').replace(/\/$/, '')}/uploads/products/${name}`;
+  return { url, thumbnail: mimetype.startsWith('video/') ? null : url };
+}
+
+// Upload a buffer to Cloudinary (or the local uploads folder) and return { url, thumbnail }
+export async function uploadToCloudinary(buffer, mimetype, folder = 'captain-slabbin', baseUrl = '') {
+  if (!cloudinaryReady) return saveLocally(buffer, mimetype, baseUrl);
   const isVideo    = mimetype.startsWith('video/');
   const resourceType = isVideo ? 'video' : 'image';
 

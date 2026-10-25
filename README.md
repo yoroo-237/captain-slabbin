@@ -8,15 +8,15 @@ Boutique en ligne inspirée de mrslabbin.com (code d'accès CSC), construite sur
 ## Fonctionnalités
 
 - **Porte d'accès** : mot de passe (CSC par défaut) et confirmation 21+ avant de voir quoi que ce soit. L'API refuse le catalogue sans le jeton de la porte.
-- **Navigation sans compte**. Le compte se crée au checkout (en ligne, sans perdre le panier) ou sur `/account/create`.
-- **Deux façons de commander** depuis le panier :
-  1. **Checkout sur la plateforme**, payé depuis le wallet crypto.
-  2. **Envoi de la facture sur Telegram**, même pour un invité. Le bot poste la commande dans le chat de la boutique. Si le client connecté a renseigné son Telegram dans son profil, celui-ci est ajouté au message. La facture peut aussi être copiée ou ouverte dans Telegram.
+- **Navigation sans compte**. Le compte se crée au checkout (en ligne, sans perdre le panier) ou sur `/account/create` : un nom d'utilisateur et un mot de passe, rien d'autre.
+- **Commande : payée dans l'app, facture sur Telegram**. Le client paie toujours depuis son wallet crypto. Ensuite, le bot poste la facture (copie de la commande) dans le chat Telegram de la boutique, et l'écran de confirmation propose « Open Telegram ».
+- **Aucune information client** : ni nom, ni email, ni adresse. Seul le Telegram (nom d'utilisateur ou id) est demandé, facultatif, au checkout s'il n'est pas déjà dans le profil ; il est alors enregistré et ajouté aux factures.
+- **Design** : thèmes sombre et clair, logo qui fume en continu, transition de fumée entre les pages et au changement de thème, UX adaptée au marché américain.
 - **Wallet à solde dynamique** : le client détient la crypto déposée, moins la commission. Le solde affiché vaut quantité × cours actuel et se met à jour toutes les 30 s.
 - **Commission prélevée à la recharge** : c'est le client qui la supporte. L'admin balaie la part créditée au client vers l'adresse de la boutique. Le superadmin balaie la commission vers l'adresse de réserve. Les deux sweeps sont totalement séparés.
 - **Conversion figée à l'achat** : le total en USD est converti au cours du moment, et cette quantité de crypto est débitée.
 - **Messagerie interne** : un fil par client avec l'équipe (`/account/messages`, et `/admin/messages` côté staff). Chaque nouveau message client est aussi notifié sur Telegram.
-- **Admin** : produits (SKU, prix barré = étagère Fire Sale, badge, unité), commandes, commandes Telegram, messages, dépôts, utilisateurs, réglages de la boutique. **Superadmin** : taux de commission, adresses de réserve, sweep de la commission.
+- **Admin** : produits (SKU, prix barré = étagère Fire Sale, badge, unité), commandes, messages, dépôts, utilisateurs, réglages de la boutique. **Superadmin** : taux de commission, adresses de réserve, sweep de la commission.
 
 ## Démarrage local
 

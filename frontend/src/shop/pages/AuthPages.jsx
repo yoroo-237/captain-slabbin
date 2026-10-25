@@ -2,14 +2,21 @@ import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useApp } from '../../context/AppContext.jsx'
 import { SignInForm, CreateAccountForm } from '../components/AuthForms.jsx'
 import { STAFF_ROLES } from '../../utils/roles.js'
+import { Icon } from '../lib.jsx'
 
-function AuthShell({ title, sub, children, footer }) {
+function AuthShell({ title, sub, children, footer, perks }) {
   return (
-    <div className="container" style={{ maxWidth: 480, paddingTop: 40, paddingBottom: 20 }}>
-      <h1 className="frost-head" style={{ fontSize: 28, textAlign: 'center' }}>{title}</h1>
-      {sub && <p className="muted" style={{ textAlign: 'center', marginTop: 8 }}>{sub}</p>}
-      <div className="panel" style={{ marginTop: 20 }}>{children}</div>
-      <p className="muted" style={{ textAlign: 'center', marginTop: 16, fontSize: 14 }}>{footer}</p>
+    <div className="auth-wrap">
+      <img className="auth-logo" src="/brand/logo.webp" alt="" />
+      <h1 className="display">{title}</h1>
+      {sub && <p className="sub">{sub}</p>}
+      <div className="panel" style={{ marginTop: 22 }}>{children}</div>
+      {perks && (
+        <ul className="auth-perks">
+          {perks.map(p => <li key={p}><Icon.check /> {p}</li>)}
+        </ul>
+      )}
+      <p className="muted" style={{ textAlign: 'center', marginTop: 18, fontSize: 14 }}>{footer}</p>
     </div>
   )
 }
@@ -23,9 +30,9 @@ export function LoginPage() {
   if (user) return <Navigate to={target(location, user)} replace />
   return (
     <AuthShell
-      title="Sign in"
-      sub="Welcome back."
-      footer={<>New here? <Link to="/account/create" state={location.state} style={{ textDecoration: 'underline' }}>Create an account</Link> — or keep browsing, no account needed.</>}
+      title="Welcome back"
+      sub="Sign in to your wallet, orders and messages."
+      footer={<>New here? <Link to="/account/create" state={location.state} className="link">Create an account</Link></>}
     >
       <SignInForm onDone={u => navigate(target(location, u), { replace: true })} />
     </AuthShell>
@@ -41,8 +48,9 @@ export function CreateAccountPage() {
   return (
     <AuthShell
       title="Create account"
-      sub="Takes 10 seconds. Get a crypto wallet, order tracking and direct messages with the shop."
-      footer={<>Already have one? <Link to="/login" style={{ textDecoration: 'underline' }}>Sign in</Link></>}
+      sub="Takes 10 seconds. No email or real name needed."
+      perks={['Crypto wallet to pay in one tap', 'Order tracking & invoices on Telegram', 'Direct messages with the shop']}
+      footer={<>Already have an account? <Link to="/login" className="link">Sign in</Link></>}
     >
       <CreateAccountForm onDone={() => navigate(location.state?.from?.pathname || '/account/wallet', { replace: true })} />
     </AuthShell>

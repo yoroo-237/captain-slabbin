@@ -9,19 +9,22 @@ export function AppProvider({ children }) {
   // Crypto held per currency (net of deposit fees) with live prices; balance = Σ usd
   const [holdings, setHoldings]     = useState([])
   const [loadingAuth, setLoadingAuth] = useState(true)
+  // Storefront theme. index.html sets data-theme before first paint (saved choice,
+  // else the system setting); only an explicit toggle is saved.
   const [theme, setTheme]           = useState(
-    () => localStorage.getItem('botb_theme') || 'light'
+    () => document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark'
   )
 
-  // Apply theme on mount + change
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
-    localStorage.setItem('botb_theme', theme)
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'light' ? '#f4f1ec' : '#070708')
   }, [theme])
 
-  function toggleTheme() {
-    setTheme(t => t === 'light' ? 'dark' : 'light')
-  }
+  const toggleTheme = useCallback(() => {
+    const next = theme === 'light' ? 'dark' : 'light'
+    try { localStorage.setItem('cs_theme', next) } catch { /* storage blocked */ }
+    setTheme(next)
+  }, [theme])
 
   const applyWallet = useCallback((w) => {
     const bal = w?.balance ?? w

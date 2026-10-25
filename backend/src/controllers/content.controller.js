@@ -14,6 +14,15 @@ const PUBLIC_KEYS = [
   'telegram_username',
   'promo_enabled',
   'promo_headline',
+  'contact_email',
+  'store_address',
+  'store_city',
+  'store_state',
+  'store_zip',
+  'store_hours',
+  'announcements',
+  'ad_banner',
+  'about_text',
 ];
 
 export const contentController = {
