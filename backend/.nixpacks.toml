@@ -5,11 +5,9 @@ nixPkgs = ["nodejs_20"]
 cmds = ["npm ci"]
 
 [phases.build]
-cmds = [
-  "npx prisma generate",
-  "npx prisma migrate deploy",
-  "node prisma/seed.js"
-]
+# The database is only reachable once the service runs (Railway's private network
+# is off during the build): migrations and the seed run in preDeployCommand.
+cmds = ["npx prisma generate"]
 
 [start]
 cmd = "node src/server.js"

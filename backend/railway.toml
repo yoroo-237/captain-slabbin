@@ -2,6 +2,8 @@
 builder = "nixpacks"
 
 [deploy]
+# Runs before each new version starts, with the database reachable
+preDeployCommand = ["npx prisma migrate deploy && node prisma/seed.js"]
 startCommand = "node src/server.js"
 healthcheckPath = "/health"
 healthcheckTimeout = 30

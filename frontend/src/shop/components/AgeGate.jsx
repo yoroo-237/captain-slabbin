@@ -9,6 +9,9 @@ import { createSmoke, GATE_TIMING } from './smoke.js'
 // waits; on the right password the smoke swallows the screen, the shop is mounted
 // behind it at its thickest (passGate), and the smoke lifts off the real page.
 // The API refuses catalog requests until the gate is passed.
+// Shown while the API cannot say which word is set (Admin → Settings → Storefront)
+const DEFAULT_WORD = 'CSC'
+
 export default function AgeGate({ onFinished }) {
   const { passGate, settings, shelves, unlocked } = useShop()
   const { theme } = useApp()
@@ -34,7 +37,9 @@ export default function AgeGate({ onFinished }) {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    apiFetch('/gate').then(d => setWord(d?.word || null)).catch(() => {})
+    apiFetch('/gate')
+      .then(d => setWord(d && 'word' in d ? d.word : DEFAULT_WORD))
+      .catch(() => setWord(DEFAULT_WORD))
   }, [])
 
   // Unlocked some other way (signed in on /login): no reveal to play, just leave

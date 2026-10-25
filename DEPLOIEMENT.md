@@ -177,7 +177,7 @@ Ne réutilisez jamais les phrases d'un autre projet : elles contrôlent les fond
 
 ³ Les comptes staff sont créés **une seule fois**, au premier déploiement. Ensuite le seed ne les touche plus : un identifiant ou un mot de passe changé dans **Admin → My account** survit aux redéploiements. Mot de passe perdu : ajoutez `RESET_STAFF_PASSWORDS=true`, redéployez (le compte des variables est restauré avec son mot de passe), puis **retirez** la variable. Si un déploiement précédent avait créé d'autres comptes (`admin`, `superadmin`…), désactivez-les dans **Admin → Users**.
 
-6. Ce que fait chaque déploiement : `prisma migrate deploy`, puis le seed. Le seed crée les réglages et les catégories sans écraser vos modifications, crée les comptes staff s'ils n'ont jamais été créés, et ajoute le catalogue de démo seulement si la base est vide.
+6. Ce que fait chaque déploiement : au démarrage de la nouvelle version (« pre-deploy » dans `backend/railway.toml`, quand la base est joignable), `prisma migrate deploy` puis le seed. Le seed crée les réglages et les catégories sans écraser vos modifications, crée les comptes staff s'ils n'ont jamais été créés, et ajoute le catalogue de démo seulement si la base est vide.
 7. Pour vérifier, ouvrez `https://api.<votre-domaine>/health` : la réponse doit être `{"status":"ok", ...}`.
 
 ### 3.3 Frontend sur Vercel
