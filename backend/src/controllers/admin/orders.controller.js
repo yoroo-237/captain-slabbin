@@ -10,7 +10,8 @@ const STATUS_TEXT = { processing: 'is being prepared', shipped: 'has shipped', d
 function tellCustomer(order) {
   const tracking = order.trackingNumber ? `
 Tracking: <code>${escapeHtml(order.trackingNumber)}</code>${order.carrier ? ` (${escapeHtml(order.carrier)})` : ''}` : '';
-  dmUser(order.userId, `📦 Your order <b>${escapeHtml(order.orderNumber)}</b> ${STATUS_TEXT[order.status] || `is now ${escapeHtml(order.status)}`}.${tracking}`,
+  dmUser(order.userId, `📦 <b>ORDER UPDATE</b>
+Your order <code>${escapeHtml(order.orderNumber)}</code> ${STATUS_TEXT[order.status] || `is now ${escapeHtml(order.status)}`}.${tracking}`,
     [{ text: '📦 My orders', callback_data: 'o' }]).catch(() => {});
 }
 

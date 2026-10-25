@@ -46,7 +46,8 @@ export const notificationService = {
 
   async notifyDeposit(userId, currency, usdAmount, cryptoAmount = null) {
     // Customers on the bot hear about it there too (best-effort)
-    dmUser(userId, `💰 <b>Deposit received</b>: ${cryptoAmount != null ? `${cryptoAmount} ${currency} ≈ ` : ''}$${Number(usdAmount).toFixed(2)} added to your wallet.`,
+    dmUser(userId, `💰 <b>DEPOSIT RECEIVED</b>
+${cryptoAmount != null ? `+${cryptoAmount} ${currency}  ·  ` : ''}<b>$${Number(usdAmount).toFixed(2)}</b> added to your wallet.`,
       [{ text: '🛒 Shop now', callback_data: 'menu' }, { text: '💰 Wallet', callback_data: 'w' }]).catch(() => {});
     await this.create(userId, {
       type:    'deposit',

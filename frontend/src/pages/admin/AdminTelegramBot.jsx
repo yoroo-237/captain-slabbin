@@ -96,9 +96,27 @@ export default function AdminTelegramBot({ canEdit }) {
 
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button type="button" className="admin-btn admin-btn-primary" disabled={!!busy} onClick={() => post('test', null, 'Test message sent.')}>{busy === 'test' ? 'Sending…' : 'Send a test message'}</button>
-            {!status.branded && <button type="button" className="admin-btn admin-btn-secondary" disabled={!!busy} onClick={() => post('brand', null, 'Captain Slabbin look applied to the bot.')}>Apply the Captain Slabbin look</button>}
+            <button type="button" className="admin-btn admin-btn-secondary" disabled={!!busy} onClick={() => post('brand', null, 'Captain Slabbin look applied to the bot.')}>{status.branded ? 'Apply the look again' : 'Apply the Captain Slabbin look'}</button>
             <button type="button" className="admin-btn admin-btn-secondary" disabled={!!busy} onClick={() => { setReplacing(true); setNotice('') }}>Use another bot</button>
             <button type="button" className="admin-btn admin-btn-danger" disabled={!!busy} onClick={() => window.confirm('Unlink this bot? Notifications stop until you link one again.') && post('unlink', null, 'Bot unlinked.')}>Unlink</button>
+          </div>
+
+          {/* Telegram only lets a bot's pictures be changed in @BotFather */}
+          <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid #eee' }}>
+            <h3 className="admin-card-title" style={{ fontSize: '0.95rem' }}>Bot pictures</h3>
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+              <a href="/brand/bot/avatar.jpg" download="captain-slabbin-bot-photo.jpg" style={{ textAlign: 'center', fontSize: '0.8rem' }}>
+                <img src="/brand/bot/avatar.jpg" alt="" width="96" height="96" style={{ borderRadius: '50%', display: 'block', marginBottom: 6 }} />Profile photo
+              </a>
+              <a href="/brand/bot/intro.jpg" download="captain-slabbin-bot-intro.jpg" style={{ textAlign: 'center', fontSize: '0.8rem' }}>
+                <img src="/brand/bot/intro.jpg" alt="" width="171" height="96" style={{ borderRadius: 8, display: 'block', marginBottom: 6 }} />Welcome picture
+              </a>
+              <ol style={{ ...muted, margin: 0, paddingLeft: 18, lineHeight: 1.7, flex: '1 1 260px' }}>
+                <li>Download both pictures (click them).</li>
+                <li>In Telegram, open <b>@BotFather</b>, send <code>/mybots</code>, choose @{status.bot?.username}, then <b>Edit Bot</b>.</li>
+                <li><b>Edit Botpic</b>: send the profile photo. <b>Edit Description Picture</b>: send the welcome picture.</li>
+              </ol>
+            </div>
           </div>
         </>
       )}

@@ -7,6 +7,7 @@ import { getUserBalance, getCommissionPct } from './balance.service.js';
 import { orderService } from './order.service.js';
 import { walletService } from './wallet.service.js';
 import { notificationService } from './notification.service.js';
+import { art, shelfArt, salePct, RULE } from './telegramCatalog.js';
 
 // Buying inside Telegram, with nothing to type: the customer's account is their
 // Telegram identity (opened from the bot after a 21+ confirmation, or an
@@ -89,16 +90,27 @@ export async function connectAccount(from, token) {
 
 export function ageScreen() {
   return {
-    text: '🏴‍☠️ <b>Welcome aboard Captain Slabbin</b>\n\nEverything here is for adults 21 and over. Confirm your age and your account is ready: no name, email or password to type.\n\nAlready have an account on the site? Open it, go to <b>Account → Telegram</b> and tap <b>Connect Telegram</b>.',
-    keyboard: [[{ text: '✅ I am 21 or older', callback_data: 'age' }]],
+    text: [
+      '🏴‍☠️ <b>WELCOME ABOARD</b>',
+      '<i>Captain Slabbin · Top shelf. Delivered.</i>',
+      '',
+      'Browse the shelves, buy and pay right here. Your account is your Telegram: no name, email or password to type.',
+      '',
+      '🔞 Everything here is for adults <b>21 and over</b>.',
+      '',
+      'Already have an account on the site? Open <b>Account → Profile</b> there and tap <b>Connect Telegram</b>.',
+    ].join('\n'),
+    keyboard: [[{ text: '✅ I am 21 or older, let me in', callback_data: 'age' }]],
+    image: art('banner.jpg'),
   };
 }
 
+// The customer's own buttons under the menu, and their balance for the header
 export async function accountRow(user) {
   const { balance } = await getUserBalance(user.id);
-  const rows = [[{ text: `💰 Wallet ${money(balance)}`, callback_data: 'w' }, { text: '📦 My orders', callback_data: 'o' }]];
+  const rows = [[{ text: '💰 Wallet', callback_data: 'w' }, { text: '📦 My orders', callback_data: 'o' }]];
   if (hasSite()) rows.push([{ text: '👤 My account on the site', url: siteLoginUrl(user) }]);
-  return rows;
+  return { rows, balance };
 }
 
 const firstImage = p => {
@@ -112,34 +124,40 @@ export async function productScreen(id, qty = 1) {
     where: { id: Number(id), isActive: true },
     include: { images: { orderBy: { position: 'asc' } }, category: { include: { parent: true } }, brand: true },
   });
-  if (!p) return { text: 'This product is no longer available.', keyboard: [[{ text: '‹ All shelves', callback_data: 'menu' }]] };
+  if (!p) return { text: 'This product is no longer available.', keyboard: [[{ text: '‹ All shelves', callback_data: 'menu' }]], image: art('banner.jpg') };
   const max = Math.min(MAX_QTY, Math.max(1, p.stock));
   qty = Math.min(Math.max(1, Number(qty) || 1), max);
   const shelf = p.category?.parent || p.category;
-  const was = p.compareAtPrice && Number(p.compareAtPrice) > Number(p.price) ? `  <s>${money(p.compareAtPrice)}</s>` : '';
-  const desc = p.description ? `\n\n${escapeHtml(p.description.length > 600 ? p.description.slice(0, 600) + '…' : p.description)}` : '';
-  const stock = p.stock <= 0 ? '\n<i>Sold out</i>' : p.stock <= 5 ? `\nOnly ${p.stock} left` : '';
+  const pct = salePct(p);
+  const stock = p.stock <= 0 ? '✖️ Sold out' : p.stock <= 5 ? `⚠️ Only ${p.stock} left` : '✅ In stock';
+  const desc = p.description ? escapeHtml(p.description.length > 700 ? p.description.slice(0, 700) + '…' : p.description) : null;
 
   const rows = [];
   if (p.stock > 0) {
     rows.push([
-      { text: '−', callback_data: `p:${p.id}:${Math.max(1, qty - 1)}` },
-      { text: `Qty ${qty}`, callback_data: `p:${p.id}:${qty}` },
-      { text: '+', callback_data: `p:${p.id}:${Math.min(max, qty + 1)}` },
+      { text: '➖', callback_data: `p:${p.id}:${Math.max(1, qty - 1)}` },
+      { text: `QTY ${qty}`, callback_data: `p:${p.id}:${qty}` },
+      { text: '➕', callback_data: `p:${p.id}:${Math.min(max, qty + 1)}` },
     ]);
-    rows.push([{ text: `🛒 Buy ${qty} · ${money(Number(p.price) * qty)}`, callback_data: `buy:${p.id}:${qty}` }]);
+    rows.push([{ text: `🛒 BUY ${qty}  ·  ${money(Number(p.price) * qty)}`, callback_data: `buy:${p.id}:${qty}` }]);
   }
-  if (hasSite()) rows.push([{ text: '🌐 See it on the site', url: productLink(p) }]);
-  rows.push([{ text: `‹ ${shelf ? shelf.name : 'All shelves'}`, callback_data: shelf ? `cat:${shelf.slug}:1` : 'menu' }]);
+  rows.push([
+    { text: `‹ ${shelf ? shelf.name : 'All shelves'}`, callback_data: shelf ? `cat:${shelf.slug}:1` : 'menu' },
+    ...(hasSite() ? [{ text: '🌐 On the site', url: productLink(p) }] : []),
+  ]);
 
+  const meta = [p.category?.name, p.brand?.name].filter(Boolean).map(escapeHtml).join('  ·  ');
   return {
     text: [
-      `<b>${escapeHtml(p.name)}</b>`,
-      [p.brand?.name, p.category?.name].filter(Boolean).map(escapeHtml).join(' · '),
-      `<b>${money(p.price)}</b>${was}${p.unitLabel ? ` ${escapeHtml(p.unitLabel)}` : ''}${stock}`,
-    ].filter(Boolean).join('\n') + desc,
+      `<b>${escapeHtml(p.name.toUpperCase())}</b>`,
+      ...(meta ? [meta] : []),
+      RULE,
+      `💵 <b>${money(p.price)}</b>${p.unitLabel ? ` <i>${escapeHtml(p.unitLabel)}</i>` : ''}${pct ? `   <s>${money(p.compareAtPrice)}</s>  🔥 <b>−${pct}%</b>` : ''}`,
+      stock,
+      ...(desc ? ['', `<blockquote expandable>${desc}</blockquote>`] : []),
+    ].join('\n'),
     keyboard: rows,
-    image: firstImage(p),
+    image: firstImage(p) || shelfArt(shelf?.slug, shelf?.imageUrl),
   };
 }
 
@@ -152,16 +170,19 @@ export async function buyScreen(user, id, qty) {
   const enough = balance >= total;
   return {
     text: [
-      '<b>Your order</b>',
-      `${qty} × ${escapeHtml(p.name)}: <b>${money(total)}</b>`,
+      '🧾 <b>CHECKOUT</b>',
+      RULE,
+      `${qty} × ${escapeHtml(p.name)}`,
+      `<b>Total  ${money(total)}</b>`,
       '',
-      'Delivery: the crew messages you here on Telegram right after payment to arrange it. To have it shipped to an address, order on the site.',
+      '🚚 <b>Delivery</b>: the crew messages you right here after payment to arrange it. For shipping to an address, order on the site.',
       '',
-      `Wallet: ${money(balance)}${enough ? '' : `  ·  <b>${money(total - balance)} missing</b>`}`,
+      `💰 Wallet  <b>${money(balance)}</b>`,
+      ...(enough ? [] : [`⚠️ <b>${money(total - balance)}</b> missing: add funds, then come back.`]),
     ].join('\n'),
     keyboard: [
       enough
-        ? [{ text: `✅ Pay ${money(total)} from my wallet`, callback_data: `pay:${p.id}:${qty}` }]
+        ? [{ text: `✅ PAY ${money(total)} FROM MY WALLET`, callback_data: `pay:${p.id}:${qty}` }]
         : [{ text: '➕ Add funds', callback_data: 'w' }],
       [{ text: '‹ Back', callback_data: `p:${p.id}:${qty}` }],
     ],
@@ -181,18 +202,21 @@ export async function payScreen(user, id, qty) {
     });
     return {
       text: [
-        `✅ <b>Paid. Order ${escapeHtml(order.orderNumber)}</b>`,
-        ...order.items.map(i => `${i.quantity} × ${escapeHtml(i.name)}: ${money(Number(i.price) * i.quantity)}`),
-        `Total ${money(order.totalAmount)}, paid ${payments.map(p => `${p.amount} ${p.currency}`).join(' + ')}`,
+        '✅ <b>PAID</b>',
+        `Order <code>${escapeHtml(order.orderNumber)}</code>`,
+        RULE,
+        ...order.items.map(i => `${i.quantity} × ${escapeHtml(i.name)}  ·  ${money(Number(i.price) * i.quantity)}`),
+        `<b>Total  ${money(order.totalAmount)}</b>`,
+        `<i>Paid ${payments.map(p => `${p.amount} ${p.currency}`).join(' + ')}</i>`,
         '',
-        'The crew has your invoice and will message you here to arrange delivery.',
-        `Wallet: ${money(newBalance)}`,
+        '🏴‍☠️ The crew has your invoice and will message you here to arrange delivery.',
+        `💰 Wallet  <b>${money(newBalance)}</b>`,
       ].join('\n'),
-      keyboard: [[{ text: '📦 My orders', callback_data: 'o' }, { text: '‹ Keep shopping', callback_data: 'menu' }]],
+      keyboard: [[{ text: '📦 My orders', callback_data: 'o' }, { text: '🛒 Keep shopping', callback_data: 'menu' }]],
     };
   } catch (err) {
     return {
-      text: `⚠️ ${escapeHtml(err.message || 'The payment did not go through.')}`,
+      text: `⚠️ <b>NOT PAID</b>\n${escapeHtml(err.message || 'The payment did not go through.')}`,
       keyboard: [[{ text: '‹ Back', callback_data: `buy:${id}:${qty}` }]],
     };
   } finally {
@@ -200,21 +224,27 @@ export async function payScreen(user, id, qty) {
   }
 }
 
+const COIN_ICON = { BTC: '🟠', LTC: '🔵', ETH: '🟣', DOGE: '🟡', XMR: '🟤' };
+
 export async function walletScreen(user) {
   const { balance, holdings } = await getUserBalance(user.id);
-  const lines = (holdings || []).filter(h => Number(h.amount) > 0).map(h => `• ${h.amount} ${h.currency} ≈ ${money(h.usd || 0)}`);
+  const lines = (holdings || []).filter(h => Number(h.amount) > 0)
+    .map(h => `${COIN_ICON[h.currency] || '•'} ${h.amount} ${h.currency}  ·  ${money(h.usd || 0)}`);
   return {
     text: [
-      `💰 <b>Wallet: ${money(balance)}</b>`,
+      '💰 <b>WALLET</b>',
+      RULE,
+      `Balance  <b>${money(balance)}</b>`,
       ...lines,
       '',
-      'Add funds in the coin you like. Your balance updates by itself and I message you here when it lands.',
+      'Add funds in the coin you like. Your balance updates by itself, and I message you here the moment it lands.',
     ].join('\n'),
     keyboard: [
-      COINS.slice(0, 3).map(c => ({ text: `+ ${c}`, callback_data: `dep:${c}` })),
-      COINS.slice(3).map(c => ({ text: `+ ${c}`, callback_data: `dep:${c}` })),
+      COINS.slice(0, 3).map(c => ({ text: `${COIN_ICON[c]} ${c}`, callback_data: `dep:${c}` })),
+      COINS.slice(3).map(c => ({ text: `${COIN_ICON[c]} ${c}`, callback_data: `dep:${c}` })),
       [{ text: '📦 My orders', callback_data: 'o' }, { text: '‹ Shop', callback_data: 'menu' }],
     ],
+    image: art('wallet.jpg'),
   };
 }
 
@@ -229,15 +259,19 @@ export async function depositScreen(user, currency) {
     const hours = Math.max(1, Math.round((new Date(dep.expiresAt) - Date.now()) / 3600000));
     return {
       text: [
-        `<b>Add funds in ${currency}</b>`,
+        `${COIN_ICON[currency]} <b>ADD FUNDS · ${currency}</b>`,
+        RULE,
+        `Send ${currency} to this address (tap it to copy):`,
         '',
-        `Send ${currency} to this address (tap to copy):`,
         `<code>${escapeHtml(dep.address)}</code>`,
         '',
-        min?.value ? `Minimum: ${money(min.value)}.` : null,
-        Number(pct) > 0 ? `A ${pct}% network & service fee is taken from the deposit.` : null,
-        `The address is valid for ${hours} hours. ${currency === 'XMR' ? 'XMR deposits are checked by hand, usually within a few hours.' : 'It is credited automatically after network confirmation.'}`,
-      ].filter(Boolean).join('\n'),
+        ...(min?.value ? [`▸ Minimum ${money(min.value)}`] : []),
+        ...(Number(pct) > 0 ? [`▸ ${pct}% network & service fee taken from the deposit`] : []),
+        `▸ Valid for ${hours} hours`,
+        currency === 'XMR' ? '▸ Checked by hand, usually within a few hours' : '▸ Credited automatically after network confirmation',
+        '',
+        'I message you here as soon as it is credited.',
+      ].join('\n'),
       keyboard: [[{ text: '‹ Wallet', callback_data: 'w' }]],
     };
   } catch (err) {
@@ -250,13 +284,19 @@ const STATUS = { processing: '⏳ Processing', shipped: '🚚 Shipped', delivere
 export async function ordersScreen(user) {
   const orders = await prisma.order.findMany({ where: { userId: user.id }, orderBy: { placedAt: 'desc' }, take: 5, include: { items: true } });
   return {
-    text: orders.length
-      ? ['<b>Your last orders</b>', '', ...orders.map(o => [
-          `<b>${escapeHtml(o.orderNumber)}</b> · ${money(o.totalAmount)} · ${STATUS[o.status] || escapeHtml(o.status)}`,
-          o.items.map(i => `${i.quantity} × ${escapeHtml(i.name)}`).join(', '),
-          o.trackingNumber ? `Tracking: <code>${escapeHtml(o.trackingNumber)}</code>${o.carrier ? ` (${escapeHtml(o.carrier)})` : ''}` : null,
-        ].filter(Boolean).join('\n'))].join('\n\n')
-      : 'No orders yet. Pick a shelf and buy in two taps.',
+    text: [
+      '📦 <b>YOUR ORDERS</b>',
+      RULE,
+      ...(orders.length
+        ? [orders.map(o => [
+            `<b>${escapeHtml(o.orderNumber)}</b>  ·  ${money(o.totalAmount)}`,
+            STATUS[o.status] || escapeHtml(o.status),
+            `<i>${o.items.map(i => `${i.quantity} × ${escapeHtml(i.name)}`).join(', ')}</i>`,
+            ...(o.trackingNumber ? [`Tracking <code>${escapeHtml(o.trackingNumber)}</code>${o.carrier ? ` · ${escapeHtml(o.carrier)}` : ''}`] : []),
+          ].join('\n')).join('\n\n')]
+        : ['No orders yet. Pick a shelf and buy in two taps.']),
+    ].join('\n'),
     keyboard: [[{ text: '💰 Wallet', callback_data: 'w' }, { text: '‹ Shop', callback_data: 'menu' }]],
+    image: art('orders.jpg'),
   };
 }

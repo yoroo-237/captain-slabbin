@@ -167,8 +167,13 @@ export async function inspectBot(token, { publicBase, takeOver = false } = {}) {
 
 const BRAND = () => [
   ['setMyName', { name: 'Captain Slabbin' }],
-  ['setMyShortDescription', { short_description: 'Browse the Captain Slabbin shelves and deals.' }],
-  ['setMyDescription', { description: 'Browse the Captain Slabbin shelves, Fire Sale deals and products, then order on the site and pay with crypto in one tap. Tap Start.' }],
+  ['setMyShortDescription', { short_description: '🏴‍☠️ Top shelf. Delivered. Browse, buy and pay with crypto right here. 21+' }],
+  ['setMyDescription', { description: [
+    '🏴‍☠️ CAPTAIN SLABBIN', 'Top shelf. Delivered.', '',
+    '🛒 Browse the shelves and the Fire Sale', '💰 Pay from your crypto wallet in one tap', '📦 Track your orders, right here', '',
+    'No name or email to type: your account is your Telegram. Adults 21+ only.', '',
+    'Tap START to come aboard.',
+  ].join('\n') }],
 ];
 
 // Step 2: link it. Saves token (+ chat when one is known), installs the webhook
