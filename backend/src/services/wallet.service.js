@@ -110,7 +110,7 @@ export const walletService = {
           cryptoAmount: net,
           rate:         price || null,
           status:       'confirmed',
-          note:         note || `${gross} ${deposit.currency} received, ${pct}% deposit fee (${commission} ${deposit.currency})`,
+          note:         note || `${gross} ${deposit.currency} received, ${pct/10}% deposit fee (${commission} ${deposit.currency})`,
         },
       });
 
