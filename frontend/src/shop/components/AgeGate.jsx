@@ -74,12 +74,18 @@ export default function AgeGate({ onFinished }) {
             <span className="ember" aria-hidden="true" />
           </div>
           <div className="field" style={{ margin: 0 }}>
+            {word && (
+              <p className="gate-code">
+                <span>Password</span>
+                <b className="gate-word">{word}</b>
+              </p>
+            )}
             <label className="lock-label" htmlFor="gate-password">
-              {word ? <>Type <b className="gate-word">{word}</b> to enter</> : 'Enter password'}
+              {word ? <>Please type <b>{word}</b> in the box below to enter the shop</> : 'Enter password'}
             </label>
             <input
               id="gate-password" className={'input lock-input' + (error ? ' invalid' : '')}
-              type={word ? 'text' : 'password'} placeholder={word || 'PASSWORD'} autoFocus required
+              type={word ? 'text' : 'password'} placeholder={word ? `Type ${word} here` : 'PASSWORD'} autoFocus required
               autoCapitalize="characters" spellCheck={false}
               value={password} onChange={e => { setPassword(e.target.value); setError('') }}
               aria-describedby={error ? 'gate-error' : undefined}
