@@ -184,7 +184,7 @@ export default function AdminSettings() {
                 <div className="admin-text-muted" style={{ fontSize: '0.78rem', marginTop: 4 }}>Visitors must enter it (and confirm they are 21+) before seeing anything. Leave empty to turn the gate off. Changing it signs every visitor out of the gate.</div>
                 <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
                   <input type="checkbox" checked={settings.gate_show_password !== 'false'} onChange={e => setS('gate_show_password', e.target.checked ? 'true' : 'false')} />
-                  Show it on the gate (“Type CSC to enter”): the gate then only checks age and keeps bots out
+                  Ask for a random code instead (“Please type K7QM…”, new on every visit): the gate then only checks age and keeps bots out, and the password above is not used
                 </label>
               </div>
               <div className="admin-form-group">

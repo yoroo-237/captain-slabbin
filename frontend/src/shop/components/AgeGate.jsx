@@ -9,9 +9,6 @@ import { createSmoke, GATE_TIMING } from './smoke.js'
 // waits; on the right password the smoke swallows the screen, the shop is mounted
 // behind it at its thickest (passGate), and the smoke lifts off the real page.
 // The API refuses catalog requests until the gate is passed.
-// Shown while the API cannot say which word is set (Admin → Settings → Storefront)
-const DEFAULT_WORD = 'CSC'
-
 export default function AgeGate({ onFinished }) {
   const { passGate, settings, shelves, unlocked } = useShop()
   const { theme } = useApp()
@@ -20,7 +17,8 @@ export default function AgeGate({ onFinished }) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [covered, setCovered] = useState(false)
-  const [word, setWord] = useState(null)
+  const [word, setWord] = useState(null)          // random code to type, or null for a password
+  const challengeRef = useRef(null)
   const canvasRef = useRef(null)
   const logoRef = useRef(null)
   const smokeRef = useRef(null)
@@ -37,10 +35,15 @@ export default function AgeGate({ onFinished }) {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    apiFetch('/gate')
-      .then(d => setWord(d && 'word' in d ? d.word : DEFAULT_WORD))
-      .catch(() => setWord(DEFAULT_WORD))
+    newCode()
   }, [])
+
+  function newCode() {
+    apiFetch('/gate').then(d => {
+      setWord(d?.word || null)
+      challengeRef.current = d?.challenge || null
+    }).catch(() => {})
+  }
 
   // Unlocked some other way (signed in on /login): no reveal to play, just leave
   useEffect(() => {
@@ -53,7 +56,7 @@ export default function AgeGate({ onFinished }) {
     setBusy(true)
     setError('')
     try {
-      const { token } = await apiFetch('/gate', { method: 'POST', body: JSON.stringify({ password, ageConfirmed: true }) })
+      const { token } = await apiFetch('/gate', { method: 'POST', body: JSON.stringify({ password, ageConfirmed: true, challenge: challengeRef.current }) })
       tokenRef.current = token
       if (smokeRef.current) smokeRef.current.burst({
         timing: GATE_TIMING,
@@ -64,7 +67,8 @@ export default function AgeGate({ onFinished }) {
       })
       else { passGate(token); onFinished?.() }
     } catch (err) {
-      setError(word && /incorrect/i.test(err.message || '') ? `Type ${word} exactly to enter.` : err.message || 'Incorrect password.')
+      setError(err.message || 'Incorrect password.')
+      if (/expired/i.test(err.message || '')) { newCode(); setPassword('') }
       setBusy(false)
     }
   }
@@ -79,14 +83,8 @@ export default function AgeGate({ onFinished }) {
             <span className="ember" aria-hidden="true" />
           </div>
           <div className="field" style={{ margin: 0 }}>
-            {word && (
-              <p className="gate-code">
-                <span>Password</span>
-                <b className="gate-word">{word}</b>
-              </p>
-            )}
             <label className="lock-label" htmlFor="gate-password">
-              {word ? <>Please type <b>{word}</b> in the box below to enter the shop</> : 'Enter password'}
+              {word ? <>Please type <b className="gate-word">{word}</b> in the box below to enter the shop</> : 'Enter password'}
             </label>
             <input
               id="gate-password" className={'input lock-input' + (error ? ' invalid' : '')}
