@@ -8,6 +8,15 @@ import Testimonials from '../components/Testimonials.jsx'
 import { Icon, Coin, money, salePct, productUrl } from '../lib.jsx'
 import { reduceMotion, useScrollVar, Split, CountUp, magnetic, unmagnetic } from '../motion.jsx'
 
+// Banner art from the original shop, used until the admin uploads one for the
+// category (Admin → Categories). The Fire Sale is the Captain's Chest.
+const BANNER_ART = {
+  flower: 'cat-flower', concentrates: 'cat-concentrates', moonrocks: 'cat-moonrocks',
+  disposables: 'cat-disposables', prerolls: 'cat-prerolls', edibles: 'cat-edibles',
+  mush: 'cat-shrooms', 'fire-sale': 'cat-captains-chest',
+}
+const bannerArt = c => c.imageUrl || (BANNER_ART[c.slug] ? `/brand/cats/${BANNER_ART[c.slug]}.webp` : null)
+
 export default function HomePage() {
   const { shelves, settings } = useShop()
   const [featured, setFeatured] = useState(null)
@@ -56,9 +65,10 @@ export default function HomePage() {
 
   // Desktop: the category rail scrolls sideways as the page scrolls down, so
   // its section is as tall as the rail is wide
-  // Once the admin has given the categories their banners (Admin → Categories),
-  // the home shows them stacked like the original shop instead of the rail
-  const bannerMode = shelves.categories.some(c => c.imageUrl)
+  // Categories with banner art are shown stacked like the original shop;
+  // a catalog without any falls back to the sideways rail
+  const bannerMode = shelves.categories.some(bannerArt)
+  const banners = [...shelves.categories, { slug: 'fire-sale', name: "Captain's Chest", count: shelves.fireSale }]
   const tiles = [{ slug: 'fire-sale', name: 'Fire Sale', count: shelves.fireSale, fire: true }, ...shelves.categories]
   useLayoutEffect(() => {
     const sec = railRef.current, track = trackRef.current
@@ -113,18 +123,16 @@ export default function HomePage() {
       {bannerMode && (
         <section className="banners" aria-label="Shop by category">
           <div className="container banners-in">
-            {shelves.fireSale > 0 && (
-              <Link to="/s/fire-sale" className="banner banner-text fire" style={{ '--i': 0 }}>
-                <span className="display"><Icon.fire /> Fire Sale</span><small>{shelves.fireSale} deals this week</small>
-              </Link>
-            )}
-            {shelves.categories.map((c, i) => (
-              <Link key={c.slug} to={`/s/${c.slug}`} className={'banner' + (c.imageUrl ? '' : ' banner-text')} style={{ '--i': i + 1 }} aria-label={c.name}>
-                {c.imageUrl
-                  ? <img src={c.imageUrl} alt={c.name} loading={i < 4 ? 'eager' : 'lazy'} decoding="async" />
-                  : <><span className="display">{c.name}</span><small>{c.count ? `${c.count} item${c.count === 1 ? '' : 's'}` : 'Coming soon'}</small></>}
-              </Link>
-            ))}
+            {banners.map((c, i) => {
+              const art = bannerArt(c)
+              return (
+                <Link key={c.slug} to={`/s/${c.slug}`} className={'banner' + (art ? '' : ' banner-text')} style={{ '--i': i }} aria-label={c.name}>
+                  {art
+                    ? <img src={art} alt={c.name} width="740" height="225" loading={i < 4 ? 'eager' : 'lazy'} decoding="async" />
+                    : <><span className="display">{c.name}</span><small>{c.count ? `${c.count} item${c.count === 1 ? '' : 's'}` : 'Coming soon'}</small></>}
+                </Link>
+              )
+            })}
             {(phone || settings.signal_url) && (
               <div className="banners-cta">
                 {phone && <a className="btn btn-light" href={`sms:${phone.replace(/[^\d+]/g, '')}`}>Text us</a>}
