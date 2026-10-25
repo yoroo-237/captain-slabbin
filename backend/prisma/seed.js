@@ -12,6 +12,7 @@ const prisma = new PrismaClient();
 const SETTINGS = [
   ['site_name',               'Captain Slabbin'],
   ['site_password',           process.env.SITE_PASSWORD || 'CSC'],
+  ['gate_show_password',      'true'],
   ['maintenance_mode',        'false'],
   ['registration_open',       'true'],
   ['shipping_cost',           '30'],

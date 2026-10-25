@@ -806,7 +806,7 @@
 /* ── Age gate ────────────────────────────────────────────────────────────── */
 :root { --gate-bg: #0b0a09; }
 :root[data-theme="light"] { --gate-bg: #f7f3ec; }
-.cs-gate { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 16px; background: var(--gate-bg); overflow-y: auto; transition: background-color .2s; }
+.cs-gate { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; min-height: 0; padding: 16px; background: var(--bones) 0 0 / 150px 150px, var(--gate-bg); overflow-y: auto; transition: background-color .2s; }
 /* Once the smoke covers the screen the shop is mounted underneath: the gate goes
    see-through so what clears is the real page */
 .cs-gate.covered { background: transparent; pointer-events: none; }
@@ -1085,3 +1085,4 @@
   .cs .ad-track, .cs .tm-wall.moving .tm-run { animation: none; }
   .cs .word-reveal span { opacity: 1; }
 }
+.cs-gate .gate-word { color: var(--red); letter-spacing: .12em; font-weight: 800; }

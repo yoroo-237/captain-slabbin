@@ -10,7 +10,7 @@ const ALLOWED_KEYS = new Set([
   'btc_address', 'ltc_address', 'doge_address', 'eth_address', 'xmr_address',
   'btc_hd_seed',
   // Storefront gate, contact & Telegram
-  'site_password', 'support_phone', 'signal_url', 'telegram_username',
+  'site_password', 'gate_show_password', 'support_phone', 'signal_url', 'telegram_username',
   'promo_enabled', 'promo_headline',
   // Shop contact & US location, announcement bar, ad banner
   'contact_email', 'store_address', 'store_city', 'store_state', 'store_zip', 'store_hours', 'announcements', 'ad_banner', 'about_text',

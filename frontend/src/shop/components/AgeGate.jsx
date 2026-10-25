@@ -17,6 +17,7 @@ export default function AgeGate({ onFinished }) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [covered, setCovered] = useState(false)
+  const [word, setWord] = useState(null)
   const canvasRef = useRef(null)
   const logoRef = useRef(null)
   const smokeRef = useRef(null)
@@ -31,6 +32,10 @@ export default function AgeGate({ onFinished }) {
     smokeRef.current = createSmoke(canvasRef.current, { anchor: logoRef.current, tone: theme === 'light' ? 'light' : 'cream' })
     return () => smokeRef.current?.stop()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    apiFetch('/gate').then(d => setWord(d?.word || null)).catch(() => {})
+  }, [])
 
   // Unlocked some other way (signed in on /login): no reveal to play, just leave
   useEffect(() => {
@@ -54,13 +59,13 @@ export default function AgeGate({ onFinished }) {
       })
       else { passGate(token); onFinished?.() }
     } catch (err) {
-      setError(err.message || 'Incorrect password.')
+      setError(word && /incorrect/i.test(err.message || '') ? `Type ${word} exactly to enter.` : err.message || 'Incorrect password.')
       setBusy(false)
     }
   }
 
   return (
-    <div className={'cs-gate' + (covered ? ' covered' : '')}>
+    <div className={'cs cs-gate' + (covered ? ' covered' : '')}>
       <canvas ref={canvasRef} className="gate-smoke" aria-hidden="true" />
       {!covered && (
         <form className="lock-card cs" onSubmit={submit} autoComplete="off">
@@ -69,10 +74,13 @@ export default function AgeGate({ onFinished }) {
             <span className="ember" aria-hidden="true" />
           </div>
           <div className="field" style={{ margin: 0 }}>
-            <label className="lock-label" htmlFor="gate-password">Enter password</label>
+            <label className="lock-label" htmlFor="gate-password">
+              {word ? <>Type <b className="gate-word">{word}</b> to enter</> : 'Enter password'}
+            </label>
             <input
               id="gate-password" className={'input lock-input' + (error ? ' invalid' : '')}
-              type="password" placeholder="PASSWORD" autoFocus required
+              type={word ? 'text' : 'password'} placeholder={word || 'PASSWORD'} autoFocus required
+              autoCapitalize="characters" spellCheck={false}
               value={password} onChange={e => { setPassword(e.target.value); setError('') }}
               aria-describedby={error ? 'gate-error' : undefined}
             />

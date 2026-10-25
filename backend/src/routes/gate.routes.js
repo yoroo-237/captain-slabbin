@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { Router } from 'express';
 import { getSitePassword, signGateToken } from '../middlewares/gate.js';
 import { ok, fail } from '../utils/response.js';
+import { prisma } from '../db.js';
 
 const r = Router();
 
@@ -28,8 +29,12 @@ const sameText = (a, b) => {
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 };
 
+// The gate is a 21+ and bot check more than a secret: by default the visitor is
+// told which word to type. Admin → Settings can hide it to make it a real password.
 r.get('/', async (req, res) => {
-  res.json(ok({ enabled: !!(await getSitePassword()) }));
+  const password = await getSitePassword();
+  const shown = await prisma.siteSetting.findUnique({ where: { key: 'gate_show_password' } });
+  res.json(ok({ enabled: !!password, word: password && shown?.value !== 'false' ? password.trim().toUpperCase() : null }));
 });
 
 r.post('/', gateLimiter, async (req, res) => {

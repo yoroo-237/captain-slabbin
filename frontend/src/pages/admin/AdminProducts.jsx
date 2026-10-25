@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { adminFetch } from './utils/api.js'
+import { BASE } from '../../utils/api.js'
 import Pagination from '../../components/admin/Pagination.jsx'
 
 const PLACEHOLDER = 'https://bestofthebay.net/wp-content/uploads/woocommerce-placeholder.webp'
-const BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
 function isVideoUrl(url = '') {
   return /\.(mp4|webm|ogg|mov|avi|mkv)(\?|$)/i.test(url)

@@ -1,4 +1,13 @@
-const BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000'
+// VITE_API_URL is baked in at build time. When the build was made without it,
+// a deployed site talks to api.<its own domain> instead of the visitor's localhost.
+function apiBase() {
+  const set = import.meta.env.VITE_API_URL
+  if (set) return set.replace(/\/+$/, '')
+  const { hostname, protocol } = window.location
+  if (/^(localhost|127\.|0\.0\.0\.0|\[::1\])/.test(hostname)) return 'http://localhost:4000'
+  return `${protocol}//api.${hostname.replace(/^www\./, '')}`
+}
+export const BASE = apiBase()
 
 export async function apiFetch(endpoint, options = {}) {
   const token = localStorage.getItem('token')
