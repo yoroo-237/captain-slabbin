@@ -5,7 +5,7 @@ import { ok } from '../../utils/response.js';
 import { appError } from '../../utils/formatters.js';
 import {
   telegramStatus, inspectBot, linkBot, brandLinkedBot, changeChat, unlinkBot, sendTelegram,
-  setPostChat, postProduct,
+  setPostChat, postProduct, setBotPhoto,
 } from '../../services/telegram.service.js';
 
 // Admin → Settings → Telegram: link a bot by pasting its token, pick the chat,
@@ -66,6 +66,20 @@ r.post('/post-chat', async (req, res) => {
 r.post('/post-product/:id', async (req, res) => {
   if (!(await postProduct(req.params.id))) throw appError('Choose where products are posted in Admin → Telegram bot first.', 400);
   res.json(ok({ posted: true }));
+});
+
+// Bot profile photo: the shop's picture, or a JPG sent as a data URL
+r.post('/photo', async (req, res) => {
+  const data = String(req.body?.image || '');
+  let jpg = null;
+  if (data) {
+    const m = /^data:image\/jpe?g;base64,(.+)$/.exec(data);
+    if (!m) throw appError('The photo must be a JPG.', 400);
+    jpg = Buffer.from(m[1], 'base64');
+    if (jpg.length > 5 * 1024 * 1024) throw appError('The photo must be under 5 MB.', 400);
+  }
+  await setBotPhoto(jpg);
+  res.json(ok({ photo: true }));
 });
 
 export default r;

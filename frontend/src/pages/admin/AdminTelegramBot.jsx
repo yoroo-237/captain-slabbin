@@ -41,6 +41,21 @@ export default function AdminTelegramBot({ canEdit }) {
     load()
   })
 
+  const [photoPreview, setPhotoPreview] = useState(null)
+  // Own photo: read as a data URL, sent as is (Telegram wants a JPG)
+  function uploadPhoto(file, input) {
+    if (!file) return
+    input.value = ''
+    if (!/jpe?g$/i.test(file.type)) { setError('The photo must be a JPG.'); return }
+    if (file.size > 5 * 1024 * 1024) { setError('The photo must be under 5 MB.'); return }
+    const reader = new FileReader()
+    reader.onload = () => {
+      setPhotoPreview(reader.result)
+      post('photo', { image: reader.result }, 'Your photo is now the bot’s profile photo.')
+    }
+    reader.readAsDataURL(file)
+  }
+
   const post = (path, body, done) => act(path, async () => {
     await adminFetch(`/admin/telegram/${path}`, { method: 'POST', body: JSON.stringify(body || {}) })
     setNotice(done); load()
@@ -101,21 +116,31 @@ export default function AdminTelegramBot({ canEdit }) {
             <button type="button" className="admin-btn admin-btn-danger" disabled={!!busy} onClick={() => window.confirm('Unlink this bot? Notifications stop until you link one again.') && post('unlink', null, 'Bot unlinked.')}>Unlink</button>
           </div>
 
-          {/* Telegram only lets a bot's pictures be changed in @BotFather */}
-          <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid #eee' }}>
-            <h3 className="admin-card-title" style={{ fontSize: '0.95rem' }}>Bot pictures</h3>
-            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-              <a href="/brand/bot/avatar.jpg" download="captain-slabbin-bot-photo.jpg" style={{ textAlign: 'center', fontSize: '0.8rem' }}>
-                <img src="/brand/bot/avatar.jpg" alt="" width="96" height="96" style={{ borderRadius: '50%', display: 'block', marginBottom: 6 }} />Profile photo
-              </a>
-              <a href="/brand/bot/intro.jpg" download="captain-slabbin-bot-intro.jpg" style={{ textAlign: 'center', fontSize: '0.8rem' }}>
-                <img src="/brand/bot/intro.jpg" alt="" width="171" height="96" style={{ borderRadius: 8, display: 'block', marginBottom: 6 }} />Welcome picture
-              </a>
-              <ol style={{ ...muted, margin: 0, paddingLeft: 18, lineHeight: 1.7, flex: '1 1 260px' }}>
-                <li>Download both pictures (click them).</li>
-                <li>In Telegram, open <b>@BotFather</b>, send <code>/mybots</code>, choose @{status.bot?.username}, then <b>Edit Bot</b>.</li>
-                <li><b>Edit Botpic</b>: send the profile photo. <b>Edit Description Picture</b>: send the welcome picture.</li>
-              </ol>
+          <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid #eee', display: 'grid', gap: 18 }}>
+            <div>
+              <h3 className="admin-card-title" style={{ fontSize: '0.95rem' }}>Profile photo</h3>
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+                <img src={photoPreview || '/brand/bot/avatar.jpg'} alt="" width="80" height="80" style={{ borderRadius: '50%', objectFit: 'cover' }} />
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button type="button" className="admin-btn admin-btn-secondary" disabled={!!busy} onClick={() => { setPhotoPreview(null); post('photo', null, 'The Captain Slabbin photo is now the bot’s profile photo.') }}>
+                    {busy === 'photo' ? 'Sending…' : 'Use the Captain Slabbin photo'}
+                  </button>
+                  <label className="admin-btn admin-btn-secondary" style={{ cursor: 'pointer' }}>
+                    Upload my own (JPG)
+                    <input type="file" accept="image/jpeg" hidden onChange={e => uploadPhoto(e.target.files?.[0], e.target)} />
+                  </label>
+                </div>
+              </div>
+              <div style={muted}>Changes the bot's picture in Telegram right away. "Apply the look" also sets the Captain Slabbin photo.</div>
+            </div>
+            <div>
+              <h3 className="admin-card-title" style={{ fontSize: '0.95rem' }}>Welcome picture</h3>
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                <a href="/brand/bot/intro.jpg" download="captain-slabbin-bot-intro.jpg"><img src="/brand/bot/intro.jpg" alt="Download" width="171" height="96" style={{ borderRadius: 8, display: 'block' }} /></a>
+                <div style={{ ...muted, margin: 0, flex: '1 1 260px', lineHeight: 1.7 }}>
+                  Shown to people before they tap Start. Telegram only takes it through <b>@BotFather</b>: download it (click the picture), then in @BotFather send <code>/mybots</code>, choose @{status.bot?.username}, <b>Edit Bot</b>, <b>Edit Description Picture</b>, and send it.
+                </div>
+              </div>
             </div>
           </div>
         </>

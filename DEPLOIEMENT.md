@@ -215,7 +215,7 @@ Ne réutilisez jamais les phrases d'un autre projet : elles contrôlent les fond
 1. Bot neuf : dans Telegram, **@BotFather** → `/newbot` → copiez le jeton. Ou prenez le jeton d'un bot existant.
 2. **Admin → Telegram bot** (menu System) : collez le jeton, **Check**, puis **Link this bot**. Un chat n'est pas nécessaire à ce stade.
    - Si le bot est déjà relié à une autre application, l'admin le signale ; cochez la case pour le reprendre.
-   - **Apply the Captain Slabbin look** (facultatif) renomme le bot et lui donne la description de la boutique. Le catalogue, l'achat et les commandes marchent dans les deux cas.
+   - **Apply the Captain Slabbin look** (facultatif) renomme le bot et lui donne la description de la boutique. Le catalogue, l'achat et les commandes marchent dans les deux cas. Il pose aussi la photo de profil Captain Slabbin ; **Upload my own (JPG)** en met une autre. L'image d'accueil (vue avant « Start ») ne se change que dans @BotFather : la page admin la fournit avec la marche à suivre.
 3. Ajoutez le bot au groupe ou au canal de la boutique (en admin pour un canal) : il le choisit tout seul pour les commandes et les messages, et y poste une confirmation. La liste **Orders and messages go to** permet d'en changer.
 4. **Post new products to** (facultatif) : un canal suivi par vos clients ; chaque nouveau produit y est publié avec sa photo, son prix et un bouton « Buy in the bot ».
 

@@ -1,5 +1,6 @@
 import axios from 'axios';
 import crypto from 'crypto';
+import { readFile } from 'fs/promises';
 import { prisma } from '../db.js';
 import { env } from '../config/env.js';
 import { COMMANDS } from './telegramCatalog.js';
@@ -193,6 +194,7 @@ export async function linkBot(token, chatId, { brand = false, publicBase }) {
   if (brand) for (const [method, payload] of BRAND()) await tg(token, method, payload);
 
   await Promise.all([save(KEYS.token, token), save(KEYS.chatId, chatId || ''), save(KEYS.secret, secret), save(KEYS.branded, brand ? 'true' : 'false')]);
+  if (brand) await setBotPhoto().catch(err => console.error('[Telegram] bot photo:', err.message));
   if (!chatId) return { bot: { username: me.username, name: me.first_name }, webhook, branded: brand, helloDelivered: false, helloError: null, waitingForChat: true };
 
   const site = (env.frontendUrl || '').replace(/\/$/, '');
@@ -206,6 +208,7 @@ export async function brandLinkedBot() {
   if (!cfg.token) throw Object.assign(new Error('No bot linked'), { status: 400 });
   await installNavigation(cfg.token);
   for (const [method, payload] of BRAND()) await tg(cfg.token, method, payload);
+  await setBotPhoto().catch(err => console.error('[Telegram] bot photo:', err.message));
   await save(KEYS.branded, 'true');
 }
 
@@ -335,4 +338,22 @@ export async function postProduct(productId, chatOverride) {
   }
   await tg(cfg.token, 'sendMessage', { chat_id: chatId, text: caption, parse_mode: 'HTML', link_preview_options: { is_disabled: true }, reply_markup: markup });
   return true;
+}
+
+// ─── Bot profile photo ───────────────────────────────────────────────────────
+
+// The shop's default bot picture (frontend/public/brand/bot/avatar.jpg)
+const DEFAULT_PHOTO = new URL('../../assets/bot-avatar.jpg', import.meta.url);
+
+// setMyProfilePhoto only takes a freshly uploaded JPG (multipart)
+export async function setBotPhoto(jpg) {
+  const { token } = await getTelegramConfig();
+  if (!token) throw Object.assign(new Error('No bot linked'), { status: 400 });
+  const buffer = jpg || await readFile(DEFAULT_PHOTO);
+  const form = new FormData();
+  form.append('photo', JSON.stringify({ type: 'static', photo: 'attach://pic' }));
+  form.append('pic', new Blob([buffer], { type: 'image/jpeg' }), 'photo.jpg');
+  const res = await fetch(`https://api.telegram.org/bot${token}/setMyProfilePhoto`, { method: 'POST', body: form });
+  const data = await res.json().catch(() => ({}));
+  if (!data.ok) throw Object.assign(new Error(`Telegram: ${data.description || res.status}`), { status: 502 });
 }
