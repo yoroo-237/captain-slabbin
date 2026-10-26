@@ -1,5 +1,5 @@
-import { useState, Suspense } from 'react'
-import { NavLink, Outlet, Navigate, Link } from 'react-router-dom'
+import { useState, Suspense, Component } from 'react'
+import { NavLink, Outlet, Navigate, Link, useLocation } from 'react-router-dom'
 import { useApp } from '../../context/AppContext.jsx'
 import './admin.css'
 
@@ -46,6 +46,7 @@ function decodeJwt(token) {
 
 export default function AdminLayout() {
   const { user, logout, loadingAuth } = useApp()
+  const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   if (loadingAuth) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>Loading…</div>
@@ -124,9 +125,27 @@ export default function AdminLayout() {
         </header>
 
         <main className="admin-content">
-          <Suspense fallback={<div style={{ padding: 40, color: '#888' }}>Loading…</div>}><Outlet /></Suspense>
+          <PageBoundary key={location.pathname}><Suspense fallback={<div style={{ padding: 40, color: '#888' }}>Loading…</div>}><Outlet /></Suspense></PageBoundary>
         </main>
       </div>
     </div>
   )
+}
+
+// One admin page failing shows a way out instead of a blank screen; moving to
+// another page (new key) starts clean
+class PageBoundary extends Component {
+  state = { error: null }
+  static getDerivedStateFromError(error) { return { error } }
+  componentDidCatch(error) { console.error('[admin page]', error) }
+  render() {
+    if (!this.state.error) return this.props.children
+    return (
+      <div className="admin-card" style={{ maxWidth: 520 }}>
+        <h2 className="admin-card-title">This page could not load</h2>
+        <p className="admin-text-muted" style={{ margin: '0 0 14px' }}>{String(this.state.error?.message || this.state.error)}</p>
+        <button type="button" className="admin-btn admin-btn-primary" onClick={() => window.location.reload()}>Reload</button>
+      </div>
+    )
+  }
 }

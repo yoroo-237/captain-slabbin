@@ -1,4 +1,17 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+
+// Admin pages load on first visit. If a new deploy removed the file this tab
+// expects, load the new build once rather than crash (see also main.jsx).
+const lazyPage = load => lazy(() => load().catch(err => {
+  let last = 0
+  try { last = Number(sessionStorage.getItem('cs_reloaded_at')) || 0 } catch { /* storage blocked */ }
+  if (Date.now() - last > 30000) {
+    try { sessionStorage.setItem('cs_reloaded_at', String(Date.now())) } catch { /* storage blocked */ }
+    window.location.reload()
+    return new Promise(() => {}) // keep the fallback on screen while reloading
+  }
+  throw err
+}))
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { CartProvider } from './context/CartContext.jsx'
 import { AppProvider, useApp } from './context/AppContext.jsx'
@@ -17,29 +30,29 @@ import AboutPage from './shop/pages/AboutPage.jsx'
 import FaqPage from './shop/pages/FaqPage.jsx'
 import { Locked, AgeNotice } from './shop/components/Locks.jsx'
 import { AccountLayout, AccountOverview, AccountOrders, AccountProfile, AccountMessages } from './shop/pages/AccountPages.jsx'
-const AdminLayout = lazy(() => import('./pages/admin/AdminLayout.jsx'))
-const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard.jsx'))
-const AdminUsers = lazy(() => import('./pages/admin/AdminUsers.jsx'))
-const AdminUserDetail = lazy(() => import('./pages/admin/AdminUserDetail.jsx'))
-const AdminDeposits = lazy(() => import('./pages/admin/AdminDeposits.jsx'))
-const AdminTransactions = lazy(() => import('./pages/admin/AdminTransactions.jsx'))
-const AdminOrders = lazy(() => import('./pages/admin/AdminOrders.jsx'))
-const AdminOrderDetail = lazy(() => import('./pages/admin/AdminOrderDetail.jsx'))
-const AdminProducts = lazy(() => import('./pages/admin/AdminProducts.jsx'))
-const AdminCategories = lazy(() => import('./pages/admin/AdminCategories.jsx'))
-const AdminBrands = lazy(() => import('./pages/admin/AdminBrands.jsx'))
-const AdminSupport = lazy(() => import('./pages/admin/AdminSupport.jsx'))
-const AdminSupportDetail = lazy(() => import('./pages/admin/AdminSupportDetail.jsx'))
-const AdminReviews = lazy(() => import('./pages/admin/AdminReviews.jsx'))
-const AdminNews = lazy(() => import('./pages/admin/AdminNews.jsx'))
-const AdminFaq = lazy(() => import('./pages/admin/AdminFaq.jsx'))
-const AdminGiveaways = lazy(() => import('./pages/admin/AdminGiveaways.jsx'))
-const AdminAnalytics = lazy(() => import('./pages/admin/AdminAnalytics.jsx'))
-const AdminSettings = lazy(() => import('./pages/admin/AdminSettings.jsx'))
-const AdminAccount = lazy(() => import('./pages/admin/AdminAccount.jsx'))
-const AdminTelegram = lazy(() => import('./pages/admin/AdminTelegram.jsx'))
-const AdminSuperDashboard = lazy(() => import('./pages/admin/AdminSuperDashboard.jsx'))
-const AdminInbox = lazy(() => import('./pages/admin/AdminInbox.jsx'))
+const AdminLayout = lazyPage(() => import('./pages/admin/AdminLayout.jsx'))
+const AdminDashboard = lazyPage(() => import('./pages/admin/AdminDashboard.jsx'))
+const AdminUsers = lazyPage(() => import('./pages/admin/AdminUsers.jsx'))
+const AdminUserDetail = lazyPage(() => import('./pages/admin/AdminUserDetail.jsx'))
+const AdminDeposits = lazyPage(() => import('./pages/admin/AdminDeposits.jsx'))
+const AdminTransactions = lazyPage(() => import('./pages/admin/AdminTransactions.jsx'))
+const AdminOrders = lazyPage(() => import('./pages/admin/AdminOrders.jsx'))
+const AdminOrderDetail = lazyPage(() => import('./pages/admin/AdminOrderDetail.jsx'))
+const AdminProducts = lazyPage(() => import('./pages/admin/AdminProducts.jsx'))
+const AdminCategories = lazyPage(() => import('./pages/admin/AdminCategories.jsx'))
+const AdminBrands = lazyPage(() => import('./pages/admin/AdminBrands.jsx'))
+const AdminSupport = lazyPage(() => import('./pages/admin/AdminSupport.jsx'))
+const AdminSupportDetail = lazyPage(() => import('./pages/admin/AdminSupportDetail.jsx'))
+const AdminReviews = lazyPage(() => import('./pages/admin/AdminReviews.jsx'))
+const AdminNews = lazyPage(() => import('./pages/admin/AdminNews.jsx'))
+const AdminFaq = lazyPage(() => import('./pages/admin/AdminFaq.jsx'))
+const AdminGiveaways = lazyPage(() => import('./pages/admin/AdminGiveaways.jsx'))
+const AdminAnalytics = lazyPage(() => import('./pages/admin/AdminAnalytics.jsx'))
+const AdminSettings = lazyPage(() => import('./pages/admin/AdminSettings.jsx'))
+const AdminAccount = lazyPage(() => import('./pages/admin/AdminAccount.jsx'))
+const AdminTelegram = lazyPage(() => import('./pages/admin/AdminTelegram.jsx'))
+const AdminSuperDashboard = lazyPage(() => import('./pages/admin/AdminSuperDashboard.jsx'))
+const AdminInbox = lazyPage(() => import('./pages/admin/AdminInbox.jsx'))
 import { STAFF_ROLES } from './utils/roles.js'
 
 function LoadingScreen() {
