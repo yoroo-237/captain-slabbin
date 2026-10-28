@@ -215,12 +215,18 @@ export async function linkBot(token, chatId, { styleId = null, primary = false, 
   let webhook = null;
   if (publicBase?.startsWith('https://')) {
     webhook = webhookUrl(publicBase, bot);
-    await tg(token, 'setWebhook', { url: webhook, secret_token: secret, allowed_updates: UPDATES });
+    // Without its webhook the bot can't answer: undo the link so the admin can simply retry
+    try { await tg(token, 'setWebhook', { url: webhook, secret_token: secret, allowed_updates: UPDATES }); }
+    catch (err) { await prisma.telegramBot.delete({ where: { id: bot.id } }); throw err; }
   }
-  if (styleId) await applyStyle(bot.id, styleId);
-  else await installNavigation({ ...bot, style: null });
+  // The bot works without its profile: a refused style is reported, the link stays
+  let styleError = null;
+  try {
+    if (styleId) await applyStyle(bot.id, styleId);
+    else await installNavigation({ ...bot, style: null });
+  } catch (err) { styleError = err.message; console.error(`[Telegram] @${me.username} style:`, err.message); }
 
-  const result = { bot: { id: bot.id, username: me.username, name: me.first_name }, webhook, isPrimary, helloDelivered: false, helloError: null };
+  const result = { bot: { id: bot.id, username: me.username, name: me.first_name }, webhook, isPrimary, styleError, helloDelivered: false, helloError: null };
   if (!isPrimary) return result;
   if (!chatId) return { ...result, waitingForChat: true };
   const site = (env.frontendUrl || '').replace(/\/$/, '');
@@ -236,7 +242,9 @@ export async function applyStyle(botId, styleId) {
   const bot = await prisma.telegramBot.update({ where: { id: Number(botId) }, data: { styleId: style?.id || null }, include: { style: true } });
   if (!style) return bot;
   const { profile } = lookOf(style);
-  await tg(bot.token, 'setMyName', { name: profile.name.slice(0, 64) });
+  // Telegram rate-limits renames hard (one per several minutes): only rename when it changes
+  const name = profile.name.slice(0, 64);
+  if ((await tg(bot.token, 'getMyName').catch(() => null))?.name !== name) await tg(bot.token, 'setMyName', { name });
   await tg(bot.token, 'setMyShortDescription', { short_description: profile.shortDescription.slice(0, 120) });
   await tg(bot.token, 'setMyDescription', { description: profile.description.slice(0, 512) });
   await installNavigation(bot);

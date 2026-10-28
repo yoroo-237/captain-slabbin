@@ -177,7 +177,7 @@ function LinkForm({ hasBots, styles, busy, act, post }) {
     const r = await post('link', { token: token.trim(), chatId: asPrimary ? chatId : '', styleId: Number(styleId) || null, primary: asPrimary })
     setToken(''); setFound(null); setTakeOver(false); setOpen(false)
     return r
-  }, r => `@${r.bot.username} is linked.${r.waitingForChat ? " Now add it to your shop's group or channel: it will pick that chat by itself." : r.isPrimary && r.helloDelivered ? ' A confirmation was posted in the chat.' : r.isPrimary && r.helloError ? ` The confirmation message could not be posted (${r.helloError}).` : ''}${r.webhook ? '' : ' The catalog and commands will reply once the site runs on HTTPS.'}`)
+  }, r => `@${r.bot.username} is linked.${r.styleError ? ` Its style could not be applied (${r.styleError}): choose it again on its card in a few minutes.` : ''}${r.waitingForChat ? " Now add it to your shop's group or channel: it will pick that chat by itself." : r.isPrimary && r.helloDelivered ? ' A confirmation was posted in the chat.' : r.isPrimary && r.helloError ? ` The confirmation message could not be posted (${r.helloError}).` : ''}${r.webhook ? '' : ' The catalog and commands will reply once the site runs on HTTPS.'}`)
 
   if (!open) return <button type="button" className="admin-btn admin-btn-primary" style={{ justifySelf: 'start' }} onClick={() => setOpen(true)}>+ Link another bot</button>
 
