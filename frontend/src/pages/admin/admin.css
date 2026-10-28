@@ -630,3 +630,73 @@
   .admin-info-row { flex-wrap: wrap; }
   .admin-info-label { min-width: 0; }
 }
+
+/* ── Notifications and waiting counters ───────────────────── */
+.admin-header-end { display: flex; align-items: center; gap: 12px; margin-left: auto; min-width: 0; }
+.admin-user-chip { min-width: 0; }
+.admin-user-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px; }
+.admin-nav-label { flex: 1; min-width: 0; }
+.admin-nav-badge {
+  min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px;
+  background: #e5484d; color: #fff; font-size: 0.7rem; font-weight: 800;
+  display: inline-flex; align-items: center; justify-content: center; line-height: 1;
+}
+.admin-pop-wrap { position: relative; }
+.admin-bell {
+  width: 40px; height: 40px; border-radius: 10px; border: 1px solid #e8ecf0; background: #fff;
+  color: #667; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.admin-bell:hover { background: #f4f6fb; color: #222; }
+.admin-bell.on { color: #4361ee; border-color: #c9d3fb; background: #eef1ff; }
+.admin-bell:focus-visible { outline: 2px solid #4361ee; outline-offset: 2px; }
+.admin-pop-backdrop { position: fixed; inset: 0; z-index: 299; }
+.admin-pop {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 300; width: 320px; max-width: calc(100vw - 24px);
+  background: #fff; border: 1px solid #e8ecf0; border-radius: 12px; padding: 16px;
+  box-shadow: 0 10px 30px rgba(20,24,60,0.18);
+}
+.admin-pop-title { font-weight: 800; margin-bottom: 6px; }
+.admin-pop-text { margin: 0 0 12px; color: #667; font-size: 0.85rem; line-height: 1.5; }
+.admin-pop-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ── Phone fixes: nothing may be wider than the screen ───── */
+/* a grid or flex child never grows to its widest content: tables scroll inside their own wrapper */
+.admin-card, .admin-grid-2 > *, .admin-grid-3 > *, .admin-grid-4 > *, .admin-charts-grid > *, .admin-stat-grid > * { min-width: 0; }
+.admin-table-wrap { max-width: 100%; }
+/* tab rows scroll sideways instead of widening the page */
+.admin-tabs { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.admin-tabs::-webkit-scrollbar { display: none; }
+.admin-tab { white-space: nowrap; flex-shrink: 0; }
+@media (max-width: 900px) {
+  .admin-grid-2, .admin-grid-3, .admin-grid-4, .admin-charts-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ── Two-pane pages (Messages): one pane at a time on a phone ─ */
+.admin-split { display: grid; grid-template-columns: minmax(220px, 300px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.admin-split-back { display: none; }
+@media (max-width: 900px) {
+  .admin-split { grid-template-columns: minmax(0, 1fr); }
+  .admin-split.has-open .admin-split-list { display: none; }
+  .admin-split:not(.has-open) .admin-split-main { display: none; }
+  .admin-split-back { display: inline-block; margin-bottom: 10px; font-weight: 700; text-decoration: none; }
+}
+
+/* ── Telegram bots: pill and folded page editor ───────────── */
+.admin-pill {
+  display: inline-block; margin-left: 8px; padding: 2px 9px; border-radius: 999px; vertical-align: middle;
+  background: #eef1ff; color: #4361ee; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase;
+}
+.admin-page-edit { border: 1px solid #e8ecf0; border-radius: 8px; margin-bottom: 8px; background: #fff; }
+.admin-page-edit-head { display: flex; align-items: center; gap: 8px; padding: 6px 8px; }
+.admin-page-edit-toggle {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 6px 4px;
+  background: none; border: 0; cursor: pointer; text-align: left; font: inherit; color: inherit;
+}
+.admin-page-edit-toggle:focus-visible { outline: 2px solid #4361ee; outline-offset: 2px; border-radius: 6px; }
+.admin-page-edit-sum { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #667; }
+.admin-page-edit-count { white-space: nowrap; font-size: 0.8rem; }
+.admin-page-edit-body { padding: 12px; border-top: 1px solid #eef0f4; }
+@media (max-width: 600px) {
+  .admin-page-edit-count { display: none; }
+}

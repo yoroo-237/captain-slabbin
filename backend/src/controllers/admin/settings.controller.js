@@ -24,7 +24,7 @@ export const adminSettingsController = {
     // "super_" keys (commission sweep) have their own endpoints; the HD seed can
     // move every BTC/LTC/DOGE deposit, so moderators never receive it.
     const visible = rows.filter(r =>
-      !r.key.startsWith('super_') && !TELEGRAM_PRIVATE_KEYS.includes(r.key) &&
+      !r.key.startsWith('super_') && !r.key.startsWith('push_') && !TELEGRAM_PRIVATE_KEYS.includes(r.key) &&
       (r.key !== 'btc_hd_seed' || ADMIN_ROLES.includes(req.user.role))
     );
     const settings = Object.fromEntries(visible.map(r => [r.key, r.value]));

@@ -56,12 +56,15 @@ export default function AdminTelegramBot({ canEdit }) {
 
 // ─── Bots ────────────────────────────────────────────────────────────────────
 
-function BotCard({ bot, styles, shelves, busy, act, post }) {
+function BotCard({ bot, styles, shelves: allShelves, busy, act, post }) {
   const [picked, setPicked] = useState(bot.shelves || [])
   useEffect(() => { setPicked(bot.shelves || []) }, [bot.shelves])
   const id = bot.id
   // The shop's own picture belongs to the shop's own style only
   const isShopStyle = !bot.styleId || styles.find(s => s.id === bot.styleId)?.name === 'Captain Slabbin'
+  // Only the shelves of the catalog this bot sells (its style's), never another catalog's
+  const catalog = styles.find(s => s.id === bot.styleId)?.catalog || null
+  const shelves = allShelves.filter(c => (c.source || null) === catalog)
   const groups = bot.seenChats.filter(c => c.type !== 'private')
 
   function uploadPhoto(file, input) {
@@ -79,10 +82,10 @@ function BotCard({ bot, styles, shelves, busy, act, post }) {
     <div className="admin-card">
       <h2 className="admin-card-title">
         @{bot.username || 'bot'} <span style={{ fontWeight: 400, color: '#777' }}>({bot.name})</span>
-        {bot.isPrimary && <span className="admin-badge" style={{ marginLeft: 8 }}>Primary</span>}
+        {bot.isPrimary && <span className="admin-pill">Primary</span>}
       </h2>
       {bot.error ? (
-        <div className="admin-alert admin-alert-error">This bot does not answer: {bot.error}. Its token may have been revoked: unlink it and link it again.</div>
+        <div className="admin-alert admin-alert-error">This bot does not answer: {String(bot.error).replace(/[.\s]+$/, '')}. Its token may have been revoked: unlink it and link it again.</div>
       ) : (
         <div className="admin-info-row" style={{ display: 'grid', gap: 6, marginBottom: 16 }}>
           <div><b>Link for customers:</b> <a href={`https://t.me/${bot.username}`} target="_blank" rel="noreferrer">t.me/{bot.username}</a> · {bot.customers} customer{bot.customers === 1 ? '' : 's'}</div>
@@ -253,8 +256,12 @@ function LinkForm({ hasBots, styles, busy, act, post }) {
 function StylesTab({ bots, styles, shelves, busy, act, post, reload }) {
   const [editing, setEditing] = useState(null) // { id?, name, look }
   const [defaults, setDefaults] = useState(null)
+  const [neutral, setNeutral] = useState(null)
   const [token, setToken] = useState('')
-  useEffect(() => { adminFetch('/admin/telegram/styles/defaults').then(d => setDefaults(d.look)).catch(() => {}) }, [])
+  useEffect(() => {
+    adminFetch('/admin/telegram/styles/defaults').then(d => setDefaults(d.look)).catch(() => {})
+    adminFetch('/admin/telegram/styles/defaults?neutral=1&name=Your%20bot').then(d => setNeutral(d.look)).catch(() => {})
+  }, [])
 
   const open = id => act('open', async () => {
     const { style } = await adminFetch(`/admin/telegram/styles/${id}`)
@@ -267,7 +274,9 @@ function StylesTab({ bots, styles, shelves, busy, act, post, reload }) {
     return style
   }, s => `Style "${s.name}" created from the bot's profile. Its screens are not readable by Telegram's API: rebuild them below as pages.`)
 
-  if (editing && defaults) return <StyleEditor key={editing.id || 'new'} initial={editing} defaults={defaults} shelves={shelves} busy={busy} act={act} onClose={() => { setEditing(null); reload() }} />
+  // The shop's own style falls back to the shop's look; every other style to the brand-free base
+  const fallback = editing && (editing.name === 'Captain Slabbin' ? defaults : neutral)
+  if (editing && fallback) return <StyleEditor key={editing.id || 'new'} initial={editing} defaults={fallback} shelves={shelves} busy={busy} act={act} onClose={() => { setEditing(null); reload() }} />
 
   return (
     <div style={{ display: 'grid', gap: 16 }}>
@@ -342,13 +351,22 @@ function setIn(obj, path, value) {
   return next
 }
 
-function StyleEditor({ initial, defaults, shelves, busy, act, onClose }) {
+function StyleEditor({ initial, defaults, shelves: allShelves, busy, act, onClose }) {
   const [name, setName] = useState(initial.name)
   const [look, setLook] = useState(initial.look)
   const set = (path, value) => setLook(l => setIn(l, path, value))
   const get = path => path.reduce((o, k) => o?.[k], look) ?? ''
   const def = path => path.reduce((o, k) => o?.[k], defaults) ?? ''
   const pages = look.pages || []
+  // Only the shelves of the catalog this style sells, and the catalogs that exist
+  const shelves = allShelves.filter(c => (c.source || null) === (look.catalog || null))
+  const sources = [...new Set(allShelves.map(c => c.source).filter(Boolean))]
+  const links = look.siteLinks ?? (defaults.siteLinks !== false)
+  // A copied bot can have hundreds of pages: search them and show them by slices
+  const [pageFilter, setPageFilter] = useState('')
+  const [pageLimit, setPageLimit] = useState(20)
+  const q = pageFilter.trim().toLowerCase()
+  const shownPages = pages.map((p, i) => ({ p, i })).filter(({ p }) => !q || `${p.key} ${p.title || ''} ${p.html || ''}`.toLowerCase().includes(q))
   const setPages = next => set(['pages'], next.length ? next : undefined)
 
   const save = () => act('save', async () => {
@@ -396,7 +414,18 @@ function StyleEditor({ initial, defaults, shelves, busy, act, onClose }) {
           }} />
       </div>
 
-      <h3 className="admin-card-title" style={{ fontSize: '0.95rem', marginTop: 20 }}>Layout</h3>
+      <h3 className="admin-card-title" style={{ fontSize: '0.95rem', marginTop: 20 }}>Catalog and layout</h3>
+      <div className="admin-form-group">
+        <label className="admin-label">Products this bot sells</label>
+        <select className="admin-input" value={look.catalog || ''} onChange={e => set(['catalog'], e.target.value || undefined)}>
+          <option value="">The shop's own products</option>
+          {sources.map(src => <option key={src} value={src}>Imported catalog "{src}"</option>)}
+        </select>
+      </div>
+      <label style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 14 }}>
+        <input type="checkbox" checked={links} onChange={e => set(['siteLinks'], e.target.checked)} />
+        <span>Links to the shop's website in this bot (buttons, menu button, wording)</span>
+      </label>
       <div className="admin-form-group">
         <label className="admin-label">How customers move around</label>
         <select className="admin-input" value={look.layout || 'buttons'} onChange={e => set(['layout'], e.target.value === 'buttons' ? undefined : e.target.value)}>
@@ -446,11 +475,20 @@ function StyleEditor({ initial, defaults, shelves, busy, act, onClose }) {
           {pages.map(p => <option key={p.key} value={p.key}>Page {p.key}</option>)}
         </select>
       </div>
-      {pages.map((p, i) => (
+      {pages.length > 8 && (
+        <input className="admin-input" style={{ marginBottom: 10 }} type="search" placeholder={`Search the ${pages.length} pages (command or text)`} value={pageFilter} onChange={e => { setPageFilter(e.target.value); setPageLimit(20) }} />
+      )}
+      {shownPages.slice(0, pageLimit).map(({ p, i }) => (
         <PageEditor key={i} page={p} pages={pages} shelves={shelves}
           onChange={np => setPages(pages.map((x, j) => j === i ? np : x))}
           onRemove={() => { setPages(pages.filter((_, j) => j !== i)); if (look.home === p.key) set(['home'], '') }} />
       ))}
+      {q && shownPages.length === 0 && <p className="admin-text-muted">No page matches.</p>}
+      {shownPages.length > pageLimit && (
+        <button type="button" className="admin-btn admin-btn-secondary" style={{ marginBottom: 10 }} onClick={() => setPageLimit(n => n + 40)}>
+          Show {Math.min(40, shownPages.length - pageLimit)} more ({shownPages.length - pageLimit} left)
+        </button>
+      )}
       <button type="button" className="admin-btn admin-btn-secondary" onClick={() => {
         let n = pages.length + 1
         while (pages.some(p => p.key === `p${n}`)) n++
@@ -465,8 +503,10 @@ function StyleEditor({ initial, defaults, shelves, busy, act, onClose }) {
   )
 }
 
-// One custom page; buttons are edited flat (each with its row number)
+// One custom page, folded to a one-line summary until opened (a copied bot can have
+// hundreds); buttons are edited flat (each with its row number)
 function PageEditor({ page, pages, shelves, onChange, onRemove }) {
+  const [open, setOpen] = useState(!page.html)
   const flat = (page.buttons || []).flatMap((row, r) => row.map(b => ({ ...b, row: r + 1 })))
   const setFlat = list => {
     const rows = []
@@ -478,60 +518,70 @@ function PageEditor({ page, pages, shelves, onChange, onRemove }) {
   }
   const kindOf = a => a.startsWith('page:') ? 'page' : a.startsWith('cat:') ? 'cat' : a.startsWith('url:') ? 'url' : a
   const setBtn = (i, patch) => setFlat(flat.map((b, j) => j === i ? { ...b, ...patch } : b))
+  const summary = String(page.html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80)
 
   return (
-    <div style={{ border: '1px solid #e8ecf0', borderRadius: 8, padding: 12, marginBottom: 12 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <b>Page {page.key}</b>
+    <div className="admin-page-edit">
+      <div className="admin-page-edit-head">
+        <button type="button" className="admin-page-edit-toggle" onClick={() => setOpen(o => !o)} aria-expanded={open}>
+          <span aria-hidden="true">{open ? '▾' : '▸'}</span>
+          <b>/{page.key}</b>
+          <span className="admin-page-edit-sum">{summary || 'Empty page'}</span>
+          <span className="admin-text-muted admin-page-edit-count">{flat.length} button{flat.length === 1 ? '' : 's'}</span>
+        </button>
         <button type="button" className="admin-btn admin-btn-danger admin-btn-sm" onClick={onRemove}>Remove</button>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '0 12px' }}>
-        <div className="admin-form-group">
-          <label className="admin-label">Command (also opens it: /{page.key})</label>
-          <input className="admin-input" value={page.key} onChange={e => onChange({ ...page, key: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 32) })} />
-        </div>
-        <div className="admin-form-group">
-          <label className="admin-label">Menu label (commands layout; empty = not listed)</label>
-          <input className="admin-input" value={page.title || ''} onChange={e => onChange({ ...page, title: e.target.value })} />
-        </div>
-      </div>
-      <div className="admin-form-group">
-        <label className="admin-label">Text</label>
-        <textarea className="admin-input" rows={5} value={page.html || ''} onChange={e => onChange({ ...page, html: e.target.value })} />
-      </div>
-      <div className="admin-form-group">
-        <label className="admin-label">Image (url, shown above the text)</label>
-        <input className="admin-input" value={page.image || ''} onChange={e => onChange({ ...page, image: e.target.value })} />
-      </div>
-      <label className="admin-label">Buttons</label>
-      {flat.map((b, i) => {
-        const kind = kindOf(b.action || 'menu')
-        const arg = kind === 'page' || kind === 'cat' || kind === 'url' ? b.action.slice(b.action.indexOf(':') + 1) : ''
-        return (
-          <div key={i} style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
-            <input className="admin-input" style={{ flex: '2 1 160px' }} placeholder="Label" value={b.text} onChange={e => setBtn(i, { text: e.target.value })} />
-            <select className="admin-input" style={{ flex: '1 1 120px' }} value={kind} onChange={e => setBtn(i, { action: ['page', 'cat', 'url'].includes(e.target.value) ? `${e.target.value}:` : e.target.value })}>
-              {ACTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
-            {kind === 'page' && (
-              <select className="admin-input" style={{ flex: '1 1 100px' }} value={arg} onChange={e => setBtn(i, { action: `page:${e.target.value}` })}>
-                <option value="">Choose</option>
-                {pages.filter(p => p.key !== page.key).map(p => <option key={p.key} value={p.key}>{p.key}</option>)}
-              </select>
-            )}
-            {kind === 'cat' && (
-              <select className="admin-input" style={{ flex: '1 1 100px' }} value={arg} onChange={e => setBtn(i, { action: `cat:${e.target.value}` })}>
-                <option value="">Choose</option>
-                {shelves.map(c => <option key={c.slug} value={c.slug}>{c.name}</option>)}
-              </select>
-            )}
-            {kind === 'url' && <input className="admin-input" style={{ flex: '2 1 160px' }} placeholder="https://…" value={arg} onChange={e => setBtn(i, { action: `url:${e.target.value}` })} />}
-            <input className="admin-input" style={{ width: 64 }} type="number" min="1" title="Row" value={b.row} onChange={e => setBtn(i, { row: e.target.value })} />
-            <button type="button" className="admin-btn admin-btn-secondary admin-btn-sm" onClick={() => setFlat(flat.filter((_, j) => j !== i))}>✕</button>
+      {open && (
+        <div className="admin-page-edit-body">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '0 12px' }}>
+            <div className="admin-form-group">
+              <label className="admin-label">Command (also opens it: /{page.key})</label>
+              <input className="admin-input" value={page.key} onChange={e => onChange({ ...page, key: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 32) })} />
+            </div>
+            <div className="admin-form-group">
+              <label className="admin-label">Menu label (commands layout; empty = not listed)</label>
+              <input className="admin-input" value={page.title || ''} onChange={e => onChange({ ...page, title: e.target.value })} />
+            </div>
           </div>
-        )
-      })}
-      <button type="button" className="admin-btn admin-btn-secondary admin-btn-sm" onClick={() => setFlat([...flat, { text: '', action: 'menu', row: (page.buttons?.length || 0) + 1 }])}>+ Button</button>
+          <div className="admin-form-group">
+            <label className="admin-label">Text</label>
+            <textarea className="admin-input" rows={5} value={page.html || ''} onChange={e => onChange({ ...page, html: e.target.value })} />
+          </div>
+          <div className="admin-form-group">
+            <label className="admin-label">Image (url, shown above the text)</label>
+            <input className="admin-input" value={page.image || ''} onChange={e => onChange({ ...page, image: e.target.value })} />
+          </div>
+          <label className="admin-label">Buttons</label>
+          {flat.map((b, i) => {
+            const kind = kindOf(b.action || 'menu')
+            const arg = kind === 'page' || kind === 'cat' || kind === 'url' ? b.action.slice(b.action.indexOf(':') + 1) : ''
+            return (
+              <div key={i} style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
+                <input className="admin-input" style={{ flex: '2 1 160px' }} placeholder="Label" value={b.text} onChange={e => setBtn(i, { text: e.target.value })} />
+                <select className="admin-input" style={{ flex: '1 1 120px' }} value={kind} onChange={e => setBtn(i, { action: ['page', 'cat', 'url'].includes(e.target.value) ? `${e.target.value}:` : e.target.value })}>
+                  {ACTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+                {kind === 'page' && (
+                  <select className="admin-input" style={{ flex: '1 1 100px' }} value={arg} onChange={e => setBtn(i, { action: `page:${e.target.value}` })}>
+                    <option value="">Choose</option>
+                    {pages.filter(p => p.key !== page.key).map(p => <option key={p.key} value={p.key}>{p.key}</option>)}
+                  </select>
+                )}
+                {kind === 'cat' && (
+                  <select className="admin-input" style={{ flex: '1 1 100px' }} value={arg} onChange={e => setBtn(i, { action: `cat:${e.target.value}` })}>
+                    <option value="">Choose</option>
+                    {shelves.map(c => <option key={c.slug} value={c.slug}>{c.name}</option>)}
+                  </select>
+                )}
+                {kind === 'url' && <input className="admin-input" style={{ flex: '2 1 160px' }} placeholder="https://…" value={arg} onChange={e => setBtn(i, { action: `url:${e.target.value}` })} />}
+                <input className="admin-input" style={{ width: 64 }} type="number" min="1" title="Row" value={b.row} onChange={e => setBtn(i, { row: e.target.value })} />
+                <button type="button" className="admin-btn admin-btn-secondary admin-btn-sm" onClick={() => setFlat(flat.filter((_, j) => j !== i))}>✕</button>
+              </div>
+            )
+          })}
+          <button type="button" className="admin-btn admin-btn-secondary admin-btn-sm" onClick={() => setFlat([...flat, { text: '', action: 'menu', row: (page.buttons?.length || 0) + 1 }])}>+ Button</button>
+        </div>
+      )}
     </div>
   )
 }

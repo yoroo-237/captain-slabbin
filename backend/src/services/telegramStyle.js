@@ -107,7 +107,7 @@ export function mergeLook(base, over) {
 // speak as another brand.
 export const isShopStyle = style => !style || style.name === 'Captain Slabbin';
 
-function neutralLook(name) {
+export function neutralLook(name) {
   const l = structuredClone(DEFAULT_LOOK);
   const safe = String(name).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   l.siteLinks = false;

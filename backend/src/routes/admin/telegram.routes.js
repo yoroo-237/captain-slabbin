@@ -8,7 +8,7 @@ import {
   telegramStatus, inspectBot, linkBot, applyStyle, setPrimary, changeChat, unlinkBot, sendTelegram,
   setPostChat, setShelves, postProduct, setBotPhoto, setStylePhoto, styleFromBot, findBot,
 } from '../../services/telegram.service.js';
-import { DEFAULT_LOOK } from '../../services/telegramStyle.js';
+import { DEFAULT_LOOK, neutralLook } from '../../services/telegramStyle.js';
 
 // Admin → Telegram: link several bots by pasting their tokens, choose the
 // primary one (staff notifications) and its chat, give each bot a style and its
@@ -104,7 +104,8 @@ r.post('/post-product/:id', async (req, res) => {
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
-r.get('/styles/defaults', (req, res) => res.json(ok({ look: DEFAULT_LOOK })));
+// What a style falls back to: the shop's own look, or (?neutral=1) the brand-free base every other style starts from
+r.get('/styles/defaults', (req, res) => res.json(ok({ look: req.query.neutral ? neutralLook(String(req.query.name || 'Your bot').slice(0, 80)) : DEFAULT_LOOK })));
 
 r.get('/styles/:id', async (req, res) => {
   res.json(ok({ style: await prisma.botStyle.findUniqueOrThrow({ where: { id: Number(req.params.id) } }) }));

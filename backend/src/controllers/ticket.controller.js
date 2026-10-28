@@ -1,6 +1,7 @@
 import { prisma } from '../db.js';
 import { ok } from '../utils/response.js';
 import { formatTicketId, appError } from '../utils/formatters.js';
+import { pushStaff } from '../services/push.service.js';
 
 export const ticketController = {
   async list(req, res) {
@@ -33,6 +34,7 @@ export const ticketController = {
       include: { messages: true },
     });
 
+    pushStaff({ title: `New ticket ${updated.frontendId}`, body: updated.subject, url: `/admin/support/${updated.id}`, tag: `ticket-${updated.id}` });
     res.status(201).json(ok(updated));
   },
 
@@ -70,6 +72,7 @@ export const ticketController = {
       },
     });
 
+    pushStaff({ title: `Reply on ticket ${ticket.frontendId}`, body: message.trim().slice(0, 140), url: `/admin/support/${ticket.id}`, tag: `ticket-${ticket.id}` });
     res.status(201).json(ok(msg));
   },
 };

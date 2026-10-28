@@ -49,8 +49,8 @@ export default function AdminInbox() {
       </div>
       {error && <div className="admin-alert admin-alert-error">{error}</div>}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 300px) 1fr', gap: 16, alignItems: 'start' }}>
-        <div className="admin-card" style={{ padding: 0, overflow: 'hidden' }}>
+      <div className={'admin-split' + (userId ? ' has-open' : '')}>
+        <div className="admin-card admin-split-list" style={{ padding: 0, overflow: 'hidden' }}>
           {threads === null ? <div style={{ padding: 16, color: '#888' }}>Loading…</div>
             : threads.length === 0 ? <div style={{ padding: 16, color: '#888' }}>No conversations yet.</div>
             : threads.map(t => (
@@ -72,7 +72,8 @@ export default function AdminInbox() {
             ))}
         </div>
 
-        <div className="admin-card" style={{ display: 'flex', flexDirection: 'column', minHeight: 420 }}>
+        <div className="admin-card admin-split-main" style={{ display: 'flex', flexDirection: 'column', minHeight: 420 }}>
+          {userId && <Link to="/admin/messages" className="admin-split-back">‹ Conversations</Link>}
           {!userId ? <div style={{ color: '#888', margin: 'auto' }}>Select a conversation.</div> : !thread ? <div style={{ color: '#888' }}>Loading…</div> : (
             <>
               <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #eef0f4', paddingBottom: 10, marginBottom: 10 }}>

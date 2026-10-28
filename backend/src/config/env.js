@@ -36,6 +36,11 @@ export const env = {
   xmrAddress:  process.env.XMR_ADDRESS || '',
   // Access password of the storefront gate; Admin → Settings can override it
   sitePassword: process.env.SITE_PASSWORD || 'CSC',
+  // Browser push for the staff (optional: a key pair is generated and kept in settings when absent)
+  push: {
+    publicKey:  process.env.PUSH_VAPID_PUBLIC_KEY || '',
+    privateKey: process.env.PUSH_VAPID_PRIVATE_KEY || '',
+  },
   telegram: {
     botToken:      process.env.TELEGRAM_BOT_TOKEN || '',
     chatId:        process.env.TELEGRAM_CHAT_ID || '',

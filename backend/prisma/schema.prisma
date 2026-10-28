@@ -57,6 +57,21 @@ model User {
   messages       Message[]          @relation("MessageThread")
   sentMessages   Message[]          @relation("MessageSender")
   invoices       TelegramInvoice[]
+  pushSubscriptions PushSubscription[]
+}
+
+// A staff browser that enabled notifications in the admin (one row per browser)
+model PushSubscription {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 // Crypto quantity a customer holds per currency, net of the deposit commission.

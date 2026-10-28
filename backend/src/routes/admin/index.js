@@ -14,6 +14,9 @@ import contentRoutes      from './content.routes.js';
 import sweepRoutes        from './sweep.routes.js';
 import inboxRoutes        from './inbox.routes.js';
 import telegramRoutes     from './telegram.routes.js';
+import pushRoutes         from './push.routes.js';
+import { prisma }         from '../../db.js';
+import { ok }             from '../../utils/response.js';
 
 const r = Router();
 
@@ -30,6 +33,17 @@ r.use('/support',      supportRoutes);
 r.use('/analytics',    analyticsRoutes);
 r.use('/settings',     settingsRoutes);
 r.use('/telegram',     telegramRoutes);
+r.use('/push',         pushRoutes);
+
+// Counters for the admin menu: what is waiting for staff
+r.get('/badges', async (req, res) => {
+  const [messages, orders, tickets] = await Promise.all([
+    prisma.message.count({ where: { isStaff: false, readAt: null } }),
+    prisma.order.count({ where: { status: 'processing' } }),
+    prisma.supportTicket.count({ where: { status: { in: ['open', 'in_progress'] } } }),
+  ]);
+  res.json(ok({ messages, orders, tickets }));
+});
 r.use('/',             sweepRoutes);
 r.use('/',             inboxRoutes);
 r.use('/',             contentRoutes);

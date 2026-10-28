@@ -4,6 +4,7 @@ import { readFile, readdir } from 'fs/promises';
 import { prisma } from '../db.js';
 import { env } from '../config/env.js';
 import { lookOf, isShopStyle } from './telegramStyle.js';
+import { pushStaff } from './push.service.js';
 
 // The shop's Telegram bots. Several can be linked from Admin → Telegram; they all
 // sell the same shop, each with its own style (services/telegramStyle.js) and
@@ -141,7 +142,7 @@ async function installNavigation(bot) {
 export async function telegramStatus() {
   const [bots, styles] = await Promise.all([
     prisma.telegramBot.findMany({ orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }], include: { style: true, _count: { select: { users: true } } } }),
-    prisma.botStyle.findMany({ orderBy: { id: 'asc' }, select: { id: true, name: true, source: true } }),
+    prisma.botStyle.findMany({ orderBy: { id: 'asc' }, select: { id: true, name: true, source: true, look: true } }),
   ]);
   const rows = await Promise.all(bots.map(async bot => {
     const base = {
@@ -164,7 +165,8 @@ export async function telegramStatus() {
       return { ...base, error: err.message };
     }
   }));
-  return { bots: rows, styles };
+  // (a style's look can be large: only the catalog it sells goes to the admin)
+  return { bots: rows, styles: styles.map(({ look, ...s }) => ({ ...s, catalog: look?.catalog || null })) };
 }
 
 // Step 1: check a token before linking it. Lists the chats the bot has seen so
@@ -327,6 +329,7 @@ export async function notifyWalletOrder(order, user, payments) {
     order.shippingAddress ? `Ship to: ${order.name}\n${order.shippingAddress}` : null,
   ].filter(Boolean).join('\n');
   const link = adminLink(`/orders/${order.id}`);
+  pushStaff({ title: `Paid order ${order.orderNumber}`, body: `${money(order.totalAmount)} · ${user.username}`, url: `/admin/orders/${order.id}`, tag: `order-${order.id}` });
   const via = user.telegramBotId ? await findBot(user.telegramBotId) : null;
   const sent = await sendTelegram([
     `✅ <b>Paid order ${escapeHtml(order.orderNumber)}</b> (wallet)`,
@@ -346,6 +349,7 @@ export async function notifyNewMessage(user, body) {
   const telegram = formatTelegramContact(user.telegramHandle);
   const preview = body.length > 400 ? body.slice(0, 400) + '…' : body;
   const link = adminLink(`/messages/${user.id}`);
+  pushStaff({ title: `Message from ${user.username}`, body: preview.slice(0, 140), url: `/admin/messages/${user.id}`, tag: `message-${user.id}` });
   return sendTelegram([
     `💬 <b>New message from ${escapeHtml(user.username)}</b>`,
     telegram ? `✈️ ${escapeHtml(telegram)}` : null,

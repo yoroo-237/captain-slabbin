@@ -1,13 +1,15 @@
-import { useState, Suspense, Component } from 'react'
+import { useState, useEffect, useCallback, Suspense, Component } from 'react'
 import { NavLink, Outlet, Navigate, Link, useLocation } from 'react-router-dom'
 import { useApp } from '../../context/AppContext.jsx'
+import { adminFetch } from './utils/api.js'
+import { usePush } from './usePush.js'
 import './admin.css'
 
 const NAV_ITEMS = [
   { section: 'Overview' },
   { label: 'Dashboard', path: '/admin', end: true },
   { section: 'Commerce' },
-  { label: 'Orders', path: '/admin/orders' },
+  { label: 'Orders', path: '/admin/orders', badge: 'orders' },
   { label: 'Products', path: '/admin/products' },
   { label: 'Categories', path: '/admin/categories' },
   { label: 'Brands', path: '/admin/brands' },
@@ -16,8 +18,8 @@ const NAV_ITEMS = [
   { label: 'Deposits', path: '/admin/deposits' },
   { label: 'Transactions', path: '/admin/transactions' },
   { section: 'Support' },
-  { label: 'Messages', path: '/admin/messages' },
-  { label: 'Support Tickets', path: '/admin/support' },
+  { label: 'Messages', path: '/admin/messages', badge: 'messages' },
+  { label: 'Support Tickets', path: '/admin/support', badge: 'tickets' },
   { label: 'Reviews', path: '/admin/reviews' },
   { section: 'Content' },
   { label: 'News', path: '/admin/news' },
@@ -44,10 +46,75 @@ function decodeJwt(token) {
   }
 }
 
+// What waits for staff (unread messages, orders to process, open tickets), refreshed
+// every 30 s, when the tab regains focus and the moment a push arrives
+function useBadges(enabled) {
+  const [badges, setBadges] = useState({ messages: 0, orders: 0, tickets: 0 })
+  const load = useCallback(() => { adminFetch('/admin/badges').then(setBadges).catch(() => {}) }, [])
+  useEffect(() => {
+    if (!enabled) return undefined
+    load()
+    const timer = setInterval(load, 30000)
+    const onVisible = () => { if (document.visibilityState === 'visible') load() }
+    const onPush = e => { if (e.data?.type === 'push') load() }
+    document.addEventListener('visibilitychange', onVisible)
+    navigator.serviceWorker?.addEventListener('message', onPush)
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); navigator.serviceWorker?.removeEventListener('message', onPush) }
+  }, [enabled, load])
+  return badges
+}
+
+const BELL = {
+  on: 'Notifications on',
+  off: 'Turn on notifications',
+  blocked: 'Notifications blocked',
+}
+
+// Header button: push notifications for orders, messages and tickets
+function NotificationsButton() {
+  const { state, busy, error, enable, disable, test } = usePush()
+  const [open, setOpen] = useState(false)
+  if (state === 'unsupported') return null
+  return (
+    <div className="admin-pop-wrap">
+      <button type="button" className={'admin-bell' + (state === 'on' ? ' on' : '')} onClick={() => setOpen(o => !o)} aria-expanded={open} aria-label={BELL[state]} title={BELL[state]}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" />
+          {state !== 'on' && <line x1="3" y1="3" x2="21" y2="21" />}
+        </svg>
+      </button>
+      {open && (
+        <>
+          <div className="admin-pop-backdrop" onClick={() => setOpen(false)} />
+          <div className="admin-pop" role="dialog" aria-label="Notifications">
+            <div className="admin-pop-title">Notifications</div>
+            {state === 'on' && <p className="admin-pop-text">On in this browser: you are told about paid orders, customer messages and support tickets, even with this tab closed.</p>}
+            {state === 'off' && <p className="admin-pop-text">Get a notification for each paid order, customer message and support ticket, even with this tab closed.</p>}
+            {state === 'blocked' && <p className="admin-pop-text">This browser blocks notifications for the site. Allow them with the padlock next to the address, then come back here.</p>}
+            {error && <div className="admin-alert admin-alert-error" style={{ margin: '0 0 10px' }}>{error}</div>}
+            <div className="admin-pop-actions">
+              {state === 'off' && <button type="button" className="admin-btn admin-btn-primary" disabled={busy} onClick={enable}>{busy ? 'Turning on…' : 'Turn on'}</button>}
+              {state === 'on' && <>
+                <button type="button" className="admin-btn admin-btn-secondary" disabled={busy} onClick={test}>Send a test</button>
+                <button type="button" className="admin-btn admin-btn-danger" disabled={busy} onClick={disable}>Turn off</button>
+              </>}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function AdminLayout() {
   const { user, logout, loadingAuth } = useApp()
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const badges = useBadges(!loadingAuth)
+  const waiting = badges.messages + badges.orders + badges.tickets
+  useEffect(() => {
+    document.title = (waiting ? `(${waiting}) ` : '') + 'Admin Dashboard'
+  }, [waiting])
 
   if (loadingAuth) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>Loading…</div>
 
@@ -86,7 +153,8 @@ export default function AdminLayout() {
                 className={({ isActive }) => 'admin-nav-link' + (isActive ? ' active' : '')}
                 onClick={() => setSidebarOpen(false)}
               >
-                {item.label}
+                <span className="admin-nav-label">{item.label}</span>
+                {item.badge && badges[item.badge] > 0 && <span className="admin-nav-badge" aria-label={`${badges[item.badge]} waiting`}>{badges[item.badge] > 99 ? '99+' : badges[item.badge]}</span>}
               </NavLink>
             )
           )}
@@ -117,11 +185,14 @@ export default function AdminLayout() {
             </svg>
           </button>
 
-          <Link to="/admin/account" className="admin-user-chip" title="My account: change username or password" style={{ textDecoration: 'none', color: 'inherit' }}>
-            <div className="admin-avatar">{initial}</div>
-            <span>{username}</span>
-            {user?.role && <span className="admin-text-muted">· {user.role}</span>}
-          </Link>
+          <div className="admin-header-end">
+            <NotificationsButton />
+            <Link to="/admin/account" className="admin-user-chip" title="My account: change username or password" style={{ textDecoration: 'none', color: 'inherit' }}>
+              <div className="admin-avatar">{initial}</div>
+              <span className="admin-user-name">{username}</span>
+              {user?.role && <span className="admin-text-muted admin-user-role">· {user.role}</span>}
+            </Link>
+          </div>
         </header>
 
         <main className="admin-content">
