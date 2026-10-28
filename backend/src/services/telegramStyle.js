@@ -56,6 +56,12 @@ export const DEFAULT_LOOK = {
     shelfIntro: 'Enjoy the wide variety of {shelf}',
     customOrder: 'Send your custom order in one message: products, quantities and anything we should know. The crew answers you right here.',
     customOrderSent: '✅ Custom order received. The crew answers you right here.',
+    vendorLine: '',                         // under a product, e.g. "-- by QueenTetra"
+    notInCart: '🛒 <b>This product is not in </b><b>/cart</b>',
+    inCart: '🛒 <b>Product total in </b><b>/cart</b><b> — {total}</b>',
+    notesPrompt: '✏ <b>SEND ME PRODUCT NOTES for {product}:</b>',
+    cartTitle: '🛒 <b>YOUR CART</b>',
+    cartEmpty: '🛒 Your cart is empty. Pick a shelf in {menu}.',
   },
   labels: {
     ageButton: '✅ I am 21 or older, let me in',
@@ -69,6 +75,12 @@ export const DEFAULT_LOOK = {
     keepShopping: '🛒 Keep shopping',
     allShelves: '‹ All shelves',
     rating: '☀️',
+    back: '⇇ Back',
+    previous: '< Previous',
+    next: 'Next >',
+    removeFromCart: 'Remove Product from Cart',
+    addNotes: 'Add Product Notes',
+    reviews: '{n} reviews',
   },
   rule: '━━━━━━━━━━━━━━━━',
   upperTitles: true,
@@ -87,6 +99,10 @@ export const DEFAULT_LOOK = {
   layout: 'buttons',
   prefix: 'shop',                         // menu command, and the start of shelf commands
   customOrderCommand: 'create_custom_order',
+  listPrices: true,      // commands layout: a price line under each product of a shelf
+  shelfNeighbors: false, // commands layout: buttons to the shelves on either side
+  listImages: true,      // commands layout: a picture above a shelf's list (the original menu-board bots show none)
+  minimums: null,        // commands layout: minimum cart { first, next } in dollars
 };
 
 const isObj = v => v && typeof v === 'object' && !Array.isArray(v);

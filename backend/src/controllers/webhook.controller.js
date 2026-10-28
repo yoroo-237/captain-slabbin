@@ -7,7 +7,8 @@ import { findBot, primaryBot, rememberChat, tg, notifyNewMessage } from '../serv
 import { menuScreen, shelfScreen, pageScreen, homeScreen } from '../services/telegramCatalog.js';
 import { withBot, look, siteLinks } from '../services/telegramStyle.js';
 import * as shop from '../services/telegramShop.js';
-import { resolveCommand, customOrderScreen, takesCustomOrder } from '../services/telegramCommands.js';
+import * as board from '../services/telegramCommands.js';
+import { resolveCommand, customOrderScreen, takeWaiting } from '../services/telegramCommands.js';
 
 export const webhookController = {
   // BlockCypher webhook — BTC, LTC, DOGE (confirmed-tx on HD wallet address)
@@ -107,6 +108,9 @@ export const webhookController = {
   },
 };
 
+// Screens a commands-layout bot shows without an account
+const BROWSE = new Set(['home', 'menu', 'cat', 'p', 'pg', 'rv']);
+
 // One update, answered as `bot` (inside withBot, so screens use its style)
 async function answerTelegram(bot, upd) {
   // Remember where the bot is (not where it was just removed from)
@@ -135,22 +139,33 @@ async function answerTelegram(bot, upd) {
 ${menu.text}` };
     }
     const user = await shop.findCustomer(from);
-    if (!user) return shop.ageScreen();
-    if (!user.isActive) return { text: 'This account is disabled. Message the shop for help.', keyboard: [] };
+    // A commands-layout bot can be browsed without an account, like the bots it copies;
+    // the cart, the wallet and orders ask for 21+ first
+    const commands = look().layout === 'commands';
+    if (!user && !(commands && BROWSE.has(kind))) return shop.ageScreen();
+    if (user && !user.isActive) return { text: 'This account is disabled. Message the shop for help.', keyboard: [] };
     // Their messages now come from the bot they are using
-    if (user.telegramBotId !== bot.id) await prisma.user.update({ where: { id: user.id }, data: { telegramBotId: bot.id } }).catch(() => {});
+    if (user && user.telegramBotId !== bot.id) await prisma.user.update({ where: { id: user.id }, data: { telegramBotId: bot.id } }).catch(() => {});
+    const account = user && !commands ? await shop.accountRow(user) : null;
     switch (kind) {
-      case 'home': return homeScreen(await shop.accountRow(user));
-      case 'pg':   return pageScreen(a) || menuScreen(await shop.accountRow(user));
-      case 'cat':  return shelfScreen(a, b, { inBot: true, account: await shop.accountRow(user) });
-      case 'p':    return shop.productScreen(a, b, c);
+      case 'home': return homeScreen(account);
+      case 'pg':   return pageScreen(a) || menuScreen(account);
+      case 'cat':  return shelfScreen(a, b, { inBot: true, account });
+      case 'p':    return commands ? board.productBoard(user, a) : shop.productScreen(a, b, c);
+      case 'rv':   return board.reviewsBoard(a, b);
+      case 'add':  return board.addToCart(user, a, b);
+      case 'rm':   return board.removeFromCart(user, a);
+      case 'note': return board.noteScreen(from, user, a);
+      case 'cart': return board.cartBoard(user);
+      case 'cclr': return board.clearCart(user);
+      case 'cpay': return board.cartPay(user);
       case 'buy':  return shop.buyScreen(user, a, b, c);
       case 'pay':  return shop.payScreen(user, a, b, c);
       case 'w':    return shop.walletScreen(user);
       case 'dep':  return shop.depositScreen(user, a);
       case 'o':    return shop.ordersScreen(user);
       case 'co':   return customOrderScreen(from);
-      default:     return menuScreen(await shop.accountRow(user));
+      default:     return menuScreen(account);
     }
   };
 
@@ -158,8 +173,9 @@ ${menu.text}` };
     const cb = upd.callback_query;
     if (cb) {
       const priv = cb.message?.chat?.type === 'private';
-      // A tap on Pay shows "Paying…" at once; the screen follows
-      await tg(bot.token, 'answerCallbackQuery', { callback_query_id: cb.id, ...(String(cb.data).startsWith('pay:') ? { text: 'Paying…' } : {}) }).catch(() => {});
+      // A tap on Pay shows "Paying…" at once, a pack "Added to cart"; the screen follows
+      const toast = /^(pay:|cpay)/.test(cb.data) ? 'Paying…' : /^add:/.test(cb.data) ? 'Added to cart' : null;
+      await tg(bot.token, 'answerCallbackQuery', { callback_query_id: cb.id, ...(toast ? { text: toast } : {}) }).catch(() => {});
       if (!cb.message) return;
       const [kind, a, b] = String(cb.data || '').split(':');
       // In a group the catalog is read-only and products open on the site
@@ -187,15 +203,20 @@ ${menu.text}` });
     }
     if (priv && cmd === '/start' && payload.startsWith('p_')) return show(msg.chat.id, await screenFor(msg.from, `p:${payload.slice(2)}:1`));
 
-    // The text after the custom order command is the order request: to the inbox
-    if (priv && !cmd && takesCustomOrder(msg.from)) {
+    // A typed answer the bot asked for: product notes, or a custom order for the inbox
+    const asked = priv && !cmd ? takeWaiting(msg.from) : null;
+    if (asked?.kind === 'note') {
+      const user = await shop.findCustomer(msg.from);
+      if (user) return show(msg.chat.id, await board.saveNote(user, asked.productId, text));
+    }
+    if (asked?.kind === 'custom') {
       const user = await shop.findCustomer(msg.from);
       if (user) {
         const body = text.slice(0, 2000);
         await prisma.message.create({ data: { userId: user.id, senderId: user.id, isStaff: false, body: `Custom order:
 ${body}` } });
         notifyNewMessage(user, `Custom order: ${body}`).catch(() => {});
-        return show(msg.chat.id, { text: look().texts.customOrderSent, keyboard: [[{ text: '⇆ Back', callback_data: 'menu' }]] });
+        return show(msg.chat.id, { text: look().texts.customOrderSent, keyboard: [[{ text: look().labels.back, callback_data: 'menu' }]] });
       }
     }
     // The style's own commands: menu, shelves, /p<id>, pages, custom order

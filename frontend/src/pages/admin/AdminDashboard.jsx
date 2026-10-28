@@ -28,6 +28,19 @@ function formatDate(str) {
   return new Date(str).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
+// Every day of the period, 0 on days without sales or sign-ups, so a chart is a line
+// over the whole period instead of a lone point
+function everyDay(rows, days, key) {
+  const byDate = new Map((rows || []).map(r => [String(r.date).slice(0, 10), Number(r[key]) || 0]))
+  const out = []
+  for (let i = days - 1; i >= 0; i--) {
+    const date = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10)
+    out.push({ date, [key]: byDate.get(date) || 0 })
+  }
+  return out
+}
+const shortName = n => (n && n.length > 18 ? n.slice(0, 17) + '…' : n)
+
 export default function AdminDashboard() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -80,12 +93,12 @@ export default function AdminDashboard() {
           <div className="admin-chart-wrap" style={{ gridColumn: '1 / -1' }}>
             <div className="admin-chart-title">Revenue — Last 30 Days</div>
             <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={charts.revenueChart || []}>
+              <LineChart data={everyDay(charts.revenueChart, 30, 'revenue')} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f2f5" />
-                <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={d => typeof d === 'string' ? d.slice(5) : ''} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `$${v}`} />
-                <Tooltip formatter={v => [`$${Number(v).toFixed(2)}`, 'Revenue']} />
-                <Line type="monotone" dataKey="revenue" stroke="#4361ee" strokeWidth={2} dot={false} />
+                <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={d => typeof d === 'string' ? d.slice(5) : ''} minTickGap={24} />
+                <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `$${v}`} width={56} allowDecimals={false} />
+                <Tooltip formatter={v => [`$${Number(v).toFixed(2)}`, 'Revenue']} labelFormatter={d => formatDate(d)} />
+                <Line type="monotone" dataKey="revenue" stroke="#4361ee" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -101,14 +114,14 @@ export default function AdminDashboard() {
                   innerRadius={55} outerRadius={80}
                   dataKey="value"
                   nameKey="name"
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  labelLine={false}
+                  paddingAngle={(charts.ordersStatusChart || []).length > 1 ? 2 : 0}
                 >
                   {(charts.ordersStatusChart || []).map((_, i) => (
                     <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
                   ))}
                 </Pie>
-                <Legend />
+                <Tooltip formatter={(v, n) => [v, n]} />
+                <Legend iconType="circle" formatter={(name, entry) => `${name} · ${entry.payload.value}`} wrapperStyle={{ fontSize: 12 }} />
               </PieChart>
             </ResponsiveContainer>
           </div>
@@ -117,12 +130,12 @@ export default function AdminDashboard() {
           <div className="admin-chart-wrap">
             <div className="admin-chart-title">Top 5 Products</div>
             <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={charts.topProducts || []} layout="vertical">
+              <BarChart data={charts.topProducts || []} layout="vertical" margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f2f5" />
-                <XAxis type="number" tick={{ fontSize: 11 }} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={100} />
-                <Tooltip />
-                <Bar dataKey="sales" fill="#4361ee" radius={[0, 4, 4, 0]} />
+                <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={130} tickFormatter={shortName} />
+                <Tooltip formatter={v => [v, 'Sold']} />
+                <Bar dataKey="sales" fill="#4361ee" radius={[0, 4, 4, 0]} maxBarSize={28} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -131,12 +144,12 @@ export default function AdminDashboard() {
           <div className="admin-chart-wrap">
             <div className="admin-chart-title">New Users — Last 7 Days</div>
             <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={charts.newUsersChart || []}>
+              <BarChart data={everyDay(charts.newUsersChart, 7, 'users')}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f2f5" />
                 <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={d => typeof d === 'string' ? d.slice(5) : ''} />
                 <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-                <Tooltip />
-                <Bar dataKey="users" fill="#28a745" radius={[4, 4, 0, 0]} />
+                <Tooltip formatter={v => [v, 'New users']} labelFormatter={d => formatDate(d)} />
+                <Bar dataKey="users" fill="#28a745" radius={[4, 4, 0, 0]} maxBarSize={36} />
               </BarChart>
             </ResponsiveContainer>
           </div>

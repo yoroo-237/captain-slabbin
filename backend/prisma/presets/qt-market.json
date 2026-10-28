@@ -11,7 +11,7 @@
         "buttons": [
           [
             {
-              "text": "⇆ Back",
+              "text": "⇇ Back",
               "action": "menu"
             }
           ]
@@ -53,7 +53,7 @@
         "buttons": [
           [
             {
-              "text": "⇆ Back",
+              "text": "⇇ Back",
               "action": "menu"
             }
           ]
@@ -61,21 +61,26 @@
       }
     ],
     "texts": {
-      "start": "Hello and Welcome :)\n\nSelect {menu} to start your order.",
+      "start": "Hello and Welcome :) \n\nSelect <b>{menu}</b> to start your order.",
       "header": "<b>QUEEN TETRA'S</b>\n<i>Exclusive private menu</i>",
-      "menuIntro": "■ All orders are shipped within 24-48hrs and tracking will be provided upon request\n■ $10 shipping on all orders\n■ Wholesale Pricing Available\n■ Exclusive Products\n■ $50 minimum on first time orders ONLY, after that its $100 minimum",
-      "shelfIntro": "Enjoy the wide variety of {shelf}"
+      "menuIntro": "<b>■All orders are shipped within 24-48hrs and tracking will be provided upon request ■$10 shipping on all orders\n■Wholesale Pricing Available\n■Exclusive Products\n■$50 minimum on first time orders ONLY, after that its $100 minimum</b>",
+      "shelfIntro": "<b>{slug}</b>",
+      "vendorLine": "-- by QueenTetra"
     },
     "images": {
       "menu": "https://res.cloudinary.com/dhsroj1sc/image/upload/v1793203131/captain-slabbin/uploads/cqraoooroprck85dc6cs.jpg",
       "start": "https://res.cloudinary.com/dhsroj1sc/image/upload/v1793203131/captain-slabbin/uploads/cqraoooroprck85dc6cs.jpg",
       "banner": "https://res.cloudinary.com/dhsroj1sc/image/upload/v1793203131/captain-slabbin/uploads/cqraoooroprck85dc6cs.jpg"
     },
+    "labels": {
+      "back": "⇇ Back"
+    },
     "layout": "commands",
     "prefix": "v_qtetra",
+    "catalog": "qt",
     "profile": {
       "name": "QTMARKETBOT",
-      "photo": "https://res.cloudinary.com/dhsroj1sc/image/upload/v1793203131/captain-slabbin/uploads/cqraoooroprck85dc6cs.jpg",
+      "photo": "https://res.cloudinary.com/dhsroj1sc/image/upload/v1793216368/captain-slabbin/bots/lsy7jtjj0e3vae24kega.jpg",
       "commands": [
         {
           "command": "start",
@@ -102,9 +107,15 @@
       "description": "Queen Tetra's exclusive private menu.\n\nTap START, then select /v_qtetra to start your order.",
       "shortDescription": "Queen Tetra's exclusive private menu"
     },
+    "minimums": {
+      "next": 100,
+      "first": 50
+    },
+    "siteLinks": false,
+    "listImages": false,
+    "listPrices": false,
     "upperTitles": false,
-    "customOrderCommand": "v_qtetra_create_custom_order",
-    "catalog": "qt",
-    "siteLinks": false
+    "shelfNeighbors": false,
+    "customOrderCommand": "v_qtetra_create_custom_order"
   }
 }

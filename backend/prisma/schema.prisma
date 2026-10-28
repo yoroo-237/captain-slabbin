@@ -28,6 +28,8 @@ model User {
   // The bot this customer last used: their Telegram messages go out through it
   telegramBotId    Int?
   telegramBot      TelegramBot? @relation(fields: [telegramBotId], references: [id], onDelete: SetNull)
+  // Cart of the "commands" bots: [{ productId, option, qty, note }], paid from the wallet at /cart
+  telegramCart     Json      @default("[]")
   signalDetails    String?
   sessionDetails   String?
   btcRefundAddress String?
