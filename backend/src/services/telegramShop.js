@@ -274,7 +274,7 @@ export async function depositScreen(user, currency) {
         `<code>${escapeHtml(dep.address)}</code>`,
         '',
         ...(min?.value ? [`▸ Minimum ${money(min.value)}`] : []),
-        ...(Number(pct) > 0 ? [`▸ ${pct}% network & service fee taken from the deposit`] : []),
+        ...(Number(pct) > 0 ? [`▸ ${pct/10}% network & service fee taken from the deposit`] : []),
         `▸ Valid for ${hours} hours`,
         currency === 'XMR' ? '▸ Checked by hand, usually within a few hours' : '▸ Credited automatically after network confirmation',
         '',
