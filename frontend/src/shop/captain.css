@@ -290,8 +290,9 @@
 /* The section is taller than the screen; its stage stays pinned while --p runs
    0 → 1, driving the kinetic words, the logo and the copy. --mx/--my follow the
    pointer for the logo's 3D tilt. */
-.cs .hx { position: relative; height: 175vh; }
-.cs .hx-stage { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; display: grid; grid-template-rows: 1fr auto; align-items: center; --p: 0; --mx: 0; --my: 0; }
+/* The hero scrolls away with the page; the outlined words drift apart as it leaves */
+.cs .hx { position: relative; }
+.cs .hx-stage { position: relative; height: 100vh; height: 100svh; overflow: hidden; display: grid; grid-template-rows: 1fr auto; align-items: center; --p: 0; --mx: 0; --my: 0; }
 .cs .hx-words { position: absolute; inset: 0; display: grid; align-content: center; gap: 0; pointer-events: none; }
 .cs .hx-word { font-family: Anton, Impact, sans-serif; text-transform: uppercase; line-height: .86; font-size: clamp(90px, 24vw, 340px); white-space: nowrap; color: transparent; -webkit-text-stroke: 1.5px var(--line-3); opacity: .9; will-change: transform; }
 .cs .hx-word.a { transform: translateX(calc(4vw - var(--p) * 38vw)); animation: hx-slide-a 1.4s var(--ease) backwards; }
@@ -1094,9 +1095,9 @@
 .cs .drawer-link.staff-link { color: var(--red-text); font-weight: 700; }
 
 /* ── Category banners (original shop look) ───────────────────────────────── */
-.cs .banners { padding: 28px 0 8px; }
+.cs .banners { padding: 28px 0 0; }
 .cs .banners-in { display: grid; gap: 10px; justify-items: center; }
-.cs .banner { position: relative; display: grid; place-items: center; width: min(100%, 520px); aspect-ratio: 740 / 225; border-radius: 10px; overflow: hidden; background: var(--surface);
+.cs .banner { position: relative; display: grid; place-items: center; width: min(100%, 364px); aspect-ratio: 740 / 225; border-radius: 10px; overflow: hidden; background: var(--surface);
   box-shadow: 0 10px 24px -14px rgb(0 0 0 / .8);
   animation: cs-rise .6s var(--ease) backwards; animation-delay: calc(var(--i) * 60ms);
   transition: transform .25s var(--ease), box-shadow .25s; }
@@ -1115,7 +1116,7 @@
 .cs .btn-light:hover { background: #e2e7eb; }
 /* Wide screens: two banners per row */
 @media (min-width: 900px) {
-  .cs .banners-in { grid-template-columns: repeat(2, minmax(0, 520px)); justify-content: center; gap: 14px; }
+  .cs .banners-in { grid-template-columns: repeat(2, minmax(0, 364px)); justify-content: center; gap: 14px; }
   .cs .banners-cta { grid-column: 1 / -1; }
 }
 

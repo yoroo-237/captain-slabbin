@@ -41,7 +41,7 @@ export default function HomePage() {
     apiFetch('/products?category=fire-sale&limit=12').then(d => setDeals(d.products || [])).catch(() => {})
   }, [unlocked])
 
-  useScrollVar(heroRef)
+  useScrollVar(heroRef, 'leave')
   useScrollVar(railRef)
   useScrollVar(stepsRef, 'pass')
 
@@ -129,29 +129,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      {bannerMode && (
-        <section className="banners" aria-label="Shop by category">
-          <div className="container banners-in">
-            {banners.map((c, i) => {
-              const art = bannerArt(c)
-              return (
-                <Link key={c.slug} to={`/s/${c.slug}`} className={'banner' + (art ? '' : ' banner-text')} style={{ '--i': i }} aria-label={c.name}>
-                  {art
-                    ? <img src={art} alt={c.name} width="740" height="225" loading={i < 4 ? 'eager' : 'lazy'} decoding="async" />
-                    : <><span className="display">{c.name}</span><small>{c.count ? `${c.count} item${c.count === 1 ? '' : 's'}` : 'Coming soon'}</small></>}
-                </Link>
-              )
-            })}
-            {(phone || settings.signal_url) && (
-              <div className="banners-cta">
-                {phone && <a className="btn btn-light" href={`sms:${phone.replace(/[^\d+]/g, '')}`}>Text us</a>}
-                {settings.signal_url && <a className="btn btn-outline" href={settings.signal_url} target="_blank" rel="noreferrer">Join Signal</a>}
-              </div>
-            )}
-          </div>
-        </section>
-      )}
-
       <section className="stat-band" aria-label="The shop in numbers">
         <div className="container stat-band-in">
           {total > 0 && <div className="sb reveal"><CountUp to={total} /><span>products in stock</span></div>}
@@ -207,6 +184,29 @@ export default function HomePage() {
           </div>
         </div>
       </section>}
+
+      {bannerMode && (
+        <section className="banners" aria-label="Shop by category">
+          <div className="container banners-in">
+            {banners.map((c, i) => {
+              const art = bannerArt(c)
+              return (
+                <Link key={c.slug} to={`/s/${c.slug}`} className={'banner' + (art ? '' : ' banner-text')} style={{ '--i': i }} aria-label={c.name}>
+                  {art
+                    ? <img src={art} alt={c.name} width="740" height="225" loading={i < 4 ? 'eager' : 'lazy'} decoding="async" />
+                    : <><span className="display">{c.name}</span><small>{c.count ? `${c.count} item${c.count === 1 ? '' : 's'}` : 'Coming soon'}</small></>}
+                </Link>
+              )
+            })}
+            {(phone || settings.signal_url) && (
+              <div className="banners-cta">
+                {phone && <a className="btn btn-light" href={`sms:${phone.replace(/[^\d+]/g, '')}`}>Text us</a>}
+                {settings.signal_url && <a className="btn btn-outline" href={settings.signal_url} target="_blank" rel="noreferrer">Join Signal</a>}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       <section className="section">
         <div className="container">

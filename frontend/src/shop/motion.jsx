@@ -16,8 +16,8 @@ export function useScrollVar(ref, mode = 'sticky') {
       raf = 0
       const r = el.getBoundingClientRect()
       const vh = window.innerHeight
-      const p = mode === 'sticky'
-        ? -r.top / Math.max(1, r.height - vh)
+      const p = mode === 'sticky' ? -r.top / Math.max(1, r.height - vh)
+        : mode === 'leave' ? -r.top / Math.max(1, r.height)
         : (vh * 0.8 - r.top) / Math.max(1, r.height + vh * 0.2)
       el.style.setProperty('--p', Math.min(1, Math.max(0, p)).toFixed(4))
     }

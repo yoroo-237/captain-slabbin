@@ -26,7 +26,7 @@ const NAV_ITEMS = [
   { section: 'System' },
   { label: 'Analytics', path: '/admin/analytics' },
   { label: 'Settings', path: '/admin/settings' },
-  { label: 'Telegram bot', path: '/admin/telegram' },
+  { label: 'Telegram bots', path: '/admin/telegram' },
   { label: 'My account', path: '/admin/account' },
 ]
 

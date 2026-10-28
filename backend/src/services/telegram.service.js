@@ -3,35 +3,22 @@ import crypto from 'crypto';
 import { readFile } from 'fs/promises';
 import { prisma } from '../db.js';
 import { env } from '../config/env.js';
-import { COMMANDS } from './telegramCatalog.js';
+import { lookOf } from './telegramStyle.js';
 
-// Posts shop notifications (paid-order invoices, new customer messages) to the
-// shop's Telegram chat through a bot, and links/brands that bot.
-//
-// The bot is managed from Admin → Settings → Telegram: paste a token, pick the
-// chat, choose whether to apply the shop's look. Token, chat and webhook secret
-// live in site settings (telegram_bot_token, telegram_chat_id,
-// telegram_webhook_secret); the TELEGRAM_* env vars are only a fallback.
-// Every send is best-effort: a Telegram outage must never block an order.
+// The shop's Telegram bots. Several can be linked from Admin → Telegram; they all
+// sell the same shop, each with its own style (services/telegramStyle.js) and
+// shelves. The primary bot posts the staff notifications (paid-order invoices,
+// new customer messages) to the shop's chat; a customer hears from the bot they
+// last used. Every send is best-effort: a Telegram outage must never block an order.
 
-const KEYS = { token: 'telegram_bot_token', chatId: 'telegram_chat_id', secret: 'telegram_webhook_secret', seen: 'telegram_seen_chats', branded: 'telegram_branded' };
+// Where the single bot used to live (before TelegramBot); read once by adoptLegacyBot
+const LEGACY = { token: 'telegram_bot_token', chatId: 'telegram_chat_id', secret: 'telegram_webhook_secret', seen: 'telegram_seen_chats', branded: 'telegram_branded', post: 'telegram_post_chat_id' };
 // Never sent to the admin UI by the generic settings endpoint
-export const TELEGRAM_PRIVATE_KEYS = [KEYS.token, KEYS.secret, KEYS.seen, 'telegram_post_chat_id'];
+export const TELEGRAM_PRIVATE_KEYS = [...Object.values(LEGACY), 'telegram_reader_api_id', 'telegram_reader_api_hash', 'telegram_reader_session'];
 
 async function setting(key) {
   const row = await prisma.siteSetting.findUnique({ where: { key } });
   return row?.value?.trim() || '';
-}
-const save = (key, value) => prisma.siteSetting.upsert({ where: { key }, update: { value: String(value) }, create: { key, value: String(value) } });
-
-export async function getTelegramConfig() {
-  const [token, chatId, secret, branded] = await Promise.all([setting(KEYS.token), setting(KEYS.chatId), setting(KEYS.secret), setting(KEYS.branded)]);
-  return {
-    token: token || env.telegram.botToken,
-    chatId: chatId || env.telegram.chatId,
-    secret: secret || env.telegram.webhookSecret,
-    branded: branded === 'true',
-  };
 }
 
 // Telegram HTML mode only needs these three escaped
@@ -45,6 +32,8 @@ export function formatTelegramContact(handle) {
   return '@' + h.replace(/^@/, '').replace(/^https?:\/\/t\.me\//i, '');
 }
 
+const fail = (message, status = 400) => Object.assign(new Error(message), { status });
+
 // One Bot API call; throws with Telegram's own message on failure
 export async function tg(token, method, payload = {}) {
   try {
@@ -52,91 +41,129 @@ export async function tg(token, method, payload = {}) {
     return data.result;
   } catch (err) {
     if (err.response?.status === 401 || err.response?.status === 404) {
-      throw Object.assign(new Error('Telegram refused this token. Copy it again from @BotFather, all of it (numbers:letters).'), { status: 400 });
+      throw fail('Telegram refused this token. Copy it again from @BotFather, all of it (numbers:letters).');
     }
     const msg = err.response?.data?.description || err.message;
-    throw Object.assign(new Error(`Telegram: ${msg}`), { status: 502 });
+    throw fail(`Telegram: ${msg}`, 502);
   }
 }
 
-// A deep link into this site's own admin panel, opened from the inline button
-// on a Telegram notification
-const adminLink = path => env.frontendUrl ? `${env.frontendUrl.replace(/\/$/, '')}/admin${path}` : null;
+// ─── Bots ────────────────────────────────────────────────────────────────────
 
-// buttons: [{ text, url }] — one row, rendered under the message
-export async function sendTelegram(html, buttons, chatOverride) {
-  const cfg = await getTelegramConfig();
-  if (!cfg.token) return { delivered: false, reason: 'No Telegram bot linked' };
-  const chatId = chatOverride || cfg.chatId;
+export const primaryBot = () => prisma.telegramBot.findFirst({ where: { isPrimary: true }, include: { style: true } });
+export const findBot = id => prisma.telegramBot.findUnique({ where: { id: Number(id) || 0 }, include: { style: true } });
+async function botOrFail(id) {
+  const bot = await findBot(id);
+  if (!bot) throw fail('This bot is no longer linked.', 404);
+  return bot;
+}
+
+// The style every shop starts with: empty, so it is exactly the default look
+async function defaultStyle() {
+  return await prisma.botStyle.findFirst({ where: { source: null }, orderBy: { id: 'asc' } })
+    || prisma.botStyle.create({ data: { name: 'Captain Slabbin', look: {} } });
+}
+
+// Once, at startup: the bot linked before several were possible (site settings
+// or TELEGRAM_* env vars) becomes the primary bot, with the same webhook secret
+// so Telegram keeps calling the old address (/telegram-bot) without a relink.
+export async function adoptLegacyBot() {
+  if (await prisma.telegramBot.count()) return;
+  await defaultStyle();
+  const token = await setting(LEGACY.token) || env.telegram.botToken;
+  if (!token) return;
+  let me = { username: '', first_name: '' };
+  try { me = await tg(token, 'getMe'); } catch (err) { console.error('[Telegram] legacy bot getMe:', err.message); }
+  let seen = [];
+  try { seen = JSON.parse(await setting(LEGACY.seen) || '[]'); } catch { /* none */ }
+  const branded = (await setting(LEGACY.branded)) === 'true';
+  await prisma.telegramBot.create({
+    data: {
+      token, username: me.username || '', name: me.first_name || '', isPrimary: true,
+      secret: await setting(LEGACY.secret) || env.telegram.webhookSecret,
+      chatId: await setting(LEGACY.chatId) || env.telegram.chatId,
+      postChatId: await setting(LEGACY.post), seenChats: seen,
+      styleId: branded ? (await defaultStyle()).id : null,
+    },
+  });
+  console.log(`[Telegram] @${me.username || 'bot'} moved to the bots list as the primary bot`);
+}
+
+const chatOf = c => ({ id: String(c.id), type: c.type, title: c.title || (c.username ? `@${c.username}` : [c.first_name, c.last_name].filter(Boolean).join(' ')) });
+
+// buttons: [{ text, url | callback_data }], one row under the message
+export async function sendAs(bot, chatId, html, buttons) {
+  if (!bot) return { delivered: false, reason: 'No Telegram bot linked' };
   if (!chatId) return { delivered: false, reason: 'No Telegram chat chosen' };
   try {
     const body = { chat_id: chatId, text: html, parse_mode: 'HTML', disable_web_page_preview: true };
     if (buttons?.length) body.reply_markup = { inline_keyboard: [buttons] };
-    await tg(cfg.token, 'sendMessage', body);
+    await tg(bot.token, 'sendMessage', body);
     return { delivered: true };
   } catch (err) {
-    console.error('[Telegram] sendMessage failed:', err.message);
+    console.error(`[Telegram] @${bot.username} sendMessage failed:`, err.message);
     return { delivered: false, reason: err.message };
   }
 }
 
-// ─── Linking a bot (Admin → Settings → Telegram) ─────────────────────────────
-
-const chatOf = c => ({ id: String(c.id), type: c.type, title: c.title || (c.username ? `@${c.username}` : [c.first_name, c.last_name].filter(Boolean).join(' ')) });
-
-// Chats this bot was seen in through the webhook, newest first (max 10).
-// A bot linked before it had a chat adopts the first group or channel it's
-// added to, so the admin doesn't have to come back and pick it.
-export async function rememberChat(chat) {
-  let list = [];
-  try { list = JSON.parse(await setting(KEYS.seen) || '[]'); } catch { /* reset */ }
-  const c = chatOf(chat);
-  list = [c, ...list.filter(x => x.id !== c.id)].slice(0, 10);
-  await save(KEYS.seen, JSON.stringify(list));
-  if (c.type !== 'private' && !(await setting(KEYS.chatId)) && !env.telegram.chatId) {
-    await save(KEYS.chatId, c.id);
-    await sendTelegram("✅ This chat will receive the shop's paid orders and customer messages.", null, c.id);
-  }
+// Staff notifications: the primary bot, in the shop's chat
+export async function sendTelegram(html, buttons, chatOverride) {
+  const bot = await primaryBot();
+  return sendAs(bot, chatOverride || bot?.chatId, html, buttons);
 }
 
-const webhookUrl = base => `${base.replace(/\/$/, '')}/api/webhooks/telegram-bot`;
+// Chats a bot was seen in through its webhook, newest first (max 10). A primary
+// bot with no staff chat yet adopts the first group or channel it's added to.
+export async function rememberChat(bot, chat) {
+  const c = chatOf(chat);
+  const seen = [c, ...(bot.seenChats || []).filter(x => x.id !== c.id)].slice(0, 10);
+  const adopt = bot.isPrimary && !bot.chatId && c.type !== 'private';
+  await prisma.telegramBot.update({ where: { id: bot.id }, data: { seenChats: seen, ...(adopt ? { chatId: c.id } : {}) } });
+  if (adopt) await sendAs(bot, c.id, "✅ This chat will receive the shop's paid orders and customer messages.");
+}
+
+const webhookBase = base => `${base.replace(/\/$/, '')}/api/webhooks/telegram-bot`;
+const webhookUrl = (base, bot) => `${webhookBase(base)}/${bot.id}`;
 const UPDATES = ['message', 'channel_post', 'my_chat_member', 'callback_query'];
 
-// What every linked bot gets, branded or not: the catalog commands and, on an
-// HTTPS site, an "Open shop" menu button
-async function installNavigation(token) {
+// Commands and, on an HTTPS site, the menu button, in the bot's style
+async function installNavigation(bot) {
+  const { profile } = lookOf(bot.style);
   const site = (env.frontendUrl || '').replace(/\/$/, '');
-  await tg(token, 'setMyCommands', { commands: COMMANDS });
+  await tg(bot.token, 'setMyCommands', { commands: profile.commands });
   if (site.startsWith('https://')) {
-    await tg(token, 'setChatMenuButton', { menu_button: { type: 'web_app', text: 'Open shop', web_app: { url: site } } });
+    await tg(bot.token, 'setChatMenuButton', { menu_button: { type: 'web_app', text: profile.menuButton, web_app: { url: site } } });
   }
 }
 
-// What the admin sees: the linked bot (if any) and where it posts
+// What the admin sees: every bot with its state, and the styles to choose from
 export async function telegramStatus() {
-  const cfg = await getTelegramConfig();
-  let seen = [];
-  try { seen = JSON.parse(await setting(KEYS.seen) || '[]'); } catch { /* none */ }
-  if (!cfg.token) return { linked: false, seenChats: seen };
-  try {
-    const [me, hook] = await Promise.all([tg(cfg.token, 'getMe'), tg(cfg.token, 'getWebhookInfo')]);
-    if (hook.url && cfg.secret && !(hook.allowed_updates || []).includes('callback_query')) {
-      await tg(cfg.token, 'setWebhook', { url: hook.url, secret_token: cfg.secret, allowed_updates: UPDATES });
-      await installNavigation(cfg.token);
-    }
-    return {
-      linked: true,
-      bot: { username: me.username, name: me.first_name },
-      chatId: cfg.chatId,
-      chat: seen.find(c => c.id === String(cfg.chatId)) || null,
-      branded: cfg.branded,
-      postChatId: await getPostChat(),
-      webhook: { url: hook.url || null, lastError: hook.last_error_message || null },
-      seenChats: seen,
+  const [bots, styles] = await Promise.all([
+    prisma.telegramBot.findMany({ orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }], include: { style: true, _count: { select: { users: true } } } }),
+    prisma.botStyle.findMany({ orderBy: { id: 'asc' }, select: { id: true, name: true, source: true } }),
+  ]);
+  const rows = await Promise.all(bots.map(async bot => {
+    const base = {
+      id: bot.id, username: bot.username, name: bot.name, isPrimary: bot.isPrimary,
+      chatId: bot.chatId, chat: bot.seenChats.find(c => c.id === bot.chatId) || null,
+      postChatId: bot.postChatId, seenChats: bot.seenChats, shelves: bot.shelves,
+      styleId: bot.styleId, customers: bot._count.users,
     };
-  } catch (err) {
-    return { linked: true, error: err.message, chatId: cfg.chatId, seenChats: seen };
-  }
+    try {
+      const [me, hook] = await Promise.all([tg(bot.token, 'getMe'), tg(bot.token, 'getWebhookInfo')]);
+      if (me.username !== bot.username || me.first_name !== bot.name) {
+        await prisma.telegramBot.update({ where: { id: bot.id }, data: { username: me.username, name: me.first_name } });
+      }
+      if (hook.url && bot.secret && !(hook.allowed_updates || []).includes('callback_query')) {
+        await tg(bot.token, 'setWebhook', { url: hook.url, secret_token: bot.secret, allowed_updates: UPDATES });
+        await installNavigation(bot);
+      }
+      return { ...base, username: me.username, name: me.first_name, webhook: { url: hook.url || null, lastError: hook.last_error_message || null } };
+    } catch (err) {
+      return { ...base, error: err.message };
+    }
+  }));
+  return { bots: rows, styles };
 }
 
 // Step 1: check a token before linking it. Lists the chats the bot has seen so
@@ -144,10 +171,13 @@ export async function telegramStatus() {
 // has no webhook, so a bot wired to another app is reported (takeOver frees it).
 export async function inspectBot(token, { publicBase, takeOver = false } = {}) {
   const me = await tg(token, 'getMe');
+  const bot = { username: me.username, name: me.first_name };
+  const linked = await prisma.telegramBot.findUnique({ where: { token } });
+  if (linked) return { bot, alreadyLinked: true, busyElsewhere: null, chats: linked.seenChats };
   let hook = await tg(token, 'getWebhookInfo');
-  const ours = publicBase && hook.url === webhookUrl(publicBase);
+  const ours = publicBase && hook.url?.startsWith(webhookBase(publicBase));
   if (hook.url && !ours) {
-    if (!takeOver) return { bot: { username: me.username, name: me.first_name }, busyElsewhere: hook.url, chats: [] };
+    if (!takeOver) return { bot, busyElsewhere: hook.url, chats: [] };
     await tg(token, 'deleteWebhook');
     hook = { url: '' };
   }
@@ -160,76 +190,108 @@ export async function inspectBot(token, { publicBase, takeOver = false } = {}) {
       if (c) map.set(String(c.id), chatOf(c));
     }
     chats = [...map.values()];
-  } else {
-    try { chats = JSON.parse(await setting(KEYS.seen) || '[]'); } catch { /* none */ }
   }
-  return { bot: { username: me.username, name: me.first_name }, busyElsewhere: null, chats };
+  return { bot, busyElsewhere: null, chats };
 }
 
-const BRAND = () => [
-  ['setMyName', { name: 'Captain Slabbin' }],
-  ['setMyShortDescription', { short_description: '🏴‍☠️ Top shelf. Delivered. Browse, buy and pay with crypto right here. 21+' }],
-  ['setMyDescription', { description: [
-    '🏴‍☠️ CAPTAIN SLABBIN', 'Top shelf. Delivered.', '',
-    '🛒 Browse the shelves and the Fire Sale', '💰 Pay from your crypto wallet in one tap', '📦 Track your orders, right here', '',
-    'No name or email to type: your account is your Telegram. Adults 21+ only.', '',
-    'Tap START to come aboard.',
-  ].join('\n') }],
-];
-
-// Step 2: link it. Saves token (+ chat when one is known), installs the webhook
-// (HTTPS only — on a local http:// backend notifications still work, the
-// catalog and commands just don't reply), sets the catalog commands, applies the
-// shop's look if asked, and says hello in the chosen chat. Without a chat, the
-// first group or channel the bot is added to is adopted (rememberChat).
-export async function linkBot(token, chatId, { brand = false, publicBase }) {
+// Step 2: link it. Saves the bot, installs its webhook (HTTPS only: on a local
+// http:// backend notifications still work, the catalog just doesn't reply),
+// applies the chosen style and, for the primary bot, says hello in the staff
+// chat. The first bot linked is the primary one.
+export async function linkBot(token, chatId, { styleId = null, primary = false, publicBase }) {
   const me = await tg(token, 'getMe');
+  if (await prisma.telegramBot.findUnique({ where: { token } })) throw fail(`@${me.username} is already linked.`);
+  const first = !(await prisma.telegramBot.count());
+  const isPrimary = first || primary;
   const secret = crypto.randomBytes(24).toString('hex');
+  if (isPrimary) await prisma.telegramBot.updateMany({ data: { isPrimary: false } });
+  const bot = await prisma.telegramBot.create({
+    data: { token, username: me.username, name: me.first_name, secret, isPrimary, chatId: isPrimary ? chatId || '' : '', seenChats: [] },
+  });
+
   let webhook = null;
   if (publicBase?.startsWith('https://')) {
-    await tg(token, 'setWebhook', { url: webhookUrl(publicBase), secret_token: secret, allowed_updates: UPDATES });
-    webhook = webhookUrl(publicBase);
+    webhook = webhookUrl(publicBase, bot);
+    await tg(token, 'setWebhook', { url: webhook, secret_token: secret, allowed_updates: UPDATES });
   }
-  await installNavigation(token);
-  if (brand) for (const [method, payload] of BRAND()) await tg(token, method, payload);
+  if (styleId) await applyStyle(bot.id, styleId);
+  else await installNavigation({ ...bot, style: null });
 
-  await Promise.all([save(KEYS.token, token), save(KEYS.chatId, chatId || ''), save(KEYS.secret, secret), save(KEYS.branded, brand ? 'true' : 'false')]);
-  if (brand) await setBotPhoto().catch(err => console.error('[Telegram] bot photo:', err.message));
-  if (!chatId) return { bot: { username: me.username, name: me.first_name }, webhook, branded: brand, helloDelivered: false, helloError: null, waitingForChat: true };
-
+  const result = { bot: { id: bot.id, username: me.username, name: me.first_name }, webhook, isPrimary, helloDelivered: false, helloError: null };
+  if (!isPrimary) return result;
+  if (!chatId) return { ...result, waitingForChat: true };
   const site = (env.frontendUrl || '').replace(/\/$/, '');
-  const hello = await sendTelegram(`✅ <b>${escapeHtml(me.first_name)}</b> is now linked to the shop. Paid orders and customer messages will appear here.`, site ? [{ text: 'Open admin', url: `${site}/admin` }] : null, chatId);
-  return { bot: { username: me.username, name: me.first_name }, webhook, branded: brand, helloDelivered: hello.delivered, helloError: hello.reason || null };
+  const hello = await sendAs(bot, chatId, `✅ <b>${escapeHtml(me.first_name)}</b> is now linked to the shop. Paid orders and customer messages will appear here.`, site ? [{ text: 'Open admin', url: `${site}/admin` }] : null);
+  return { ...result, helloDelivered: hello.delivered, helloError: hello.reason || null };
 }
 
-// Brand (or re-brand) the linked bot without relinking it
-export async function brandLinkedBot() {
-  const cfg = await getTelegramConfig();
-  if (!cfg.token) throw Object.assign(new Error('No bot linked'), { status: 400 });
-  await installNavigation(cfg.token);
-  for (const [method, payload] of BRAND()) await tg(cfg.token, method, payload);
-  await setBotPhoto().catch(err => console.error('[Telegram] bot photo:', err.message));
-  await save(KEYS.branded, 'true');
+// A style's profile pushed to Telegram: name, descriptions, commands, menu
+// button and photo. styleId null only detaches the style (profile left as is).
+export async function applyStyle(botId, styleId) {
+  const style = styleId ? await prisma.botStyle.findUnique({ where: { id: Number(styleId) } }) : null;
+  if (styleId && !style) throw fail('This style no longer exists.', 404);
+  const bot = await prisma.telegramBot.update({ where: { id: Number(botId) }, data: { styleId: style?.id || null }, include: { style: true } });
+  if (!style) return bot;
+  const { profile } = lookOf(style);
+  await tg(bot.token, 'setMyName', { name: profile.name.slice(0, 64) });
+  await tg(bot.token, 'setMyShortDescription', { short_description: profile.shortDescription.slice(0, 120) });
+  await tg(bot.token, 'setMyDescription', { description: profile.description.slice(0, 512) });
+  await installNavigation(bot);
+  try {
+    let jpg = null;
+    if (profile.photo) jpg = Buffer.from((await axios.get(profile.photo, { responseType: 'arraybuffer', timeout: 15000 })).data);
+    await setBotPhoto(bot.id, jpg);
+  } catch (err) { console.error(`[Telegram] @${bot.username} photo:`, err.message); }
+  return bot;
 }
 
-// Point the linked bot at another chat it has been seen in
-export async function changeChat(chatId) {
-  await save(KEYS.chatId, chatId);
-  return sendTelegram('✅ Shop notifications will now be posted here.', null, chatId);
+export async function setPrimary(botId) {
+  await botOrFail(botId);
+  await prisma.$transaction([
+    prisma.telegramBot.updateMany({ data: { isPrimary: false } }),
+    prisma.telegramBot.update({ where: { id: Number(botId) }, data: { isPrimary: true } }),
+  ]);
 }
 
-// Unlink: stop the webhook and forget the bot (its own profile is left as is)
-export async function unlinkBot() {
-  const cfg = await getTelegramConfig();
-  const own = await setting(KEYS.token);
-  if (own) { try { await tg(own, 'deleteWebhook'); } catch { /* token may be revoked already */ } }
-  await prisma.siteSetting.deleteMany({ where: { key: { in: [KEYS.token, KEYS.secret, KEYS.branded] } } });
-  return { stillFromEnv: !!(env.telegram.botToken && !own && cfg.token) };
+// Staff chat of the primary bot, picked among the chats it has been seen in
+export async function changeChat(botId, chatId) {
+  const bot = await botOrFail(botId);
+  await prisma.telegramBot.update({ where: { id: bot.id }, data: { chatId } });
+  return sendAs(bot, chatId, '✅ Shop notifications will now be posted here.');
+}
+
+export async function setPostChat(botId, chatId) {
+  await prisma.telegramBot.update({ where: { id: (await botOrFail(botId)).id }, data: { postChatId: chatId || '' } });
+}
+
+// Top-level shelves this bot shows ([] = all)
+export async function setShelves(botId, slugs) {
+  const clean = [...new Set((Array.isArray(slugs) ? slugs : []).map(s => String(s).trim()).filter(Boolean))];
+  await prisma.telegramBot.update({ where: { id: (await botOrFail(botId)).id }, data: { shelves: clean } });
+  return clean;
+}
+
+// Unlink: stop the webhook and forget the bot (its own profile is left as is).
+// Removing the primary bot hands the role to the oldest one left.
+export async function unlinkBot(botId) {
+  const bot = await botOrFail(botId);
+  try { await tg(bot.token, 'deleteWebhook'); } catch { /* token may be revoked already */ }
+  await prisma.telegramBot.delete({ where: { id: bot.id } });
+  if (bot.isPrimary) {
+    const next = await prisma.telegramBot.findFirst({ orderBy: { createdAt: 'asc' } });
+    if (next) await prisma.telegramBot.update({ where: { id: next.id }, data: { isPrimary: true } });
+  }
+  // The old single-bot settings must not bring it back at the next start
+  await prisma.siteSetting.deleteMany({ where: { key: { in: [LEGACY.token, LEGACY.secret] } } });
+  return { stillFromEnv: !!(env.telegram.botToken && env.telegram.botToken === bot.token) };
 }
 
 // ─── Notifications ───────────────────────────────────────────────────────────
 
 const money = n => `$${Number(n).toFixed(2)}`;
+// A deep link into this site's own admin panel, opened from the inline button
+// on a Telegram notification
+const adminLink = path => env.frontendUrl ? `${env.frontendUrl.replace(/\/$/, '')}/admin${path}` : null;
 
 // Every order is paid in the app; its invoice then goes to Telegram: posted to the
 // shop's chat here (with a button straight to the order in admin), and returned
@@ -250,16 +312,18 @@ export async function notifyWalletOrder(order, user, payments) {
     order.shippingAddress ? `Ship to: ${order.name}\n${order.shippingAddress}` : null,
   ].filter(Boolean).join('\n');
   const link = adminLink(`/orders/${order.id}`);
+  const via = user.telegramBotId ? await findBot(user.telegramBotId) : null;
   const sent = await sendTelegram([
     `✅ <b>Paid order ${escapeHtml(order.orderNumber)}</b> (wallet)`,
     ...lines.map(escapeHtml),
     `<b>Total: ${money(order.totalAmount)}</b> · paid ${escapeHtml(paid)}`,
     `👤 ${escapeHtml(user.username)}`,
     telegram ? `✈️ Telegram: ${escapeHtml(telegram)}` : '✈️ Telegram: not on profile',
+    via && !via.isPrimary ? `🤖 Customer of @${escapeHtml(via.username)}` : null,
     order.shippingAddress
       ? `📦 <b>Ship to:</b> ${escapeHtml(order.name)}\n${escapeHtml(order.shippingAddress)}${Number(order.shippingFee) > 0 ? ` · ${money(order.shippingFee)}` : ' · free shipping'}`
       : '📦 No delivery, arrange on Telegram',
-  ].join('\n'), link ? [{ text: '📦 Open order', url: link }] : null);
+  ].filter(Boolean).join('\n'), link ? [{ text: '📦 Open order', url: link }] : null);
   return { text, delivered: sent.delivered };
 }
 
@@ -276,44 +340,33 @@ export async function notifyNewMessage(user, body) {
 
 // ─── Customers on the bot ────────────────────────────────────────────────────
 
-// A private message to a customer whose account is tied to Telegram (opened or
-// connected from the bot). Silent no-op for everyone else.
+// A private message to a customer whose account is tied to Telegram, through
+// the bot they last used (a bot can only write to people who started it).
+// Silent no-op for everyone else.
 export async function dmUser(userId, html, buttons) {
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { telegramId: true } });
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { telegramId: true, telegramBot: true } });
   if (!user?.telegramId) return { delivered: false, reason: 'No Telegram on this account' };
-  return sendTelegram(html, buttons, user.telegramId);
+  return sendAs(user.telegramBot || await primaryBot(), user.telegramId, html, buttons);
 }
 
-// The linked bot's @username, for t.me links (cached per token)
-let usernameCache = { token: null, username: null };
+// The primary bot's @username, for t.me links
 export async function botUsername() {
-  const { token } = await getTelegramConfig();
-  if (!token) return null;
-  if (usernameCache.token !== token) {
-    const me = await tg(token, 'getMe');
-    usernameCache = { token, username: me.username };
-  }
-  return usernameCache.username;
+  return (await primaryBot())?.username || null;
 }
 
 // ─── Posting products ────────────────────────────────────────────────────────
 
-const POST_KEY = 'telegram_post_chat_id';
-export const getPostChat = () => setting(POST_KEY);
-export const setPostChat = chatId => save(POST_KEY, chatId || '');
-
 // A product card (photo, price, buttons to buy in the bot or open it on the
-// site) in the chat chosen under "Post new products to". Returns false when
-// no chat is chosen.
-export async function postProduct(productId, chatOverride) {
-  const cfg = await getTelegramConfig();
-  const chatId = chatOverride || await getPostChat();
-  if (!cfg.token || !chatId) return false;
+// site) in the chat each bot posts products to (or only `botId`'s). Returns how
+// many bots posted it; a bot whose shelves leave the product out is skipped.
+export async function postProduct(productId, { botId } = {}) {
+  const bots = await prisma.telegramBot.findMany({ where: { postChatId: { not: '' }, ...(botId ? { id: Number(botId) } : {}) }, include: { style: true } });
+  if (!bots.length) return 0;
   const p = await prisma.product.findFirst({
     where: { id: Number(productId), isActive: true },
-    include: { images: { orderBy: { position: 'asc' } }, category: true },
+    include: { images: { orderBy: { position: 'asc' } }, category: { include: { parent: true } } },
   });
-  if (!p) return false;
+  if (!p) return 0;
   const site = (env.frontendUrl || '').replace(/\/$/, '');
   const img = p.images.find(i => i.mediaType !== 'video');
   const photo = img && (img.url.startsWith('http') ? img.url : env.publicUrl ? `${env.publicUrl.replace(/\/$/, '')}${img.url}` : null);
@@ -324,20 +377,71 @@ export async function postProduct(productId, chatOverride) {
     `<b>${money(p.price)}</b>${was}${p.unitLabel ? ` ${escapeHtml(p.unitLabel)}` : ''}`,
     p.description ? escapeHtml(p.description.length > 300 ? p.description.slice(0, 300) + '…' : p.description) : null,
   ].filter(Boolean).join('\n');
-  const name = await botUsername().catch(() => null);
-  const buttons = [
-    ...(name ? [{ text: '🛒 Buy in the bot', url: `https://t.me/${name}?start=p_${p.id}` }] : []),
-    ...(site.startsWith('http') ? [{ text: '🌐 On the site', url: `${site}/p/${encodeURIComponent((p.sku || p.slug).toLowerCase())}` }] : []),
-  ];
-  const markup = buttons.length ? { inline_keyboard: [buttons] } : undefined;
-  if (photo) {
+  const shelf = (p.category?.parent || p.category)?.slug;
+
+  let posted = 0;
+  for (const bot of bots) {
+    if (bot.shelves.length && !bot.shelves.includes(shelf)) continue;
+    const { labels } = lookOf(bot.style);
+    const buttons = [
+      { text: '🛒 Buy in the bot', url: `https://t.me/${bot.username}?start=p_${p.id}` },
+      ...(site.startsWith('http') ? [{ text: labels.onSite, url: `${site}/p/${encodeURIComponent((p.sku || p.slug).toLowerCase())}` }] : []),
+    ];
+    const markup = { inline_keyboard: [buttons] };
     try {
-      await tg(cfg.token, 'sendPhoto', { chat_id: chatId, photo, caption, parse_mode: 'HTML', reply_markup: markup });
-      return true;
-    } catch (err) { console.error('[Telegram] sendPhoto failed, posting text:', err.message); }
+      if (photo) {
+        try {
+          await tg(bot.token, 'sendPhoto', { chat_id: bot.postChatId, photo, caption, parse_mode: 'HTML', reply_markup: markup });
+          posted++;
+          continue;
+        } catch (err) { console.error(`[Telegram] @${bot.username} sendPhoto failed, posting text:`, err.message); }
+      }
+      await tg(bot.token, 'sendMessage', { chat_id: bot.postChatId, text: caption, parse_mode: 'HTML', link_preview_options: { is_disabled: true }, reply_markup: markup });
+      posted++;
+    } catch (err) { console.error(`[Telegram] @${bot.username} post product:`, err.message); }
   }
-  await tg(cfg.token, 'sendMessage', { chat_id: chatId, text: caption, parse_mode: 'HTML', link_preview_options: { is_disabled: true }, reply_markup: markup });
-  return true;
+  return posted;
+}
+
+// ─── Recreating one of the shop's bots ───────────────────────────────────────
+
+// A style from a bot the shop owns, read with its token through the Bot API:
+// name, descriptions, commands, menu button and profile photo. Read-only: the
+// bot keeps its webhook and keeps running wherever it runs. Screens are not
+// readable this way (Telegram keeps no history for bots); they are rebuilt as
+// pages in the style editor.
+export async function styleFromBot(token, { publicBase } = {}) {
+  const me = await tg(token, 'getMe');
+  const [name, desc, short, commands, menu] = await Promise.all([
+    tg(token, 'getMyName').catch(() => null),
+    tg(token, 'getMyDescription').catch(() => null),
+    tg(token, 'getMyShortDescription').catch(() => null),
+    tg(token, 'getMyCommands').catch(() => []),
+    tg(token, 'getChatMenuButton').catch(() => null),
+  ]);
+  let photo = null;
+  try {
+    const pics = await tg(token, 'getUserProfilePhotos', { user_id: me.id, limit: 1 });
+    const biggest = pics.photos?.[0]?.at(-1);
+    if (biggest) {
+      const file = await tg(token, 'getFile', { file_id: biggest.file_id });
+      const { data } = await axios.get(`https://api.telegram.org/file/bot${token}/${file.file_path}`, { responseType: 'arraybuffer', timeout: 15000 });
+      const { uploadToCloudinary } = await import('../middlewares/upload.js');
+      photo = (await uploadToCloudinary(Buffer.from(data), 'image/jpeg', 'captain-slabbin/bots', publicBase)).url;
+    }
+  } catch (err) { console.error(`[Telegram] @${me.username} photo:`, err.message); }
+
+  const look = {
+    profile: {
+      name: name?.name || me.first_name,
+      shortDescription: short?.short_description || '',
+      description: desc?.description || '',
+      ...(commands?.length ? { commands: commands.map(c => ({ command: c.command, description: c.description })) } : {}),
+      ...(menu?.type === 'web_app' && menu.text ? { menuButton: menu.text } : {}),
+      photo,
+    },
+  };
+  return prisma.botStyle.create({ data: { name: `@${me.username}`, look, source: `@${me.username}` } });
 }
 
 // ─── Bot profile photo ───────────────────────────────────────────────────────
@@ -346,14 +450,14 @@ export async function postProduct(productId, chatOverride) {
 const DEFAULT_PHOTO = new URL('../../assets/bot-avatar.jpg', import.meta.url);
 
 // setMyProfilePhoto only takes a freshly uploaded JPG (multipart)
-export async function setBotPhoto(jpg) {
-  const { token } = await getTelegramConfig();
-  if (!token) throw Object.assign(new Error('No bot linked'), { status: 400 });
+export async function setBotPhoto(botId, jpg) {
+  const bot = await botOrFail(botId);
   const buffer = jpg || await readFile(DEFAULT_PHOTO);
   const form = new FormData();
   form.append('photo', JSON.stringify({ type: 'static', photo: 'attach://pic' }));
   form.append('pic', new Blob([buffer], { type: 'image/jpeg' }), 'photo.jpg');
-  const res = await fetch(`https://api.telegram.org/bot${token}/setMyProfilePhoto`, { method: 'POST', body: form });
+  const res = await fetch(`https://api.telegram.org/bot${bot.token}/setMyProfilePhoto`, { method: 'POST', body: form });
   const data = await res.json().catch(() => ({}));
-  if (!data.ok) throw Object.assign(new Error(`Telegram: ${data.description || res.status}`), { status: 502 });
+  if (!data.ok) throw fail(`Telegram: ${data.description || res.status}`, 502);
 }
+

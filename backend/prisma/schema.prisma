@@ -25,6 +25,9 @@ model User {
   telegramHandle   String?
   // Telegram user id, set when the account is opened or connected from the shop's bot
   telegramId       String?   @unique
+  // The bot this customer last used: their Telegram messages go out through it
+  telegramBotId    Int?
+  telegramBot      TelegramBot? @relation(fields: [telegramBotId], references: [id], onDelete: SetNull)
   signalDetails    String?
   sessionDetails   String?
   btcRefundAddress String?
@@ -388,4 +391,39 @@ model TelegramInvoice {
   delivered      Boolean  @default(false)  // posted to the shop's Telegram chat
   status         String   @default("new")  // new | contacted | completed | cancelled
   createdAt      DateTime @default(now())
+}
+
+// ─── TELEGRAM BOTS ────────────────────────────────────────────────────────────
+
+// Every bot linked from Admin → Telegram. They all sell the same shop (same
+// catalog, wallet and accounts); each has its own style and its own shelves.
+// The primary bot posts staff notifications (paid orders, customer messages).
+model TelegramBot {
+  id         Int       @id @default(autoincrement())
+  token      String    @unique
+  username   String
+  name       String
+  secret     String
+  isPrimary  Boolean   @default(false)
+  chatId     String    @default("")   // staff chat (primary bot only)
+  postChatId String    @default("")   // where new products are announced
+  seenChats  Json      @default("[]") // [{ id, type, title }], newest first
+  shelves    Json      @default("[]") // top-level category slugs shown; [] = all
+  styleId    Int?
+  style      BotStyle? @relation(fields: [styleId], references: [id], onDelete: SetNull)
+  createdAt  DateTime  @default(now())
+  users      User[]
+}
+
+// A bot's look and copy (see services/telegramStyle.js for the shape of `look`).
+// Styles copied from another bot keep what was read in `capture`.
+model BotStyle {
+  id        Int           @id @default(autoincrement())
+  name      String
+  look      Json          @default("{}")
+  source    String?       // @username of the bot it was copied from
+  capture   Json?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  bots      TelegramBot[]
 }

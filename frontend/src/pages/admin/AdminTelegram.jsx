@@ -2,7 +2,7 @@ import { useApp } from '../../context/AppContext.jsx'
 import { isAdmin } from '../../utils/roles.js'
 import AdminTelegramBot from './AdminTelegramBot.jsx'
 
-// Telegram bot on its own page, also reachable from Settings → Telegram bot
+// Telegram bots on their own page, also reachable from Settings → Telegram bot
 export default function AdminTelegram() {
   const { user } = useApp()
   return (
@@ -10,10 +10,10 @@ export default function AdminTelegram() {
       <div className="admin-page-header">
         <div>
           <h1 className="admin-page-title">Telegram</h1>
-          <p className="admin-page-subtitle">Your shop on Telegram: customers browse, buy and pay in the bot; orders and messages reach your chat</p>
+          <p className="admin-page-subtitle">Your shop on Telegram: several bots, each with its own style; customers browse, buy and pay in them, and orders and messages reach your chat</p>
         </div>
       </div>
-      <div style={{ maxWidth: 760 }}>
+      <div style={{ maxWidth: 860 }}>
         <AdminTelegramBot canEdit={isAdmin(user)} />
       </div>
     </div>

@@ -7,7 +7,8 @@ import { getUserBalance, getCommissionPct } from './balance.service.js';
 import { orderService } from './order.service.js';
 import { walletService } from './wallet.service.js';
 import { notificationService } from './notification.service.js';
-import { art, shelfArt, salePct, RULE } from './telegramCatalog.js';
+import { image, shelfArt, salePct, rule } from './telegramCatalog.js';
+import { look, activeBot } from './telegramStyle.js';
 
 // Buying inside Telegram, with nothing to type: the customer's account is their
 // Telegram identity (opened from the bot after a 21+ confirmation, or an
@@ -51,6 +52,7 @@ export async function openAccount(from) {
       passwordHash:   NO_PASSWORD, // signs in from the bot; a password can be set later in My account
       telegramId:     String(from.id),
       telegramHandle: from.username || String(from.id),
+      telegramBotId:  activeBot()?.id || null,
     },
   });
   await notificationService.createWelcomeNotifications(user.id).catch(() => {});
@@ -82,34 +84,27 @@ export async function connectAccount(from, token) {
     }
     await prisma.user.update({ where: { id: other.id }, data: { telegramId: null, isActive: false } });
   }
-  const user = await prisma.user.update({ where: { id: userId }, data: { telegramId: tid, telegramHandle: from.username || tid } });
+  const user = await prisma.user.update({ where: { id: userId }, data: { telegramId: tid, telegramHandle: from.username || tid, telegramBotId: activeBot()?.id || null } });
   return { user };
 }
 
 // ─── Screens ─────────────────────────────────────────────────────────────────
 
 export function ageScreen() {
+  const { texts, labels } = look();
   return {
-    text: [
-      '🏴‍☠️ <b>WELCOME ABOARD</b>',
-      '<i>Captain Slabbin · Top shelf. Delivered.</i>',
-      '',
-      'Browse the shelves, buy and pay right here. Your account is your Telegram: no name, email or password to type.',
-      '',
-      '🔞 Everything here is for adults <b>21 and over</b>.',
-      '',
-      'Already have an account on the site? Open <b>Account → Profile</b> there and tap <b>Connect Telegram</b>.',
-    ].join('\n'),
-    keyboard: [[{ text: '✅ I am 21 or older, let me in', callback_data: 'age' }]],
-    image: art('banner.jpg'),
+    text: texts.welcome,
+    keyboard: [[{ text: labels.ageButton, callback_data: 'age' }]],
+    image: image('banner', 'banner.jpg'),
   };
 }
 
 // The customer's own buttons under the menu, and their balance for the header
 export async function accountRow(user) {
   const { balance } = await getUserBalance(user.id);
-  const rows = [[{ text: '💰 Wallet', callback_data: 'w' }, { text: '📦 My orders', callback_data: 'o' }]];
-  if (hasSite()) rows.push([{ text: '👤 My account on the site', url: siteLoginUrl(user) }]);
+  const { labels } = look();
+  const rows = [[{ text: labels.wallet, callback_data: 'w' }, { text: labels.orders, callback_data: 'o' }]];
+  if (hasSite()) rows.push([{ text: labels.account, url: siteLoginUrl(user) }]);
   return { rows, balance };
 }
 
@@ -124,7 +119,8 @@ export async function productScreen(id, qty = 1) {
     where: { id: Number(id), isActive: true },
     include: { images: { orderBy: { position: 'asc' } }, category: { include: { parent: true } }, brand: true },
   });
-  if (!p) return { text: 'This product is no longer available.', keyboard: [[{ text: '‹ All shelves', callback_data: 'menu' }]], image: art('banner.jpg') };
+  const { labels } = look();
+  if (!p) return { text: 'This product is no longer available.', keyboard: [[{ text: labels.allShelves, callback_data: 'menu' }]], image: image('banner', 'banner.jpg') };
   const max = Math.min(MAX_QTY, Math.max(1, p.stock));
   qty = Math.min(Math.max(1, Number(qty) || 1), max);
   const shelf = p.category?.parent || p.category;
@@ -139,19 +135,19 @@ export async function productScreen(id, qty = 1) {
       { text: `QTY ${qty}`, callback_data: `p:${p.id}:${qty}` },
       { text: '➕', callback_data: `p:${p.id}:${Math.min(max, qty + 1)}` },
     ]);
-    rows.push([{ text: `🛒 BUY ${qty}  ·  ${money(Number(p.price) * qty)}`, callback_data: `buy:${p.id}:${qty}` }]);
+    rows.push([{ text: `${labels.buy} ${qty}  ·  ${money(Number(p.price) * qty)}`, callback_data: `buy:${p.id}:${qty}` }]);
   }
   rows.push([
-    { text: `‹ ${shelf ? shelf.name : 'All shelves'}`, callback_data: shelf ? `cat:${shelf.slug}:1` : 'menu' },
-    ...(hasSite() ? [{ text: '🌐 On the site', url: productLink(p) }] : []),
+    shelf ? { text: `‹ ${shelf.name}`, callback_data: `cat:${shelf.slug}:1` } : { text: labels.allShelves, callback_data: 'menu' },
+    ...(hasSite() ? [{ text: labels.onSite, url: productLink(p) }] : []),
   ]);
 
   const meta = [p.category?.name, p.brand?.name].filter(Boolean).map(escapeHtml).join('  ·  ');
   return {
     text: [
-      `<b>${escapeHtml(p.name.toUpperCase())}</b>`,
+      `<b>${escapeHtml(look().upperTitles ? p.name.toUpperCase() : p.name)}</b>`,
       ...(meta ? [meta] : []),
-      RULE,
+      rule(),
       `💵 <b>${money(p.price)}</b>${p.unitLabel ? ` <i>${escapeHtml(p.unitLabel)}</i>` : ''}${pct ? `   <s>${money(p.compareAtPrice)}</s>  🔥 <b>−${pct}%</b>` : ''}`,
       stock,
       ...(desc ? ['', `<blockquote expandable>${desc}</blockquote>`] : []),
@@ -171,11 +167,11 @@ export async function buyScreen(user, id, qty) {
   return {
     text: [
       '🧾 <b>CHECKOUT</b>',
-      RULE,
+      rule(),
       `${qty} × ${escapeHtml(p.name)}`,
       `<b>Total  ${money(total)}</b>`,
       '',
-      '🚚 <b>Delivery</b>: the crew messages you right here after payment to arrange it. For shipping to an address, order on the site.',
+      look().texts.delivery,
       '',
       `💰 Wallet  <b>${money(balance)}</b>`,
       ...(enough ? [] : [`⚠️ <b>${money(total - balance)}</b> missing: add funds, then come back.`]),
@@ -204,15 +200,15 @@ export async function payScreen(user, id, qty) {
       text: [
         '✅ <b>PAID</b>',
         `Order <code>${escapeHtml(order.orderNumber)}</code>`,
-        RULE,
+        rule(),
         ...order.items.map(i => `${i.quantity} × ${escapeHtml(i.name)}  ·  ${money(Number(i.price) * i.quantity)}`),
         `<b>Total  ${money(order.totalAmount)}</b>`,
         `<i>Paid ${payments.map(p => `${p.amount} ${p.currency}`).join(' + ')}</i>`,
         '',
-        '🏴‍☠️ The crew has your invoice and will message you here to arrange delivery.',
+        look().texts.paidNote,
         `💰 Wallet  <b>${money(newBalance)}</b>`,
       ].join('\n'),
-      keyboard: [[{ text: '📦 My orders', callback_data: 'o' }, { text: '🛒 Keep shopping', callback_data: 'menu' }]],
+      keyboard: [[{ text: look().labels.orders, callback_data: 'o' }, { text: look().labels.keepShopping, callback_data: 'menu' }]],
     };
   } catch (err) {
     return {
@@ -233,18 +229,18 @@ export async function walletScreen(user) {
   return {
     text: [
       '💰 <b>WALLET</b>',
-      RULE,
+      rule(),
       `Balance  <b>${money(balance)}</b>`,
       ...lines,
       '',
-      'Add funds in the coin you like. Your balance updates by itself, and I message you here the moment it lands.',
+      look().texts.walletIntro,
     ].join('\n'),
     keyboard: [
       COINS.slice(0, 3).map(c => ({ text: `${COIN_ICON[c]} ${c}`, callback_data: `dep:${c}` })),
       COINS.slice(3).map(c => ({ text: `${COIN_ICON[c]} ${c}`, callback_data: `dep:${c}` })),
-      [{ text: '📦 My orders', callback_data: 'o' }, { text: '‹ Shop', callback_data: 'menu' }],
+      [{ text: look().labels.orders, callback_data: 'o' }, { text: '‹ Shop', callback_data: 'menu' }],
     ],
-    image: art('wallet.jpg'),
+    image: image('wallet', 'wallet.jpg'),
   };
 }
 
@@ -260,7 +256,7 @@ export async function depositScreen(user, currency) {
     return {
       text: [
         `${COIN_ICON[currency]} <b>ADD FUNDS · ${currency}</b>`,
-        RULE,
+        rule(),
         `Send ${currency} to this address (tap it to copy):`,
         '',
         `<code>${escapeHtml(dep.address)}</code>`,
@@ -286,7 +282,7 @@ export async function ordersScreen(user) {
   return {
     text: [
       '📦 <b>YOUR ORDERS</b>',
-      RULE,
+      rule(),
       ...(orders.length
         ? [orders.map(o => [
             `<b>${escapeHtml(o.orderNumber)}</b>  ·  ${money(o.totalAmount)}`,
@@ -294,9 +290,9 @@ export async function ordersScreen(user) {
             `<i>${o.items.map(i => `${i.quantity} × ${escapeHtml(i.name)}`).join(', ')}</i>`,
             ...(o.trackingNumber ? [`Tracking <code>${escapeHtml(o.trackingNumber)}</code>${o.carrier ? ` · ${escapeHtml(o.carrier)}` : ''}`] : []),
           ].join('\n')).join('\n\n')]
-        : ['No orders yet. Pick a shelf and buy in two taps.']),
+        : [look().texts.noOrders]),
     ].join('\n'),
-    keyboard: [[{ text: '💰 Wallet', callback_data: 'w' }, { text: '‹ Shop', callback_data: 'menu' }]],
-    image: art('orders.jpg'),
+    keyboard: [[{ text: look().labels.wallet, callback_data: 'w' }, { text: '‹ Shop', callback_data: 'menu' }]],
+    image: image('orders', 'orders.jpg'),
   };
 }

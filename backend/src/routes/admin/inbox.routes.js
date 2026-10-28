@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../../db.js';
 import { ok } from '../../utils/response.js';
 import { appError } from '../../utils/formatters.js';
+import { dmUser, escapeHtml } from '../../services/telegram.service.js';
 
 // Staff side of the internal messaging.
 const r = Router();
@@ -50,6 +51,9 @@ r.post('/messages/:userId', async (req, res) => {
   if (body.length > 2000) throw appError('Message is too long (2000 characters max)', 400);
   await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { id: true } });
   const message = await prisma.message.create({ data: { userId, senderId: req.user.sub, isStaff: true, body } });
+  // Customers on Telegram read the reply there, from the bot they use
+  dmUser(userId, `💬 <b>Message from the shop</b>
+${escapeHtml(body)}`).catch(() => {});
   await prisma.notification.create({
     data: { userId, type: 'system', title: 'New message from the shop', message: body.slice(0, 120), link: '/account/messages' },
   }).catch(() => {});
