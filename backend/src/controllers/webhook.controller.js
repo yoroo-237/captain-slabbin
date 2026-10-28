@@ -5,7 +5,7 @@ import { ok } from '../utils/response.js';
 import { env } from '../config/env.js';
 import { findBot, primaryBot, rememberChat, tg, notifyNewMessage } from '../services/telegram.service.js';
 import { menuScreen, shelfScreen, pageScreen, homeScreen } from '../services/telegramCatalog.js';
-import { withBot, look } from '../services/telegramStyle.js';
+import { withBot, look, siteLinks } from '../services/telegramStyle.js';
 import * as shop from '../services/telegramShop.js';
 import { resolveCommand, customOrderScreen, takesCustomOrder } from '../services/telegramCommands.js';
 
@@ -215,7 +215,7 @@ ${body}` } });
       await show(msg.chat.id, await screenFor(msg.from, 'w'));
     } else if (priv && cmd === '/orders') {
       await show(msg.chat.id, await screenFor(msg.from, 'o'));
-    } else if (cmd === '/shop') {
+    } else if (cmd === '/shop' && siteLinks()) {
       await show(msg.chat.id, { text: `${look().profile.name}: tap below to open the shop.`, keyboard: site ? [[{ text: look().labels.openShop, url: site }]] : [] });
     } else if (cmd === '/admin' && !priv) {
       await show(msg.chat.id, { text: 'Admin panel:', keyboard: site ? [[{ text: 'Open admin', url: `${site}/admin` }]] : [] });

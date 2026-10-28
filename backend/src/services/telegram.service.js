@@ -130,9 +130,11 @@ async function installNavigation(bot) {
   const { profile } = lookOf(bot.style);
   const site = (env.frontendUrl || '').replace(/\/$/, '');
   await tg(bot.token, 'setMyCommands', { commands: profile.commands });
-  if (site.startsWith('https://')) {
-    await tg(bot.token, 'setChatMenuButton', { menu_button: { type: 'web_app', text: profile.menuButton, web_app: { url: site } } });
-  }
+  // The website button only for a style that links to the website; otherwise the plain commands menu
+  const menu_button = site.startsWith('https://') && lookOf(bot.style).siteLinks !== false
+    ? { type: 'web_app', text: profile.menuButton, web_app: { url: site } }
+    : { type: 'commands' };
+  await tg(bot.token, 'setChatMenuButton', { menu_button });
 }
 
 // What the admin sees: every bot with its state, and the styles to choose from
@@ -236,12 +238,26 @@ export async function applyStyle(botId, styleId) {
   await tg(bot.token, 'setMyShortDescription', { short_description: profile.shortDescription.slice(0, 120) });
   await tg(bot.token, 'setMyDescription', { description: profile.description.slice(0, 512) });
   await installNavigation(bot);
-  try {
-    // The style's own photo; the shop's picture only for the shop's own style, never another brand's
-    if (profile.photo) await setBotPhoto(bot.id, Buffer.from((await axios.get(profile.photo, { responseType: 'arraybuffer', timeout: 15000 })).data));
-    else if (isShopStyle(style)) await setBotPhoto(bot.id, null);
-  } catch (err) { console.error(`[Telegram] @${bot.username} photo:`, err.message); }
-  return bot;
+  // Telegram's refusal is reported, not hidden: the admin must know the photo didn't change
+  let photo = 'none', photoError = null;
+  try { photo = await setStylePhoto(bot.id); } catch (err) { photoError = err.message; console.error(`[Telegram] @${bot.username} photo:`, err.message); }
+  return Object.assign(bot, { photo, photoError });
+}
+
+// The profile photo of the bot's style: its own picture; the shop's picture only for
+// the shop's own style, never another brand's. 'none' when the style has no photo.
+export async function setStylePhoto(botId) {
+  const bot = await botOrFail(botId);
+  const { profile } = lookOf(bot.style);
+  if (profile.photo) {
+    let data;
+    try { ({ data } = await axios.get(profile.photo, { responseType: 'arraybuffer', timeout: 15000 })); }
+    catch (err) { throw fail(`The style's photo could not be downloaded (${err.message}).`, 502); }
+    await setBotPhoto(bot.id, Buffer.from(data));
+    return 'style';
+  }
+  if (isShopStyle(bot.style)) { await setBotPhoto(bot.id, null); return 'shop'; }
+  return 'none';
 }
 
 export async function setPrimary(botId) {
@@ -380,11 +396,13 @@ export async function postProduct(productId, { botId } = {}) {
 
   let posted = 0;
   for (const bot of bots) {
+    const { labels, catalog: botCatalog, siteLinks } = lookOf(bot.style);
+    // A bot only announces products of the catalog it sells
+    if ((botCatalog || null) !== (p.source || null)) continue;
     if (bot.shelves.length && !bot.shelves.includes(shelf)) continue;
-    const { labels } = lookOf(bot.style);
     const buttons = [
       { text: '🛒 Buy in the bot', url: `https://t.me/${bot.username}?start=p_${p.id}` },
-      ...(site.startsWith('http') ? [{ text: labels.onSite, url: `${site}/p/${encodeURIComponent((p.sku || p.slug).toLowerCase())}` }] : []),
+      ...(site.startsWith('http') && siteLinks !== false ? [{ text: labels.onSite, url: `${site}/p/${encodeURIComponent((p.sku || p.slug).toLowerCase())}` }] : []),
     ];
     const markup = { inline_keyboard: [buttons] };
     try {

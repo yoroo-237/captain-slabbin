@@ -1,6 +1,6 @@
 import { prisma } from '../db.js';
 import { escapeHtml } from './telegram.service.js';
-import { look, activeBot } from './telegramStyle.js';
+import { look, activeBot, catalog } from './telegramStyle.js';
 import { money, shelfArt, image } from './telegramCatalog.js';
 
 // The "commands" layout: a menu-board bot navigated with typed commands, like a
@@ -16,13 +16,15 @@ const FIRE = 'fire-sale';
 // Command names: lowercase letters, digits and _ only
 export const cmdName = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 32);
 export const prefix = () => cmdName(look().prefix) || 'shop';
-const shelfCmd = slug => `/${prefix()}_${cmdName(slug)}`.slice(0, 33);
+// A shelf of another catalog is stored as "<source>-<name>" (so it never clashes with the shop's own); its command is the name
+export const shortSlug = cat => cat.source && cat.slug.startsWith(`${cat.source}-`) ? cat.slug.slice(cat.source.length + 1) : cat.slug;
+const shelfCmd = cat => `/${prefix()}_${cmdName(typeof cat === 'string' ? cat : shortSlug(cat))}`.slice(0, 33);
 const fill = (s, vars) => String(s || '').replace(/\{(\w+)\}/g, (m, k) => vars[k] ?? m);
 
 async function visibleShelves() {
   const only = activeBot()?.shelves || [];
   return prisma.category.findMany({
-    where: { parentId: null, ...(only.length ? { slug: { in: only } } : {}) },
+    where: { parentId: null, source: catalog(), ...(only.length ? { slug: { in: only } } : {}) },
     orderBy: { position: 'asc' },
     include: { children: { select: { id: true } } },
   });
@@ -31,7 +33,7 @@ async function visibleShelves() {
 // Shelves holding at least one active product, in menu order
 async function shelvesWithStock() {
   const cats = await visibleShelves();
-  const counts = await prisma.product.groupBy({ by: ['categoryId'], where: { isActive: true }, _count: true });
+  const counts = await prisma.product.groupBy({ by: ['categoryId'], where: { isActive: true, source: catalog() }, _count: true });
   const byId = new Map(counts.map(c => [c.categoryId, c._count]));
   return cats.filter(c => [c.id, ...c.children.map(k => k.id)].some(id => byId.get(id)));
 }
@@ -50,7 +52,7 @@ export function startScreen() {
 export async function menuBoard(account = null) {
   const { texts } = look();
   const cats = await shelvesWithStock();
-  const fire = await prisma.product.count({ where: { isActive: true, compareAtPrice: { not: null } } });
+  const fire = await prisma.product.count({ where: { isActive: true, source: catalog(), compareAtPrice: { not: null } } });
   const pages = (look().pages || []).filter(p => p.title);
   const block = (label, cmd) => `${escapeHtml(label)}:\n${cmd}`;
   const lines = [
@@ -60,7 +62,7 @@ export async function menuBoard(account = null) {
     '',
     block('Previous Orders', '/orders'),
     ...(fire ? ['', block(look().labels.fireSale, shelfCmd(FIRE))] : []),
-    ...cats.flatMap(c => ['', block(c.name, shelfCmd(c.slug))]),
+    ...cats.flatMap(c => ['', block(c.name, shelfCmd(c))]),
     ...pages.flatMap(p => ['', block(p.title, `/${cmdName(p.key)}`)]),
   ];
   return {
@@ -91,7 +93,7 @@ const firstImage = p => {
 export async function shelfBoard(slug, page = 1) {
   const { texts, labels } = look();
   const cats = await shelvesWithStock();
-  const where = { isActive: true };
+  const where = { isActive: true, source: catalog() };
   let name, art;
   if (slug === FIRE) {
     where.compareAtPrice = { not: null };
@@ -158,7 +160,7 @@ export async function resolveCommand(cmd) {
   if (c.startsWith(`${pre}_`)) {
     const rest = c.slice(pre.length + 1);
     if (rest === cmdName(FIRE)) return `cat:${FIRE}:1`;
-    const shelf = (await visibleShelves()).find(s => cmdName(s.slug) === rest);
+    const shelf = (await visibleShelves()).find(s => cmdName(shortSlug(s)) === rest);
     if (shelf) return `cat:${shelf.slug}:1`;
   }
   return null;

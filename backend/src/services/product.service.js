@@ -11,7 +11,7 @@ export const productService = {
     const { page, limit, skip } = parsePaginationParams(query);
     const { search, category, sort, minPrice, maxPrice, inStock, onSale } = query;
 
-    const where = { isActive: true };
+    const where = { isActive: true, source: null };
 
     if (search?.trim()) {
       const q = search.trim();
@@ -56,15 +56,15 @@ export const productService = {
   // Product pages are addressed by SKU (/p/:sku) like the original shop; slugs still work
   async getBySlug(key) {
     return prisma.product.findFirstOrThrow({
-      where:   { isActive: true, OR: [{ slug: key }, { sku: key.toUpperCase() }] },
+      where:   { isActive: true, source: null, OR: [{ slug: key }, { sku: key.toUpperCase() }] },
       include: { ...CARD_INCLUDE, brand: true },
     });
   },
 
   async getRelated(key) {
-    const product = await prisma.product.findFirstOrThrow({ where: { OR: [{ slug: key }, { sku: key.toUpperCase() }] } });
+    const product = await prisma.product.findFirstOrThrow({ where: { source: null, OR: [{ slug: key }, { sku: key.toUpperCase() }] } });
     return prisma.product.findMany({
-      where:   { categoryId: product.categoryId, id: { not: product.id }, isActive: true },
+      where:   { categoryId: product.categoryId, id: { not: product.id }, isActive: true, source: null },
       take:    4,
       include: CARD_INCLUDE,
     });

@@ -1,7 +1,10 @@
 // Creates the shop's shelves and products from a capture of a bot (data.json + media/).
 //
-//   node scripts/import-products-from-capture.js <capture folder> [--stock 100] [--dry]
+//   node scripts/import-products-from-capture.js <capture folder> [--source qt] [--stock 100] [--dry]
 //
+// Everything created carries a `source` (default "qt"): shelves are stored as
+// "<source>-<name>" so they never clash with the shop's own, and only the bots whose
+// style names that catalog show them. The website never lists them.
 // Shelves come from the commands the capture opened (menu order, sub-shelves under
 // the shelf that lists them); each product screen becomes a product with its
 // description, photo and its priced packs ("1x" $8.50, "25x" $200…) in `options`.
@@ -17,6 +20,7 @@ import { cmdName } from '../src/services/telegramCommands.js';
 const args = process.argv.slice(2);
 const dir = args.find(a => !a.startsWith('--') && !args[args.indexOf(a) - 1]?.startsWith('--'));
 const dry = args.includes('--dry');
+const source = (args.includes('--source') ? args[args.indexOf('--source') + 1] : 'qt').toLowerCase().replace(/[^a-z0-9]/g, '') || 'qt';
 const stock = args.includes('--stock') ? Math.max(0, parseInt(args[args.indexOf('--stock') + 1], 10) || 0) : 100;
 if (!dir) { console.error('Usage: node scripts/import-products-from-capture.js <capture folder> [--stock 100] [--dry]'); process.exit(1); }
 
@@ -109,7 +113,7 @@ for (const s of [...screens].sort((a, b) => a.order - b.order)) {
 const usable = products.filter(p => p.name && p.options.length);
 
 console.log(`Shelves: ${allShelves.length} (${topCmds.length} on the menu), products found: ${products.length}, with a price: ${usable.length}`);
-for (const c of allShelves) console.log(`  ${parentOf.has(c) ? '   └' : ' '} ${labelFor(c, texts)}  [${slugOf(c)}]  ${products.filter(p => p.shelf === c).length} products`);
+for (const c of allShelves) console.log(`  ${parentOf.has(c) ? '   └' : ' '} ${labelFor(c, texts)}  [${source}-${slugOf(c)}]  ${products.filter(p => p.shelf === c).length} products`);
 const skipped = products.filter(p => !usable.includes(p));
 if (skipped.length) console.log(`Without a name or price (skipped): ${skipped.map(p => p.cmd).join(' ')}`);
 const orphans = usable.filter(p => !p.shelf);
@@ -134,8 +138,9 @@ async function imageUrl(file) {
 const categoryId = new Map();
 let position = 0;
 for (const cmd of [...allShelves].sort((a, b) => Number(parentOf.has(a)) - Number(parentOf.has(b)))) {
-  const data = { name: labelFor(cmd, texts), parentId: parentOf.has(cmd) ? categoryId.get(parentOf.get(cmd)) ?? null : null, position: position++ };
-  const cat = await prisma.category.upsert({ where: { slug: slugOf(cmd) }, update: data, create: { ...data, slug: slugOf(cmd) } });
+  const data = { name: labelFor(cmd, texts), parentId: parentOf.has(cmd) ? categoryId.get(parentOf.get(cmd)) ?? null : null, position: position++, source };
+  const slug = `${source}-${slugOf(cmd)}`;
+  const cat = await prisma.category.upsert({ where: { slug }, update: data, create: { ...data, slug } });
   categoryId.set(cmd, cat.id);
 }
 
@@ -144,7 +149,7 @@ for (const p of usable) {
   const slug = `${cmdName(p.name).slice(0, 60)}-${p.group.toLowerCase()}${p.cmd.match(/^\/p(\d+)_/)[1]}`;
   const data = {
     name: p.name.slice(0, 200), description: p.description || null, price: p.options[0].price, unitLabel: p.options[0].label,
-    options: p.options, stock, isActive: true, categoryId: p.shelf ? categoryId.get(p.shelf) ?? null : null,
+    options: p.options, stock, isActive: true, source, categoryId: p.shelf ? categoryId.get(p.shelf) ?? null : null,
   };
   const existing = await prisma.product.findUnique({ where: { slug }, include: { images: true } });
   const product = existing

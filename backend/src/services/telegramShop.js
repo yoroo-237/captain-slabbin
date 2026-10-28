@@ -8,7 +8,7 @@ import { orderService } from './order.service.js';
 import { walletService } from './wallet.service.js';
 import { notificationService } from './notification.service.js';
 import { image, shelfArt, salePct, rule } from './telegramCatalog.js';
-import { look, activeBot } from './telegramStyle.js';
+import { look, activeBot, catalog, siteLinks } from './telegramStyle.js';
 
 // Buying inside Telegram, with nothing to type: the customer's account is their
 // Telegram identity (opened from the bot after a 21+ confirmation, or an
@@ -19,7 +19,7 @@ import { look, activeBot } from './telegramStyle.js';
 const site = () => (env.frontendUrl || '').replace(/\/$/, '');
 const money = n => `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const productLink = p => `${site()}/p/${encodeURIComponent((p.sku || p.slug).toLowerCase())}`;
-const hasSite = () => site().startsWith('http');
+const hasSite = () => site().startsWith('http') && siteLinks();
 const MAX_QTY = 99;
 const COINS = ['BTC', 'LTC', 'ETH', 'DOGE', 'XMR'];
 
@@ -121,7 +121,7 @@ const unitPrice = (p, opt) => optionsOf(p)[pick(p, opt)]?.price ?? p.price;
 
 export async function productScreen(id, qty = 1, opt = 0) {
   const p = await prisma.product.findFirst({
-    where: { id: Number(id), isActive: true },
+    where: { id: Number(id), isActive: true, source: catalog() },
     include: { images: { orderBy: { position: 'asc' } }, category: { include: { parent: true } }, brand: true },
   });
   const { labels } = look();
@@ -169,7 +169,7 @@ export async function productScreen(id, qty = 1, opt = 0) {
 }
 
 export async function buyScreen(user, id, qty, opt = 0) {
-  const p = await prisma.product.findFirst({ where: { id: Number(id), isActive: true } });
+  const p = await prisma.product.findFirst({ where: { id: Number(id), isActive: true, source: catalog() } });
   if (!p) return productScreen(id, qty);
   qty = Math.min(Math.max(1, Number(qty) || 1), Math.max(1, p.stock));
   opt = pick(p, opt);

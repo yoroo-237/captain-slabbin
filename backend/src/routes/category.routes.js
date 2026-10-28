@@ -8,9 +8,9 @@ const r = Router();
 
 r.get('/', async (req, res) => {
   const [cats, counts, saleCount] = await Promise.all([
-    prisma.category.findMany({ orderBy: [{ position: 'asc' }, { id: 'asc' }], include: { children: { orderBy: [{ position: 'asc' }, { id: 'asc' }] } } }),
-    prisma.product.groupBy({ by: ['categoryId'], where: { isActive: true }, _count: { _all: true } }),
-    prisma.product.count({ where: { isActive: true, compareAtPrice: { not: null } } }),
+    prisma.category.findMany({ where: { source: null }, orderBy: [{ position: 'asc' }, { id: 'asc' }], include: { children: { orderBy: [{ position: 'asc' }, { id: 'asc' }] } } }),
+    prisma.product.groupBy({ by: ['categoryId'], where: { isActive: true, source: null }, _count: { _all: true } }),
+    prisma.product.count({ where: { isActive: true, source: null, compareAtPrice: { not: null } } }),
   ]);
   const countOf = Object.fromEntries(counts.map(c => [c.categoryId, c._count._all]));
   const shelves = cats.filter(c => !c.parentId).map(c => ({

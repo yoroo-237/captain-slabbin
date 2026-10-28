@@ -1,7 +1,7 @@
 import { prisma } from '../db.js';
 import { env } from '../config/env.js';
 import { escapeHtml } from './telegram.service.js';
-import { look, activeBot, title, isShop, COMMANDS } from './telegramStyle.js';
+import { look, activeBot, title, isShop, catalog, siteLinks, COMMANDS } from './telegramStyle.js';
 import { menuBoard, shelfBoard, startScreen } from './telegramCommands.js';
 
 // The shop's catalog inside Telegram: /start shows the shelves as buttons, a
@@ -20,7 +20,7 @@ const FIRE = 'fire-sale';
 const site = () => (env.frontendUrl || '').replace(/\/$/, '');
 export const money = n => `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const productLink = p => `${site()}/p/${encodeURIComponent((p.sku || p.slug).toLowerCase())}`;
-const shopButton = () => site().startsWith('http') ? [{ text: look().labels.openShop, url: site() }] : [];
+const shopButton = () => site().startsWith('http') && siteLinks() ? [{ text: look().labels.openShop, url: site() }] : [];
 
 // Images served by the storefront (frontend/public/brand/bot). Telegram shows
 // them above the text; without an https site there is simply no image.
@@ -46,7 +46,7 @@ export const salePct = p => p.compareAtPrice && Number(p.compareAtPrice) > Numbe
 async function visibleShelves() {
   const only = activeBot()?.shelves || [];
   return prisma.category.findMany({
-    where: { parentId: null, ...(only.length ? { slug: { in: only } } : {}) },
+    where: { parentId: null, source: catalog(), ...(only.length ? { slug: { in: only } } : {}) },
     orderBy: { position: 'asc' },
     include: { children: { select: { id: true } } },
   });
@@ -57,10 +57,10 @@ const restricted = () => (activeBot()?.shelves || []).length > 0;
 // Visible shelves with how many active products each holds (sub-shelves included)
 async function shelves() {
   const cats = await visibleShelves();
-  const counts = await prisma.product.groupBy({ by: ['categoryId'], where: { isActive: true }, _count: true });
+  const counts = await prisma.product.groupBy({ by: ['categoryId'], where: { isActive: true, source: catalog() }, _count: true });
   const byId = new Map(counts.map(c => [c.categoryId, c._count]));
   const fire = await prisma.product.count({
-    where: { isActive: true, compareAtPrice: { not: null }, ...(restricted() ? { categoryId: { in: idsOf(cats) } } : {}) },
+    where: { isActive: true, source: catalog(), compareAtPrice: { not: null }, ...(restricted() ? { categoryId: { in: idsOf(cats) } } : {}) },
   });
   return {
     fire,
@@ -97,7 +97,7 @@ export async function menuScreen(account = null) {
 export async function shelfScreen(slug, page = 1, { inBot = false, account = null } = {}) {
   if (look().layout === 'commands') return shelfBoard(slug, page);
   const { labels } = look();
-  const where = { isActive: true };
+  const where = { isActive: true, source: catalog() };
   let heading, img;
   if (slug === FIRE) {
     where.compareAtPrice = { not: null };
@@ -131,7 +131,7 @@ export async function shelfScreen(slug, page = 1, { inBot = false, account = nul
   const label = p => `${p.stock <= 0 ? '✖️ ' : ''}${p.name}  ·  ${money(p.price)}`;
   const rows = inBot
     ? products.map(p => [{ text: label(p), callback_data: `p:${p.id}:1` }])
-    : site().startsWith('http') ? products.map(p => [{ text: label(p), url: productLink(p) }]) : [];
+    : site().startsWith('http') && siteLinks() ? products.map(p => [{ text: label(p), url: productLink(p) }]) : [];
   const nav = [];
   if (page > 1) nav.push({ text: '‹ Previous', callback_data: `cat:${slug}:${page - 1}` });
   if (pages > 1) nav.push({ text: `${page} / ${pages}`, callback_data: `cat:${slug}:${page}` });
@@ -159,7 +159,7 @@ export const ACTION_DATA = { menu: 'menu', deals: `cat:${FIRE}:1`, wallet: 'w', 
 function pageButton(b) {
   const a = String(b.action || 'menu');
   if (a.startsWith('url:')) return /^https?:\/\//.test(a.slice(4)) ? { text: b.text, url: a.slice(4) } : null;
-  if (a === 'site') return site().startsWith('http') ? { text: b.text, url: site() } : null;
+  if (a === 'site') return site().startsWith('http') && siteLinks() ? { text: b.text, url: site() } : null;
   if (a.startsWith('page:')) return { text: b.text, callback_data: `pg:${a.slice(5)}`.slice(0, 64) };
   if (a.startsWith('cat:')) return { text: b.text, callback_data: `cat:${a.slice(4)}:1`.slice(0, 64) };
   return { text: b.text, callback_data: ACTION_DATA[a] || 'menu' };

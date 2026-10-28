@@ -103,6 +103,8 @@
       "shortDescription": "Queen Tetra's exclusive private menu"
     },
     "upperTitles": false,
-    "customOrderCommand": "v_qtetra_create_custom_order"
+    "customOrderCommand": "v_qtetra_create_custom_order",
+    "catalog": "qt",
+    "siteLinks": false
   }
 }

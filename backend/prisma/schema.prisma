@@ -84,6 +84,9 @@ model Category {
   products  Product[]
   imageUrl  String?    // wide banner shown on the home shelf grid
   position  Int        @default(0)
+  // null = the shop's own shelf; otherwise the catalog it belongs to (e.g. "qt"),
+  // shown only by the bots whose style names that catalog, never on the site
+  source    String?
   createdAt DateTime   @default(now())
 }
 
@@ -107,6 +110,8 @@ model Product {
   // Priced packs a customer picks from: [{ label, price }], e.g. "1x" $8.50, "25x" $200.
   // Empty = the product has one price. When set, `price` is the first option's.
   options     Json           @default("[]")
+  // null = the shop's own product; otherwise the catalog it belongs to (see Category.source)
+  source      String?
   badge       String?        // short card tag, e.g. "New", "Top Shelf"
   isFeatured  Boolean        @default(false)
   description String?

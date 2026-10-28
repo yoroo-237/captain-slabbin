@@ -60,6 +60,8 @@ function BotCard({ bot, styles, shelves, busy, act, post }) {
   const [picked, setPicked] = useState(bot.shelves || [])
   useEffect(() => { setPicked(bot.shelves || []) }, [bot.shelves])
   const id = bot.id
+  // The shop's own picture belongs to the shop's own style only
+  const isShopStyle = !bot.styleId || styles.find(s => s.id === bot.styleId)?.name === 'Captain Slabbin'
   const groups = bot.seenChats.filter(c => c.type !== 'private')
 
   function uploadPhoto(file, input) {
@@ -93,7 +95,8 @@ function BotCard({ bot, styles, shelves, busy, act, post }) {
         <label className="admin-label">Style</label>
         <select className="admin-input" value={bot.styleId || ''} disabled={!!busy}
           onChange={e => e.target.value && window.confirm('Apply this style? The bot’s name, descriptions, commands and photo change in Telegram right away.')
-            && act(`style${id}`, () => post(`bots/${id}/style`, { styleId: Number(e.target.value) }), 'Style applied to the bot.')}>
+            && act(`style${id}`, () => post(`bots/${id}/style`, { styleId: Number(e.target.value) }),
+              r => r.photoError ? `Style applied, but the profile photo did not change: ${r.photoError}` : r.photo === 'none' ? 'Style applied. It has no profile photo, so the bot kept its current one.' : 'Style applied to the bot, photo included.')}>
           {!bot.styleId && <option value="">No style (the bot keeps its own profile)</option>}
           {styles.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
@@ -137,7 +140,9 @@ function BotCard({ bot, styles, shelves, busy, act, post }) {
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         {bot.isPrimary && <button type="button" className="admin-btn admin-btn-primary" disabled={!!busy} onClick={() => act('test', () => post('test'), 'Test message sent.')}>{busy === 'test' ? 'Sending…' : 'Send a test message'}</button>}
         {!bot.isPrimary && <button type="button" className="admin-btn admin-btn-secondary" disabled={!!busy} onClick={() => act(`primary${id}`, () => post(`bots/${id}/primary`), `@${bot.username} now posts the shop's notifications. Pick its chat below.`)}>Make primary</button>}
-        <button type="button" className="admin-btn admin-btn-secondary" disabled={!!busy} onClick={() => act(`photo${id}`, () => post(`bots/${id}/photo`), 'The shop photo is now the bot’s profile photo.')}>Use the shop photo</button>
+        {isShopStyle
+          ? <button type="button" className="admin-btn admin-btn-secondary" disabled={!!busy} onClick={() => act(`photo${id}`, () => post(`bots/${id}/photo`), 'The shop photo is now the bot’s profile photo.')}>Use the shop photo</button>
+          : <button type="button" className="admin-btn admin-btn-secondary" disabled={!!busy} onClick={() => act(`photo${id}`, () => post(`bots/${id}/photo`, { fromStyle: true }), 'The style’s photo is now the bot’s profile photo.')}>Use the style’s photo</button>}
         <label className="admin-btn admin-btn-secondary" style={{ cursor: 'pointer' }}>
           Upload a photo (JPG)
           <input type="file" accept="image/jpeg" hidden onChange={e => uploadPhoto(e.target.files?.[0], e.target)} />

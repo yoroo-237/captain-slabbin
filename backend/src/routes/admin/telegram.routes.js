@@ -6,7 +6,7 @@ import { ok } from '../../utils/response.js';
 import { appError } from '../../utils/formatters.js';
 import {
   telegramStatus, inspectBot, linkBot, applyStyle, setPrimary, changeChat, unlinkBot, sendTelegram,
-  setPostChat, setShelves, postProduct, setBotPhoto, styleFromBot, findBot,
+  setPostChat, setShelves, postProduct, setBotPhoto, setStylePhoto, styleFromBot, findBot,
 } from '../../services/telegram.service.js';
 import { DEFAULT_LOOK } from '../../services/telegramStyle.js';
 
@@ -48,8 +48,8 @@ r.post('/test', async (req, res) => {
 // ─── One bot ─────────────────────────────────────────────────────────────────
 
 r.post('/bots/:id/style', async (req, res) => {
-  await applyStyle(req.params.id, Number(req.body?.styleId) || null);
-  res.json(ok({ styleId: Number(req.body?.styleId) || null }));
+  const bot = await applyStyle(req.params.id, Number(req.body?.styleId) || null);
+  res.json(ok({ styleId: Number(req.body?.styleId) || null, photo: bot.photo || 'none', photoError: bot.photoError || null }));
 });
 
 r.post('/bots/:id/primary', async (req, res) => {
@@ -78,6 +78,12 @@ r.post('/bots/:id/unlink', async (req, res) => {
 
 // Bot profile photo: the shop's picture, or a JPG sent as a data URL
 r.post('/bots/:id/photo', async (req, res) => {
+  // The photo written in the bot's style
+  if (req.body?.fromStyle) {
+    const photo = await setStylePhoto(req.params.id);
+    if (photo === 'none') throw appError('This style has no profile photo: add one under Styles → Profile photo.', 400);
+    return res.json(ok({ photo }));
+  }
   const data = String(req.body?.image || '');
   let jpg = null;
   if (data) {

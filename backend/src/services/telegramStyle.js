@@ -80,6 +80,10 @@ export const DEFAULT_LOOK = {
   home: '', // page /start opens ('' = the shelves menu)
   // buttons: the shelves as buttons, edited in place (the shop's own bot)
   // commands: a menu board navigated with typed commands (services/telegramCommands.js)
+  // Which catalog the bot sells: null = the shop's own, or a Category/Product `source` (e.g. 'qt')
+  catalog: null,
+  // false: no link to the shop's website anywhere in the bot (buttons, menu button, wording)
+  siteLinks: true,
   layout: 'buttons',
   prefix: 'shop',                         // menu command, and the start of shelf commands
   customOrderCommand: 'create_custom_order',
@@ -106,13 +110,15 @@ export const isShopStyle = style => !style || style.name === 'Captain Slabbin';
 function neutralLook(name) {
   const l = structuredClone(DEFAULT_LOOK);
   const safe = String(name).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  l.profile = { ...l.profile, name, shortDescription: '', description: '' };
+  l.siteLinks = false;
+  l.profile = { ...l.profile, name, shortDescription: '', description: '', commands: l.profile.commands.filter(c => c.command !== 'shop') };
   l.texts = {
     ...l.texts,
     header: `<b>${safe}</b>`,
-    welcome: 'Welcome :)\n\n🔞 Everything here is for adults <b>21 and over</b>.\n\nAlready have an account on the site? Open <b>Account → Profile</b> there and tap <b>Connect Telegram</b>.',
+    welcome: 'Welcome :)\n\n🔞 Everything here is for adults <b>21 and over</b>.',
     menuIntro: 'Pick a shelf. You pay from your wallet in one tap.',
-    delivery: '🚚 <b>Delivery</b>: we message you right here after payment to arrange it. For shipping to an address, order on the site.',
+    menuIntroGuest: 'Pick a shelf.',
+    delivery: '🚚 <b>Delivery</b>: we message you right here after payment to arrange it.',
     paidNote: 'We have your invoice and will message you here to arrange delivery.',
     walletIntro: 'Add funds in the coin you like. Your balance updates by itself and you are told here the moment it lands.',
     customOrder: 'Send your custom order in one message: products, quantities and anything we should know. We answer you right here.',
@@ -126,6 +132,8 @@ export const lookOf = style => isShopStyle(style) ? mergeLook(DEFAULT_LOOK, styl
 const store = new AsyncLocalStorage();
 export const look = () => store.getStore()?.look || DEFAULT_LOOK;
 export const activeBot = () => store.getStore()?.bot || null;
+export const catalog = () => look().catalog || null;
+export const siteLinks = () => look().siteLinks !== false;
 // false for any style but the shop's own: it never borrows the shop's pictures
 export const isShop = () => store.getStore()?.shop ?? true;
 
