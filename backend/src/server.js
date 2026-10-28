@@ -7,7 +7,7 @@ import { env } from './config/env.js';
 import { errorHandler } from './middlewares/errorHandler.js';
 import router from './routes/index.js';
 import { startDepositCleanupJob } from './jobs/depositCleanup.js';
-import { ensureDefaultStyle } from './services/telegram.service.js';
+import { ensureDefaultStyle, ensurePresetStyles } from './services/telegram.service.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -47,7 +47,7 @@ app.use(errorHandler);
 app.listen(env.port, () => {
   console.log(`Shop backend running on port ${env.port} [${env.nodeEnv}]`);
   startDepositCleanupJob();
-  ensureDefaultStyle().catch(err => console.error('[Telegram] default style:', err.message));
+  ensureDefaultStyle().then(ensurePresetStyles).catch(err => console.error('[Telegram] styles:', err.message));
 });
 
 export default app;

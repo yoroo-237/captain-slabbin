@@ -1,6 +1,6 @@
 import axios from 'axios';
 import crypto from 'crypto';
-import { readFile } from 'fs/promises';
+import { readFile, readdir } from 'fs/promises';
 import { prisma } from '../db.js';
 import { env } from '../config/env.js';
 import { lookOf } from './telegramStyle.js';
@@ -68,6 +68,24 @@ async function defaultStyle() {
 // created here: it is linked by hand from the admin (Telegram bot page).
 export async function ensureDefaultStyle() {
   await defaultStyle();
+}
+
+// Styles shipped with the code (prisma/presets/*.json: { name, source, look }):
+// created at startup when no style has that name, never overwritten, so the
+// admin can edit them freely.
+export async function ensurePresetStyles() {
+  const dir = new URL('../../prisma/presets/', import.meta.url);
+  let files = [];
+  try { files = (await readdir(dir)).filter(f => f.endsWith('.json')); } catch { return; }
+  for (const f of files) {
+    try {
+      const { name, source = null, look } = JSON.parse(await readFile(new URL(f, dir), 'utf8'));
+      if (name && look && !(await prisma.botStyle.findFirst({ where: { name } }))) {
+        await prisma.botStyle.create({ data: { name, source, look } });
+        console.log(`[Telegram] style "${name}" added`);
+      }
+    } catch (err) { console.error(`[Telegram] style preset ${f}:`, err.message); }
+  }
 }
 
 const chatOf = c => ({ id: String(c.id), type: c.type, title: c.title || (c.username ? `@${c.username}` : [c.first_name, c.last_name].filter(Boolean).join(' ')) });
