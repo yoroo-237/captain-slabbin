@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { adminFetch } from './utils/api.js'
 import { BASE } from '../../utils/api.js'
 import Pagination from '../../components/admin/Pagination.jsx'
+import { askConfirm, showMessage } from './dialog'
 
 const PLACEHOLDER = 'https://bestofthebay.net/wp-content/uploads/woocommerce-placeholder.webp'
 
@@ -74,11 +75,11 @@ function MediaManager({ productId, images, onUpdated }) {
   }
 
   async function remove(imgId) {
-    if (!confirm('Remove this media?')) return
+    if (!(await askConfirm('Remove this media?', { okLabel: 'Remove', danger: true }))) return
     try {
       await adminFetch(`/admin/products/${productId}/images/${imgId}`, { method: 'DELETE' })
       onUpdated()
-    } catch (e) { alert(e.message) }
+    } catch (e) { showMessage(e.message) }
   }
 
   const tabStyle = active => ({
@@ -604,7 +605,7 @@ export default function AdminProducts() {
       setDeleteProduct(null)
       fetchProducts()
     } catch (e) {
-      alert(e.message)
+      showMessage(e.message)
     } finally {
       setDeleting(false)
     }

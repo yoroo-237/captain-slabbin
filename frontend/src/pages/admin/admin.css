@@ -712,3 +712,8 @@
   .admin-chart-wrap { padding: 14px; }
 }
 .admin-stat-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Confirm / message dialog (replaces the browser's own box) ── */
+.admin-dialog { max-width: 420px; padding: 24px; }
+.admin-dialog-text { margin: 0; color: #1a1a2e; font-size: 0.95rem; line-height: 1.55; white-space: pre-line; }
+.admin-dialog .admin-modal-actions { margin-top: 22px; }

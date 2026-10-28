@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { adminFetch } from './utils/api.js'
 import Pagination from '../../components/admin/Pagination.jsx'
+import { askConfirm, showMessage } from './dialog'
 
 function StarRating({ value }) {
   return (
@@ -38,15 +39,15 @@ export default function AdminReviews() {
     try {
       await adminFetch(`/admin/reviews/${review.id}/approve`, { method: 'PATCH' })
       fetchReviews()
-    } catch (e) { alert(e.message) }
+    } catch (e) { showMessage(e.message) }
   }
 
   async function handleDelete(review) {
-    if (!confirm('Delete this review?')) return
+    if (!(await askConfirm('Delete this review?', { okLabel: 'Delete', danger: true }))) return
     try {
       await adminFetch(`/admin/reviews/${review.id}`, { method: 'DELETE' })
       fetchReviews()
-    } catch (e) { alert(e.message) }
+    } catch (e) { showMessage(e.message) }
   }
 
   function formatDate(str) {

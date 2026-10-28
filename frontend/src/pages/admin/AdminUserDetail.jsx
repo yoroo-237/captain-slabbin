@@ -4,6 +4,7 @@ import { adminFetch } from './utils/api.js'
 import StatusBadge from '../../components/admin/StatusBadge.jsx'
 import { useApp } from '../../context/AppContext.jsx'
 import { isAdmin } from '../../utils/roles.js'
+import { askConfirm, showMessage } from './dialog'
 
 const TABS = ['Profile', 'Orders', 'Transactions', 'Deposits', 'Tickets', 'API Keys']
 
@@ -60,26 +61,26 @@ export default function AdminUserDetail() {
   }, [fetchUser])
 
   async function banToggle() {
-    if (!confirm(`${user.isActive ? 'Ban' : 'Unban'} ${user.username}?`)) return
+    if (!(await askConfirm(`${user.isActive ? 'Ban' : 'Unban'} ${user.username}?`, { okLabel: user.isActive ? 'Ban' : 'Unban', danger: user.isActive }))) return
     setActionLoading(true)
     try {
       await adminFetch(`/admin/users/${id}/ban`, { method: 'PATCH' })
       refresh()
     } catch (e) {
-      alert(e.message)
+      showMessage(e.message)
     } finally {
       setActionLoading(false)
     }
   }
 
   async function deleteUser() {
-    if (!confirm(`Delete ${user.username} permanently? This cannot be undone.`)) return
+    if (!(await askConfirm(`Delete ${user.username} permanently? This cannot be undone.`, { okLabel: 'Delete', danger: true }))) return
     setActionLoading(true)
     try {
       await adminFetch(`/admin/users/${id}`, { method: 'DELETE' })
       navigate('/admin/users')
     } catch (e) {
-      alert(e.message)
+      showMessage(e.message)
       setActionLoading(false)
     }
   }

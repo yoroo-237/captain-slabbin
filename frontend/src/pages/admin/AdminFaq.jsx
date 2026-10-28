@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { adminFetch } from './utils/api.js'
+import { askConfirm, showMessage } from './dialog'
 
 function Modal({ title, onClose, children }) {
   return (
@@ -52,11 +53,11 @@ export default function AdminFaq() {
   }
 
   async function handleDelete(item) {
-    if (!confirm(`Delete this FAQ item?`)) return
+    if (!(await askConfirm(`Delete this FAQ item?`, { okLabel: 'Delete', danger: true }))) return
     try {
       await adminFetch(`/admin/faq/${item.id}`, { method: 'DELETE' })
       fetchItems()
-    } catch (e) { alert(e.message) }
+    } catch (e) { showMessage(e.message) }
   }
 
   return (

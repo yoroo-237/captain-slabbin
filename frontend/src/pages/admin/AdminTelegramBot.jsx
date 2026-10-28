@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { adminFetch } from './utils/api.js'
+import { askConfirm, showMessage } from './dialog'
 
 // Admin → Telegram. Several bots sell the same shop: link each by pasting its
 // token, give it a style (profile, copy, images, pages) and the shelves it
@@ -70,7 +71,7 @@ function BotCard({ bot, styles, shelves: allShelves, busy, act, post }) {
   function uploadPhoto(file, input) {
     if (!file) return
     input.value = ''
-    if (!/jpe?g$/i.test(file.type) || file.size > 5 * 1024 * 1024) return window.alert('The photo must be a JPG under 5 MB.')
+    if (!/jpe?g$/i.test(file.type) || file.size > 5 * 1024 * 1024) return showMessage('The photo must be a JPG under 5 MB.')
     const reader = new FileReader()
     reader.onload = () => act(`photo${id}`, () => post(`bots/${id}/photo`, { image: reader.result }), 'Your photo is now the bot’s profile photo.')
     reader.readAsDataURL(file)
@@ -97,9 +98,9 @@ function BotCard({ bot, styles, shelves: allShelves, busy, act, post }) {
       <div className="admin-form-group">
         <label className="admin-label">Style</label>
         <select className="admin-input" value={bot.styleId || ''} disabled={!!busy}
-          onChange={e => e.target.value && window.confirm('Apply this style? The bot’s name, descriptions, commands and photo change in Telegram right away.')
-            && act(`style${id}`, () => post(`bots/${id}/style`, { styleId: Number(e.target.value) }),
-              r => r.photoError ? `Style applied, but the profile photo did not change: ${r.photoError}` : r.photo === 'none' ? 'Style applied. It has no profile photo, so the bot kept its current one.' : 'Style applied to the bot, photo included.')}>
+          onChange={async e => { const styleId = Number(e.target.value); styleId && await askConfirm('Apply this style? The bot’s name, descriptions, commands and photo change in Telegram right away.', { okLabel: 'Apply' })
+            && act(`style${id}`, () => post(`bots/${id}/style`, { styleId }),
+              r => r.photoError ? `Style applied, but the profile photo did not change: ${r.photoError}` : r.photo === 'none' ? 'Style applied. It has no profile photo, so the bot kept its current one.' : 'Style applied to the bot, photo included.') }}>
           {!bot.styleId && <option value="">No style (the bot keeps its own profile)</option>}
           {styles.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
@@ -151,7 +152,7 @@ function BotCard({ bot, styles, shelves: allShelves, busy, act, post }) {
           <input type="file" accept="image/jpeg" hidden onChange={e => uploadPhoto(e.target.files?.[0], e.target)} />
         </label>
         <button type="button" className="admin-btn admin-btn-danger" disabled={!!busy}
-          onClick={() => window.confirm(`Unlink @${bot.username}? It stops answering customers here.`) && act(`unlink${id}`, () => post(`bots/${id}/unlink`), 'Bot unlinked.')}>Unlink</button>
+          onClick={async () => await askConfirm(`Unlink @${bot.username}? It stops answering customers here.`, { okLabel: 'Unlink', danger: true }) && act(`unlink${id}`, () => post(`bots/${id}/unlink`), 'Bot unlinked.')}>Unlink</button>
       </div>
     </div>
   )
@@ -290,7 +291,7 @@ function StylesTab({ bots, styles, shelves, busy, act, post, reload }) {
               <span style={{ display: 'flex', gap: 6 }}>
                 <button type="button" className="admin-btn admin-btn-secondary admin-btn-sm" disabled={!!busy} onClick={() => open(s.id)}>Edit</button>
                 <button type="button" className="admin-btn admin-btn-danger admin-btn-sm" disabled={!!busy}
-                  onClick={() => window.confirm(`Delete the style "${s.name}"? Bots using it keep their current profile and go back to the default copy.`) && act('delete', () => adminFetch(`/admin/telegram/styles/${s.id}`, { method: 'DELETE' }), 'Style deleted.')}>Delete</button>
+                  onClick={async () => await askConfirm(`Delete the style "${s.name}"? Bots using it keep their current profile and go back to the default copy.`, { okLabel: 'Delete', danger: true }) && act('delete', () => adminFetch(`/admin/telegram/styles/${s.id}`, { method: 'DELETE' }), 'Style deleted.')}>Delete</button>
               </span>
             </div>
           ))}

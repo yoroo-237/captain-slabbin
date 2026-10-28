@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { adminFetch } from './utils/api.js'
+import { showMessage } from './dialog'
 
 export default function AdminSupportDetail() {
   const { id } = useParams()
@@ -51,7 +52,7 @@ export default function AdminSupportDetail() {
       setReply('')
       refresh()
     } catch (e) {
-      alert(e.message)
+      showMessage(e.message)
     } finally {
       setSending(false)
     }
@@ -69,7 +70,7 @@ export default function AdminSupportDetail() {
       })
       refresh()
     } catch (e) {
-      alert(e.message)
+      showMessage(e.message)
     } finally {
       setStatusLoading(false)
     }

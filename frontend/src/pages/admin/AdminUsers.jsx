@@ -5,6 +5,7 @@ import StatusBadge from '../../components/admin/StatusBadge.jsx'
 import Pagination from '../../components/admin/Pagination.jsx'
 import { useApp } from '../../context/AppContext.jsx'
 import { isAdmin } from '../../utils/roles.js'
+import { askConfirm, showMessage } from './dialog'
 
 // Roles the current account may hand out (mirrors assertCanAssignRole in the backend)
 function roleOptions(actor) {
@@ -110,28 +111,28 @@ export default function AdminUsers() {
     try {
       await adminFetch(`/admin/users/${userId}`, { method: 'PUT', body: JSON.stringify({ role: newRole }) })
     } catch (err) {
-      alert(err.message)
+      showMessage(err.message)
     }
     fetchUsers()
   }
 
   async function handleBanToggle(user) {
-    if (!confirm(`${user.isActive ? 'Ban' : 'Unban'} ${user.username}?`)) return
+    if (!(await askConfirm(`${user.isActive ? 'Ban' : 'Unban'} ${user.username}?`, { okLabel: user.isActive ? 'Ban' : 'Unban', danger: user.isActive }))) return
     try {
       await adminFetch(`/admin/users/${user.id}/ban`, { method: 'PATCH' })
       fetchUsers()
     } catch (err) {
-      alert(err.message)
+      showMessage(err.message)
     }
   }
 
   async function handleDelete(user) {
-    if (!confirm(`Delete ${user.username} permanently? This cannot be undone.`)) return
+    if (!(await askConfirm(`Delete ${user.username} permanently? This cannot be undone.`, { okLabel: 'Delete', danger: true }))) return
     try {
       await adminFetch(`/admin/users/${user.id}`, { method: 'DELETE' })
       fetchUsers()
     } catch (err) {
-      alert(err.message)
+      showMessage(err.message)
     }
   }
 

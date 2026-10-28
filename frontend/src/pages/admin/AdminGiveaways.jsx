@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { adminFetch } from './utils/api.js'
+import { askConfirm, showMessage } from './dialog'
 
 const STATUSES = ['draft', 'active', 'ended']
 const STATUS_STYLE = {
@@ -81,11 +82,11 @@ export default function AdminGiveaways() {
   }
 
   async function handleDelete(item) {
-    if (!confirm(`Delete "${item.title}"?`)) return
+    if (!(await askConfirm(`Delete "${item.title}"?`, { okLabel: 'Delete', danger: true }))) return
     try {
       await adminFetch(`/admin/giveaways/${item.id}`, { method: 'DELETE' })
       fetchItems()
-    } catch (e) { alert(e.message) }
+    } catch (e) { showMessage(e.message) }
   }
 
   return (
