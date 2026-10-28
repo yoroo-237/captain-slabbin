@@ -7,7 +7,7 @@ import { env } from './config/env.js';
 import { errorHandler } from './middlewares/errorHandler.js';
 import router from './routes/index.js';
 import { startDepositCleanupJob } from './jobs/depositCleanup.js';
-import { adoptLegacyBot } from './services/telegram.service.js';
+import { ensureDefaultStyle } from './services/telegram.service.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -47,7 +47,7 @@ app.use(errorHandler);
 app.listen(env.port, () => {
   console.log(`Shop backend running on port ${env.port} [${env.nodeEnv}]`);
   startDepositCleanupJob();
-  adoptLegacyBot().catch(err => console.error('[Telegram] moving the linked bot:', err.message));
+  ensureDefaultStyle().catch(err => console.error('[Telegram] default style:', err.message));
 });
 
 export default app;

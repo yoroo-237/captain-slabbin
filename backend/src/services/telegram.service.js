@@ -11,7 +11,7 @@ import { lookOf } from './telegramStyle.js';
 // new customer messages) to the shop's chat; a customer hears from the bot they
 // last used. Every send is best-effort: a Telegram outage must never block an order.
 
-// Where the single bot used to live (before TelegramBot); read once by adoptLegacyBot
+// Where the single bot used to live (before TelegramBot); kept private, never read back
 const LEGACY = { token: 'telegram_bot_token', chatId: 'telegram_chat_id', secret: 'telegram_webhook_secret', seen: 'telegram_seen_chats', branded: 'telegram_branded', post: 'telegram_post_chat_id' };
 // Never sent to the admin UI by the generic settings endpoint
 export const TELEGRAM_PRIVATE_KEYS = [...Object.values(LEGACY), 'telegram_reader_api_id', 'telegram_reader_api_hash', 'telegram_reader_session'];
@@ -64,29 +64,10 @@ async function defaultStyle() {
     || prisma.botStyle.create({ data: { name: 'Captain Slabbin', look: {} } });
 }
 
-// Once, at startup: the bot linked before several were possible (site settings
-// or TELEGRAM_* env vars) becomes the primary bot, with the same webhook secret
-// so Telegram keeps calling the old address (/telegram-bot) without a relink.
-export async function adoptLegacyBot() {
-  if (await prisma.telegramBot.count()) return;
+// At startup: the style a bot gets when linked. The primary bot itself is never
+// created here: it is linked by hand from the admin (Telegram bot page).
+export async function ensureDefaultStyle() {
   await defaultStyle();
-  const token = await setting(LEGACY.token) || env.telegram.botToken;
-  if (!token) return;
-  let me = { username: '', first_name: '' };
-  try { me = await tg(token, 'getMe'); } catch (err) { console.error('[Telegram] legacy bot getMe:', err.message); }
-  let seen = [];
-  try { seen = JSON.parse(await setting(LEGACY.seen) || '[]'); } catch { /* none */ }
-  const branded = (await setting(LEGACY.branded)) === 'true';
-  await prisma.telegramBot.create({
-    data: {
-      token, username: me.username || '', name: me.first_name || '', isPrimary: true,
-      secret: await setting(LEGACY.secret) || env.telegram.webhookSecret,
-      chatId: await setting(LEGACY.chatId) || env.telegram.chatId,
-      postChatId: await setting(LEGACY.post), seenChats: seen,
-      styleId: branded ? (await defaultStyle()).id : null,
-    },
-  });
-  console.log(`[Telegram] @${me.username || 'bot'} moved to the bots list as the primary bot`);
 }
 
 const chatOf = c => ({ id: String(c.id), type: c.type, title: c.title || (c.username ? `@${c.username}` : [c.first_name, c.last_name].filter(Boolean).join(' ')) });
@@ -281,9 +262,9 @@ export async function unlinkBot(botId) {
     const next = await prisma.telegramBot.findFirst({ orderBy: { createdAt: 'asc' } });
     if (next) await prisma.telegramBot.update({ where: { id: next.id }, data: { isPrimary: true } });
   }
-  // The old single-bot settings must not bring it back at the next start
+  // Forget the old single-bot settings too
   await prisma.siteSetting.deleteMany({ where: { key: { in: [LEGACY.token, LEGACY.secret] } } });
-  return { stillFromEnv: !!(env.telegram.botToken && env.telegram.botToken === bot.token) };
+  return {};
 }
 
 // ─── Notifications ───────────────────────────────────────────────────────────
