@@ -152,7 +152,7 @@ export async function resolveCommand(cmd) {
   if (/^p\d+$/.test(c)) return `p:${c.slice(1)}:1`;
   if (c === 'orders') return 'o';
   if (c === 'wallet') return 'w';
-  if (c === cmdName(look().customOrderCommand) || c === `${pre}_create_custom_order`) return 'co';
+  if (c === cmdName(look().customOrderCommand) || c === `${pre}_create_custom_order` || c === 'create_custom_order') return 'co';
   const page = (look().pages || []).find(p => cmdName(p.key) === c);
   if (page) return `pg:${page.key}`;
   if (c.startsWith(`${pre}_`)) {

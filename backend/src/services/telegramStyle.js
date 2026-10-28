@@ -98,17 +98,42 @@ export function mergeLook(base, over) {
   return out;
 }
 
-export const lookOf = style => mergeLook(DEFAULT_LOOK, style?.look);
+// The shop's own style speaks as the shop (Captain Slabbin). Every other style
+// starts from brand-free wording, so a field it leaves empty never makes the bot
+// speak as another brand.
+export const isShopStyle = style => !style || style.name === 'Captain Slabbin';
+
+function neutralLook(name) {
+  const l = structuredClone(DEFAULT_LOOK);
+  const safe = String(name).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  l.profile = { ...l.profile, name, shortDescription: '', description: '' };
+  l.texts = {
+    ...l.texts,
+    header: `<b>${safe}</b>`,
+    welcome: 'Welcome :)\n\n🔞 Everything here is for adults <b>21 and over</b>.\n\nAlready have an account on the site? Open <b>Account → Profile</b> there and tap <b>Connect Telegram</b>.',
+    menuIntro: 'Pick a shelf. You pay from your wallet in one tap.',
+    delivery: '🚚 <b>Delivery</b>: we message you right here after payment to arrange it. For shipping to an address, order on the site.',
+    paidNote: 'We have your invoice and will message you here to arrange delivery.',
+    walletIntro: 'Add funds in the coin you like. Your balance updates by itself and you are told here the moment it lands.',
+    customOrder: 'Send your custom order in one message: products, quantities and anything we should know. We answer you right here.',
+    customOrderSent: '✅ Custom order received. We answer you right here.',
+  };
+  return l;
+}
+
+export const lookOf = style => isShopStyle(style) ? mergeLook(DEFAULT_LOOK, style?.look) : mergeLook(neutralLook(style.name), style.look);
 
 const store = new AsyncLocalStorage();
 export const look = () => store.getStore()?.look || DEFAULT_LOOK;
 export const activeBot = () => store.getStore()?.bot || null;
+// false for any style but the shop's own: it never borrows the shop's pictures
+export const isShop = () => store.getStore()?.shop ?? true;
 
 // Runs fn as `bot` (a TelegramBot row, its style included or not)
 export async function withBot(bot, fn) {
   const style = bot?.style !== undefined ? bot.style
     : bot?.styleId ? await prisma.botStyle.findUnique({ where: { id: bot.styleId } }) : null;
-  return store.run({ bot, look: lookOf(style) }, fn);
+  return store.run({ bot, look: lookOf(style), shop: isShopStyle(style) }, fn);
 }
 
 export const title = s => look().upperTitles ? String(s).toUpperCase() : String(s);

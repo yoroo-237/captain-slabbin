@@ -1,7 +1,7 @@
 import { prisma } from '../db.js';
 import { env } from '../config/env.js';
 import { escapeHtml } from './telegram.service.js';
-import { look, activeBot, title, COMMANDS } from './telegramStyle.js';
+import { look, activeBot, title, isShop, COMMANDS } from './telegramStyle.js';
 import { menuBoard, shelfBoard, startScreen } from './telegramCommands.js';
 
 // The shop's catalog inside Telegram: /start shows the shelves as buttons, a
@@ -26,7 +26,8 @@ const shopButton = () => site().startsWith('http') ? [{ text: look().labels.open
 // them above the text; without an https site there is simply no image.
 export const art = file => site().startsWith('https://') ? `${site()}/brand/bot/${file}` : null;
 // A screen's image: the style's own, else the shop's art
-export const image = (key, file) => look().images[key] || art(file);
+// (another brand's style falls back to its own banner, never to the shop's pictures)
+export const image = (key, file) => look().images[key] || (isShop() ? art(file) : look().images.banner || look().images.start || null);
 const SHELF_ART = {
   flower: 'cat-flower', concentrates: 'cat-concentrates', moonrocks: 'cat-moonrocks',
   disposables: 'cat-disposables', prerolls: 'cat-prerolls', edibles: 'cat-edibles',
@@ -34,7 +35,7 @@ const SHELF_ART = {
 };
 // A shelf's banner: the style's, the one uploaded in Admin → Categories, else the original art
 export const shelfArt = (slug, imageUrl) => look().images.shelves?.[slug]
-  || (imageUrl?.startsWith('http') && imageUrl) || (SHELF_ART[slug] ? art(`cats/${SHELF_ART[slug]}.jpg`) : null) || image('banner', 'banner.jpg');
+  || (imageUrl?.startsWith('http') && imageUrl) || (isShop() && SHELF_ART[slug] ? art(`cats/${SHELF_ART[slug]}.jpg`) : null) || image('banner', 'banner.jpg');
 
 export const rule = () => look().rule;
 const unit = p => p.unitLabel ? ` <i>${escapeHtml(p.unitLabel)}</i>` : '';

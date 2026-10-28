@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { readFile, readdir } from 'fs/promises';
 import { prisma } from '../db.js';
 import { env } from '../config/env.js';
-import { lookOf } from './telegramStyle.js';
+import { lookOf, isShopStyle } from './telegramStyle.js';
 
 // The shop's Telegram bots. Several can be linked from Admin → Telegram; they all
 // sell the same shop, each with its own style (services/telegramStyle.js) and
@@ -237,9 +237,9 @@ export async function applyStyle(botId, styleId) {
   await tg(bot.token, 'setMyDescription', { description: profile.description.slice(0, 512) });
   await installNavigation(bot);
   try {
-    let jpg = null;
-    if (profile.photo) jpg = Buffer.from((await axios.get(profile.photo, { responseType: 'arraybuffer', timeout: 15000 })).data);
-    await setBotPhoto(bot.id, jpg);
+    // The style's own photo; the shop's picture only for the shop's own style, never another brand's
+    if (profile.photo) await setBotPhoto(bot.id, Buffer.from((await axios.get(profile.photo, { responseType: 'arraybuffer', timeout: 15000 })).data));
+    else if (isShopStyle(style)) await setBotPhoto(bot.id, null);
   } catch (err) { console.error(`[Telegram] @${bot.username} photo:`, err.message); }
   return bot;
 }
