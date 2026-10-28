@@ -114,7 +114,12 @@ const firstImage = p => {
   return img.url.startsWith('http') ? img.url : (env.publicUrl ? `${env.publicUrl.replace(/\/$/, '')}${img.url}` : null);
 };
 
-export async function productScreen(id, qty = 1) {
+// A product's priced packs ("1x" $8.50, "25x" $200…), and the one chosen (first by default)
+const optionsOf = p => Array.isArray(p.options) ? p.options : [];
+const pick = (p, opt) => { const o = optionsOf(p); return o.length ? Math.min(Math.max(0, Number(opt) || 0), o.length - 1) : 0; };
+const unitPrice = (p, opt) => optionsOf(p)[pick(p, opt)]?.price ?? p.price;
+
+export async function productScreen(id, qty = 1, opt = 0) {
   const p = await prisma.product.findFirst({
     where: { id: Number(id), isActive: true },
     include: { images: { orderBy: { position: 'asc' } }, category: { include: { parent: true } }, brand: true },
@@ -123,19 +128,25 @@ export async function productScreen(id, qty = 1) {
   if (!p) return { text: 'This product is no longer available.', keyboard: [[{ text: labels.allShelves, callback_data: 'menu' }]], image: image('banner', 'banner.jpg') };
   const max = Math.min(MAX_QTY, Math.max(1, p.stock));
   qty = Math.min(Math.max(1, Number(qty) || 1), max);
+  const options = optionsOf(p);
+  opt = pick(p, opt);
+  const price = unitPrice(p, opt);
   const shelf = p.category?.parent || p.category;
   const pct = salePct(p);
   const stock = p.stock <= 0 ? '✖️ Sold out' : p.stock <= 5 ? `⚠️ Only ${p.stock} left` : '✅ In stock';
   const desc = p.description ? escapeHtml(p.description.length > 700 ? p.description.slice(0, 700) + '…' : p.description) : null;
 
   const rows = [];
+  for (let i = 0; i < options.length; i += 2) {
+    rows.push(options.slice(i, i + 2).map((o, j) => ({ text: `${i + j === opt ? '✅ ' : ''}${o.label} · ${money(o.price)}`, callback_data: `p:${p.id}:${qty}:${i + j}` })));
+  }
   if (p.stock > 0) {
     rows.push([
-      { text: '➖', callback_data: `p:${p.id}:${Math.max(1, qty - 1)}` },
-      { text: `QTY ${qty}`, callback_data: `p:${p.id}:${qty}` },
-      { text: '➕', callback_data: `p:${p.id}:${Math.min(max, qty + 1)}` },
+      { text: '➖', callback_data: `p:${p.id}:${Math.max(1, qty - 1)}:${opt}` },
+      { text: `QTY ${qty}`, callback_data: `p:${p.id}:${qty}:${opt}` },
+      { text: '➕', callback_data: `p:${p.id}:${Math.min(max, qty + 1)}:${opt}` },
     ]);
-    rows.push([{ text: `${labels.buy} ${qty}  ·  ${money(Number(p.price) * qty)}`, callback_data: `buy:${p.id}:${qty}` }]);
+    rows.push([{ text: `${labels.buy} ${qty}  ·  ${money(Number(price) * qty)}`, callback_data: `buy:${p.id}:${qty}:${opt}` }]);
   }
   rows.push([
     shelf ? { text: `‹ ${shelf.name}`, callback_data: `cat:${shelf.slug}:1` } : { text: labels.allShelves, callback_data: 'menu' },
@@ -148,7 +159,7 @@ export async function productScreen(id, qty = 1) {
       `<b>${escapeHtml(look().upperTitles ? p.name.toUpperCase() : p.name)}</b>`,
       ...(meta ? [meta] : []),
       rule(),
-      `💵 <b>${money(p.price)}</b>${p.unitLabel ? ` <i>${escapeHtml(p.unitLabel)}</i>` : ''}${pct ? `   <s>${money(p.compareAtPrice)}</s>  🔥 <b>−${pct}%</b>` : ''}`,
+      `💵 <b>${money(price)}</b>${options.length ? ` <i>${escapeHtml(options[opt].label)}</i>` : p.unitLabel ? ` <i>${escapeHtml(p.unitLabel)}</i>` : ''}${pct ? `   <s>${money(p.compareAtPrice)}</s>  🔥 <b>−${pct}%</b>` : ''}`,
       stock,
       ...(desc ? ['', `<blockquote expandable>${desc}</blockquote>`] : []),
     ].join('\n'),
@@ -157,18 +168,19 @@ export async function productScreen(id, qty = 1) {
   };
 }
 
-export async function buyScreen(user, id, qty) {
+export async function buyScreen(user, id, qty, opt = 0) {
   const p = await prisma.product.findFirst({ where: { id: Number(id), isActive: true } });
   if (!p) return productScreen(id, qty);
   qty = Math.min(Math.max(1, Number(qty) || 1), Math.max(1, p.stock));
-  const total = Number(p.price) * qty;
+  opt = pick(p, opt);
+  const total = Number(unitPrice(p, opt)) * qty;
   const { balance } = await getUserBalance(user.id);
   const enough = balance >= total;
   return {
     text: [
       '🧾 <b>CHECKOUT</b>',
       rule(),
-      `${qty} × ${escapeHtml(p.name)}`,
+      `${qty} × ${escapeHtml(p.name)}${optionsOf(p).length ? ` (${escapeHtml(optionsOf(p)[opt].label)})` : ''}`,
       `<b>Total  ${money(total)}</b>`,
       '',
       look().texts.delivery,
@@ -178,9 +190,9 @@ export async function buyScreen(user, id, qty) {
     ].join('\n'),
     keyboard: [
       enough
-        ? [{ text: `✅ PAY ${money(total)} FROM MY WALLET`, callback_data: `pay:${p.id}:${qty}` }]
+        ? [{ text: `✅ PAY ${money(total)} FROM MY WALLET`, callback_data: `pay:${p.id}:${qty}:${opt}` }]
         : [{ text: '➕ Add funds', callback_data: 'w' }],
-      [{ text: '‹ Back', callback_data: `p:${p.id}:${qty}` }],
+      [{ text: '‹ Back', callback_data: `p:${p.id}:${qty}:${opt}` }],
     ],
   };
 }
@@ -188,12 +200,12 @@ export async function buyScreen(user, id, qty) {
 // One payment at a time per customer: a double tap never makes two orders
 const paying = new Set();
 
-export async function payScreen(user, id, qty) {
+export async function payScreen(user, id, qty, opt = 0) {
   if (paying.has(user.id)) return null;
   paying.add(user.id);
   try {
     const { order, payments, newBalance } = await orderService.createOrder(user.id, {
-      items: [{ productId: Number(id), quantity: Number(qty) }],
+      items: [{ productId: Number(id), quantity: Number(qty), option: Number(opt) || 0 }],
       paymentMethod: 'wallet',
     });
     return {
@@ -213,7 +225,7 @@ export async function payScreen(user, id, qty) {
   } catch (err) {
     return {
       text: `⚠️ <b>NOT PAID</b>\n${escapeHtml(err.message || 'The payment did not go through.')}`,
-      keyboard: [[{ text: '‹ Back', callback_data: `buy:${id}:${qty}` }]],
+      keyboard: [[{ text: '‹ Back', callback_data: `buy:${id}:${qty}:${Number(opt) || 0}` }]],
     };
   } finally {
     paying.delete(user.id);

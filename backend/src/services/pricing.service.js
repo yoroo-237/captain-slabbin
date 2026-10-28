@@ -28,9 +28,13 @@ export async function priceCart(items, { delivery = true } = {}) {
     if (product.stock < quantity) {
       throw appError(`Only ${product.stock} left of "${product.name}".`, 409);
     }
-    const price = Number(product.price);
+    // A product with options is sold by option (a pack size): the first when none is named
+    const options = Array.isArray(product.options) ? product.options : [];
+    const option = options.length ? options[Number.isInteger(Number(item.option)) ? Number(item.option) : 0] : null;
+    if (options.length && !option) throw appError(`That option of "${product.name}" is no longer available.`, 400);
+    const price = option ? Number(option.price) : Number(product.price);
     subtotal += price * quantity;
-    return { productId: product.id, sku: product.sku, name: product.name, price, quantity };
+    return { productId: product.id, sku: product.sku, name: option ? `${product.name} (${option.label})` : product.name, price, quantity };
   });
 
   subtotal = Math.round(subtotal * 100) / 100;

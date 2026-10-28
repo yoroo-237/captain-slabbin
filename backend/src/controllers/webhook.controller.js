@@ -126,7 +126,7 @@ async function answerTelegram(bot, upd) {
 
   // Screens for a private chat; anything that needs an account asks for 21+ first
   const screenFor = async (from, data) => {
-    const [kind, a, b] = String(data || '').split(':');
+    const [kind, a, b, c] = String(data || '').split(':');
     if (kind === 'age') {
       const user = await shop.openAccount(from);
       const menu = await menuScreen(await shop.accountRow(user));
@@ -143,9 +143,9 @@ ${menu.text}` };
       case 'home': return homeScreen(await shop.accountRow(user));
       case 'pg':   return pageScreen(a) || menuScreen(await shop.accountRow(user));
       case 'cat':  return shelfScreen(a, b, { inBot: true, account: await shop.accountRow(user) });
-      case 'p':    return shop.productScreen(a, b);
-      case 'buy':  return shop.buyScreen(user, a, b);
-      case 'pay':  return shop.payScreen(user, a, b);
+      case 'p':    return shop.productScreen(a, b, c);
+      case 'buy':  return shop.buyScreen(user, a, b, c);
+      case 'pay':  return shop.payScreen(user, a, b, c);
       case 'w':    return shop.walletScreen(user);
       case 'dep':  return shop.depositScreen(user, a);
       case 'o':    return shop.ordersScreen(user);

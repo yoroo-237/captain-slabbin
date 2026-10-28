@@ -104,6 +104,9 @@ model Product {
   // Strike-through price: a product with compareAtPrice > price is on the Fire Sale shelf
   compareAtPrice Decimal?    @db.Decimal(10, 2)
   unitLabel   String?        // e.g. "per lb", "per unit", "per 10 pack"
+  // Priced packs a customer picks from: [{ label, price }], e.g. "1x" $8.50, "25x" $200.
+  // Empty = the product has one price. When set, `price` is the first option's.
+  options     Json           @default("[]")
   badge       String?        // short card tag, e.g. "New", "Top Shelf"
   isFeatured  Boolean        @default(false)
   description String?
