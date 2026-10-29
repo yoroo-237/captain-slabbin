@@ -62,6 +62,21 @@ export const DEFAULT_LOOK = {
     notesPrompt: '✏ <b>SEND ME PRODUCT NOTES for {product}:</b>',
     cartTitle: '🛒 <b>YOUR CART</b>',
     cartEmpty: '🛒 Your cart is empty. Pick a shelf in {menu}.',
+    // The shop's Telegram username, written wherever a text or a product says {handle}
+    // ('' = the bot's own username)
+    handle: '',
+    // Checkout of the "commands" layout, worded like the original; {pgp} = the key page's command
+    vouchersTitle: '🛒 <b>Applied Vouchers</b>',
+    noVouchers: 'No vouchers applied to your cart yet.',
+    voucherAsk: '💬 Enter voucher code:',
+    shipTitle: '📦 <b>Shipping Details</b>',
+    shipName: '💬 Type in the recipient\'s First and Last Name only (example: John Smith) and hit "send." (Or enter the Business Name).',
+    shipStreet: '💬 Now send me the Street Address. For example: 2549 Main Street.',
+    shipAddress: 'Send your shipping details in the format customary to your country. For example:\n\n<code>Emily Watson\n3210 Greenbriar Lane\nUnit 14\nDenver, CO 80205\nUSA</code>\n\n💬 Send me your shipping details:',
+    shipAddressPgp: '💡 <b>Important</b> You should encrypt your address with our PGP key {pgp}. Then only we will be able to read your address.\n\nYou can reuse your encrypted address for all your purchases.\n\nFind our PGP key here: {pgp}\n\nEncrypt your shipping details in the format customary to your country. For example:\n\n<code>Emily Watson\n3210 Greenbriar Lane\nUnit 14\nDenver, CO 80205\nUSA</code>\n\n❗️Do NOT encrypt anything but your shipping details.\n\n💬 Send me your encrypted shipping details:',
+    pgpInvalid: 'This does not appear to be a valid PGP encrypted message. Please ensure that you have copied the entire message and that it is not too long. Also, make sure that you are only encrypting the shipping details and that no additional text has been included.',
+    shipAddressShort: 'Please send the whole address, one item per line.',
+    checkoutTitle: '🧾 <b>CHECK YOUR ORDER</b>',
   },
   labels: {
     ageButton: '✅ I am 21 or older, let me in',
@@ -81,6 +96,13 @@ export const DEFAULT_LOOK = {
     removeFromCart: 'Remove Product from Cart',
     addNotes: 'Add Product Notes',
     reviews: '{n} reviews',
+    checkout: '✅ Checkout',
+    continue: 'Continue ›',
+    removeVoucher: 'Remove voucher',
+    vouchers: '🎟 Voucher',
+    reuseShipping: '♻️ Reuse my last shipping details',
+    changeShipping: '✏️ Shipping details',
+    cancel: '‹ Cancel',
   },
   rule: '━━━━━━━━━━━━━━━━',
   upperTitles: true,
@@ -103,6 +125,9 @@ export const DEFAULT_LOOK = {
   shelfNeighbors: false, // commands layout: buttons to the shelves on either side
   listImages: true,      // commands layout: a picture above a shelf's list (the original menu-board bots show none)
   minimums: null,        // commands layout: minimum cart { first, next } in dollars
+  shippingFee: null,     // commands layout: flat shipping in dollars (null = the shop's shipping settings)
+  pgpPage: '',           // commands layout: page holding the PGP public key that addresses are encrypted to
+  pgpAddress: 'optional', // with a key: 'optional' (plain text accepted too) or 'required'
 };
 
 const isObj = v => v && typeof v === 'object' && !Array.isArray(v);

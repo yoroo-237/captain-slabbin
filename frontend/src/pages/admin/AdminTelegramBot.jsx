@@ -328,6 +328,16 @@ function StylesTab({ bots, styles, shelves, busy, act, post, reload }) {
 const LAYOUT_TEXT_FIELDS = [
   ['start', 'Welcome on /start ({menu} = the menu command)'], ['shelfIntro', 'Shelf intro ({shelf} = its name)'],
   ['customOrder', 'Custom order: asking for it'], ['customOrderSent', 'Custom order: received'],
+  ['vendorLine', 'Line under each product ({handle} = the username below)'],
+]
+// Short one-line texts of the commands layout
+const LAYOUT_LINE_FIELDS = [['handle', 'Shop username, written where a text or product says {handle} (empty = the bot’s own)']]
+// Checkout of the commands layout: voucher, shipping details, summary
+const CHECKOUT_TEXT_FIELDS = [
+  ['vouchersTitle', 'Vouchers: title'], ['noVouchers', 'Vouchers: none applied'], ['voucherAsk', 'Vouchers: asking for a code'],
+  ['shipTitle', 'Shipping: title'], ['shipName', 'Shipping: asking for the name'], ['shipStreet', 'Shipping: asking for the street'],
+  ['shipAddress', 'Shipping: asking for the address (no PGP key)'], ['shipAddressPgp', 'Shipping: asking for the encrypted address ({pgp} = the key page)'],
+  ['pgpInvalid', 'Shipping: not a valid PGP message'], ['checkoutTitle', 'Summary: title'],
 ]
 const TEXT_FIELDS = [
   ['header', 'Menu header'], ['welcome', 'Welcome (before 21+ confirmation)'], ['menuIntro', 'Menu intro (customer)'],
@@ -440,6 +450,23 @@ function StyleEditor({ initial, defaults, shelves: allShelves, busy, act, onClos
             {field(['prefix'], 'Menu command (e.g. v_shop: /v_shop, /v_shop_flower)')}
             {field(['customOrderCommand'], 'Custom order command')}
           </div>
+          {LAYOUT_LINE_FIELDS.map(([k, l]) => field(['texts', k], l))}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '0 12px' }}>
+            {field(['shippingFee'], 'Shipping fee in $ (empty = the shop’s shipping settings)')}
+            {field(['pgpPage'], 'Page with your PGP public key (its key)')}
+            <div className="admin-form-group">
+              <label className="admin-label">Encrypted address</label>
+              <select className="admin-input" value={get(['pgpAddress']) || 'optional'} onChange={e => set(['pgpAddress'], e.target.value)}>
+                <option value="optional">PGP or plain text</option>
+                <option value="required">PGP only</option>
+              </select>
+            </div>
+          </div>
+          <div style={muted}>Addresses are asked encrypted only once the page above holds a PGP public key (-----BEGIN PGP PUBLIC KEY BLOCK-----): put your own key there, never another shop's.</div>
+          <details style={{ margin: '10px 0' }}>
+            <summary style={{ cursor: 'pointer', fontWeight: 700 }}>Checkout texts</summary>
+            {CHECKOUT_TEXT_FIELDS.map(([k, l]) => field(['texts', k], l, { area: true }))}
+          </details>
           {LAYOUT_TEXT_FIELDS.map(([k, l]) => field(['texts', k], l, { area: true }))}
           <div style={muted}>The menu board shows "Menu intro (customer)" first, then the custom order, previous orders, every shelf and every page that has a menu label.</div>
         </>

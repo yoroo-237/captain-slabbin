@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { label: 'Products', path: '/admin/products' },
   { label: 'Categories', path: '/admin/categories' },
   { label: 'Brands', path: '/admin/brands' },
+  { label: 'Vouchers', path: '/admin/vouchers' },
   { section: 'Users & Finance' },
   { label: 'Users', path: '/admin/users' },
   { label: 'Deposits', path: '/admin/deposits' },

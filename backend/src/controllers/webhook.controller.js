@@ -8,7 +8,7 @@ import { menuScreen, shelfScreen, pageScreen, homeScreen } from '../services/tel
 import { withBot, look, siteLinks } from '../services/telegramStyle.js';
 import * as shop from '../services/telegramShop.js';
 import * as board from '../services/telegramCommands.js';
-import { resolveCommand, customOrderScreen, takeWaiting } from '../services/telegramCommands.js';
+import { resolveCommand, customOrderScreen, takeWaiting, clearWaiting } from '../services/telegramCommands.js';
 
 export const webhookController = {
   // BlockCypher webhook — BTC, LTC, DOGE (confirmed-tx on HD wallet address)
@@ -159,6 +159,10 @@ ${menu.text}` };
       case 'cart': return board.cartBoard(user);
       case 'cclr': return board.clearCart(user);
       case 'cpay': return board.cartPay(user);
+      case 'ck':     return board.voucherScreen(from, user);
+      case 'ckvrm':  return board.removeVoucher(from, user);
+      case 'ckship': return board.shipNameScreen(from, user);
+      case 'ckreuse': return board.reuseShipping(user);
       case 'buy':  return shop.buyScreen(user, a, b, c);
       case 'pay':  return shop.payScreen(user, a, b, c);
       case 'w':    return shop.walletScreen(user);
@@ -177,6 +181,7 @@ ${menu.text}` };
       const toast = /^(pay:|cpay)/.test(cb.data) ? 'Paying…' : /^add:/.test(cb.data) ? 'Added to cart' : null;
       await tg(bot.token, 'answerCallbackQuery', { callback_query_id: cb.id, ...(toast ? { text: toast } : {}) }).catch(() => {});
       if (!cb.message) return;
+      clearWaiting(cb.from);
       const [kind, a, b] = String(cb.data || '').split(':');
       // In a group the catalog is read-only and products open on the site
       const screen = priv ? await screenFor(cb.from, cb.data)
@@ -208,6 +213,12 @@ ${menu.text}` });
     if (asked?.kind === 'note') {
       const user = await shop.findCustomer(msg.from);
       if (user) return show(msg.chat.id, await board.saveNote(user, asked.productId, text));
+    }
+    // Checkout answers: voucher code, recipient name, street, full shipping details
+    const CHECKOUT = { voucher: board.applyVoucher, shipName: board.saveShipName, shipStreet: board.saveShipStreet, shipAddr: board.saveShipAddress };
+    if (asked && CHECKOUT[asked.kind]) {
+      const user = await shop.findCustomer(msg.from);
+      if (user) return show(msg.chat.id, await CHECKOUT[asked.kind](msg.from, user, text));
     }
     if (asked?.kind === 'custom') {
       const user = await shop.findCustomer(msg.from);

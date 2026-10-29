@@ -1,0 +1,7 @@
+# Captures, sessions and keys never go in the repo
+*.session
+*.session-journal
+config.env
+capture*/
+__pycache__/
+.env

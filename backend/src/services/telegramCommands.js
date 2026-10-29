@@ -4,6 +4,8 @@ import { look, activeBot, catalog } from './telegramStyle.js';
 import { money, shelfArt, image } from './telegramCatalog.js';
 import { getUserBalance } from './balance.service.js';
 import { orderService } from './order.service.js';
+import { priceCart } from './pricing.service.js';
+import { checkVoucher, voucherLabel } from './voucher.service.js';
 
 // The "commands" layout: a menu-board bot navigated with typed commands, like a
 // classic Telegram shop (modelled on the bots it was copied from).
@@ -12,7 +14,9 @@ import { orderService } from './order.service.js';
 //   a shelf     its sub-shelves, or 5 products a page with rating, sales and /p<id>
 //   a product   rating out of 10, sales, its priced packs as buttons that fill the
 //               cart, product notes, reviews, previous / next product of the shelf
-//   /cart       the cart, paid from the wallet (with the style's minimum order)
+//   /cart       the cart (with the style's minimum order), then checkout like the
+//               original: voucher code, recipient name, street, full shipping
+//               details (PGP encrypted or plain), a summary, paid from the wallet
 // Browsing needs no account; the cart, the wallet and orders ask for 21+ first.
 
 const PAGE = 5;
@@ -26,6 +30,12 @@ export const prefix = () => cmdName(look().prefix) || 'shop';
 export const shortSlug = cat => cat.source && cat.slug.startsWith(`${cat.source}-`) ? cat.slug.slice(cat.source.length + 1) : cat.slug;
 const shelfCmd = cat => `/${prefix()}_${cmdName(typeof cat === 'string' ? cat : shortSlug(cat))}`.slice(0, 33);
 const fill = (s, vars) => String(s || '').replace(/\{(\w+)\}/g, (m, k) => vars[k] ?? m);
+// The style's shop username ({handle} in texts and product descriptions), else the bot's own
+export const handle = () => {
+  const h = String(look().texts.handle || activeBot()?.username || '').trim().replace(/^@/, '');
+  return h ? `@${escapeHtml(h)}` : '';
+};
+const withHandle = s => fill(s, { handle: handle() });
 const back = (callback_data, text = look().labels.back) => ({ text, callback_data });
 
 // "$7²⁵": the price as the buttons show it
@@ -148,7 +158,7 @@ export async function shelfBoard(slug, page = 1) {
   const { rate, sold } = await stats(products.map(p => p.id));
 
   const items = products.map(p => {
-    const sub = p.description?.split('\n').map(l => l.trim()).find(Boolean);
+    const sub = p.description?.split('\n').map(l => l.trim()).find(Boolean)?.replace(/\{handle\}/g, handle().replace(/&amp;/g, '&'));
     const r = rate.get(p.id);
     return [
       `<b>${escapeHtml(p.name)}</b>`,
@@ -221,14 +231,14 @@ export async function productBoard(user, id) {
   }
   if (r?.count) rows.push([{ text: fill(labels.reviews, { n: r.count }), callback_data: `rv:${p.id}:0` }]);
 
-  const desc = p.description ? escapeHtml(p.description.length > 900 ? p.description.slice(0, 900) + '…' : p.description) : '';
+  const desc = p.description ? withHandle(escapeHtml(p.description.length > 900 ? p.description.slice(0, 900) + '…' : p.description)) : '';
   const notes = mine.map(i => i.note).filter(Boolean);
   return {
     text: [
       `<b>${escapeHtml(p.name)}</b>`,
       ...(r ? [`${suns(r.avg)} <code>${out10(r.avg)}/10</code>`] : []),
       `<code>${sold.get(p.id) || 0}</code> <i>purchases</i>`,
-      ...(texts.vendorLine ? [texts.vendorLine] : []),
+      ...(texts.vendorLine ? [withHandle(texts.vendorLine)] : []),
       `  /${prefix()}`,
       ...(desc ? ['', desc] : []),
       '',
@@ -264,6 +274,9 @@ export async function removeFromCart(user, id) {
 // ─── Waiting for a typed answer (product notes, custom order) ────────────────
 
 const waiting = new Map(); // telegram user id → { kind, productId, until }
+// Any tap clears it, so a later message is never taken for an old question
+export const clearWaiting = from => waiting.delete(String(from.id));
+const ask = (from, kind, extra = {}) => waiting.set(String(from.id), { kind, ...extra, until: Date.now() + 15 * 60_000 });
 export function takeWaiting(from) {
   const w = waiting.get(String(from.id));
   waiting.delete(String(from.id));
@@ -310,7 +323,7 @@ export async function reviewsBoard(id, index = 0) {
     text: [
       `<b>${escapeHtml(p.name)}</b> – ☀️<code>${out10(rv.rating)}/10</code>`,
       `/p${p.id}`,
-      ...(look().texts.vendorLine ? [look().texts.vendorLine] : []),
+      ...(look().texts.vendorLine ? [withHandle(look().texts.vendorLine)] : []),
       '',
       ...(rv.comment ? [`<blockquote>${escapeHtml(rv.comment)}</blockquote>`] : []),
       `<i>--- 💬 <u>Review</u> by ${who} in ${monthYear(rv.createdAt)}</i>`,
@@ -347,11 +360,9 @@ export async function cartBoard(user) {
   const subtotal = lines.reduce((s, l) => s + l.total, 0);
   const [{ balance }, minimum] = await Promise.all([getUserBalance(user.id), minimumFor(user)]);
   const below = minimum && subtotal < minimum;
-  const enough = balance >= subtotal;
   const rows = [];
   if (below) rows.push([back('menu', `🛒 Add ${money(minimum - subtotal)} more`)]);
-  else if (enough) rows.push([{ text: `✅ PAY ${money(subtotal)} FROM MY WALLET`, callback_data: 'cpay' }]);
-  else rows.push([{ text: '➕ Add funds', callback_data: 'w' }]);
+  else rows.push([{ text: look().labels.checkout, callback_data: 'ck' }]);
   rows.push([{ text: '🗑 Empty cart', callback_data: 'cclr' }, back('menu')]);
   return {
     text: [
@@ -362,7 +373,190 @@ export async function cartBoard(user) {
       `<b>Total  ${money(subtotal)}</b>`,
       ...(below ? [`⚠️ Minimum order <b>${money(minimum)}</b>${minimum === Number(look().minimums?.first) ? ' on a first order' : ''}.`] : []),
       `💰 Wallet  <b>${money(balance)}</b>`,
-      ...(!below && !enough ? [`⚠️ <b>${money(subtotal - balance)}</b> missing: add funds, then come back to /cart.`] : []),
+    ].join('\n'),
+    keyboard: rows,
+  };
+}
+
+// ─── Checkout: voucher, shipping details, summary ────────────────────────────
+
+const checkoutOf = user => (user?.telegramCheckout && typeof user.telegramCheckout === 'object' ? user.telegramCheckout : {});
+const saveCheckout = (user, patch) => prisma.user.update({ where: { id: user.id }, data: { telegramCheckout: { ...checkoutOf(user), ...patch } } })
+  .then(u => { user.telegramCheckout = u.telegramCheckout; });
+const subtotalOf = lines => Math.round(lines.reduce((s, l) => s + l.total, 0) * 100) / 100;
+const cancel = () => back('cart', look().labels.cancel);
+const errorLine = e => (e ? [`❗️<b>ERROR:</b>\n${escapeHtml(e)}`, ''] : []);
+
+// A whole ASCII-armored PGP message
+// (header lines such as "Version: …" allowed, then base64 and its checksum)
+function isPgp(t) {
+  const m = t.trim().match(/^-----BEGIN PGP MESSAGE-----([\s\S]+)-----END PGP MESSAGE-----$/);
+  if (!m) return false;
+  const body = m[1].split(/\r?\n/).filter(l => !/^[\w-]+:\s/.test(l)).join('').replace(/\s+/g, '');
+  return body.length >= 40 && /^[A-Za-z0-9+/]+=*(=[A-Za-z0-9+/]{4})?$/.test(body);
+}
+
+// The style's PGP key page, when it holds a public key: addresses may then be encrypted to it
+function pgpCommand() {
+  const page = (look().pages || []).find(p => p.key === look().pgpPage);
+  return page && /BEGIN PGP PUBLIC KEY BLOCK/.test(page.html || '') ? `/${cmdName(page.key)}` : null;
+}
+
+// Shown first, like the original: the voucher on the cart, and a code to type
+export async function voucherScreen(from, user, error = null) {
+  const { texts, labels } = look();
+  const lines = await cartLines(user);
+  if (!lines.length) return cartBoard(user);
+  const code = checkoutOf(user).voucher;
+  let applied = null;
+  if (code) {
+    try { applied = await checkVoucher(code, subtotalOf(lines), catalog()); }
+    catch { await saveCheckout(user, { voucher: null }); }
+  }
+  ask(from, 'voucher');
+  const rows = [[{ text: labels.continue, callback_data: 'ckship' }]];
+  if (applied) rows.push([{ text: labels.removeVoucher, callback_data: 'ckvrm' }]);
+  rows.push([back('cart')]);
+  return {
+    text: [
+      ...errorLine(error),
+      texts.vouchersTitle,
+      '',
+      applied ? `🎟 <b>${escapeHtml(applied.voucher.code)}</b>: ${voucherLabel(applied.voucher)} (−${money(applied.discount)})` : texts.noVouchers,
+      '',
+      texts.voucherAsk,
+    ].join('\n'),
+    keyboard: rows,
+  };
+}
+
+export async function applyVoucher(from, user, text) {
+  const lines = await cartLines(user);
+  if (!lines.length) return cartBoard(user);
+  try {
+    const { voucher } = await checkVoucher(text, subtotalOf(lines), catalog());
+    await saveCheckout(user, { voucher: voucher.code });
+    return voucherScreen(from, user);
+  } catch (err) {
+    return voucherScreen(from, user, err.message);
+  }
+}
+
+export async function removeVoucher(from, user) {
+  await saveCheckout(user, { voucher: null });
+  return voucherScreen(from, user);
+}
+
+export function shipNameScreen(from, user) {
+  ask(from, 'shipName');
+  const rows = [];
+  if (checkoutOf(user).last?.address) rows.push([{ text: look().labels.reuseShipping, callback_data: 'ckreuse' }]);
+  rows.push([cancel()]);
+  return { text: [look().texts.shipTitle, '', look().texts.shipName].join('\n'), keyboard: rows };
+}
+
+export async function saveShipName(from, user, text) {
+  await saveCheckout(user, { name: text.slice(0, 120) });
+  return shipStreetScreen(from, user);
+}
+
+function shipStreetScreen(from, user) {
+  ask(from, 'shipStreet');
+  return {
+    text: [look().texts.shipTitle, '', 'Recipient Full Name:', `  ${escapeHtml(checkoutOf(user).name || '')}`, '', look().texts.shipStreet].join('\n'),
+    keyboard: [[cancel()]],
+  };
+}
+
+export async function saveShipStreet(from, user, text) {
+  await saveCheckout(user, { street: text.slice(0, 200) });
+  return shipAddressScreen(from, user);
+}
+
+function shipAddressScreen(from, user, error = null) {
+  ask(from, 'shipAddr');
+  const pgp = pgpCommand();
+  const { texts } = look();
+  return {
+    text: [...errorLine(error), texts.shipTitle, '', pgp ? fill(texts.shipAddressPgp, { pgp }) : texts.shipAddress].join('\n'),
+    keyboard: [[cancel()]],
+  };
+}
+
+// The full shipping details: a PGP message when the style has a key (plain text too,
+// unless the style requires PGP), else plain text
+export async function saveShipAddress(from, user, text) {
+  const { texts } = look();
+  const t = String(text).trim();
+  const looksPgp = /BEGIN PGP/.test(t);
+  if (looksPgp && !isPgp(t)) return shipAddressScreen(from, user, texts.pgpInvalid);
+  if (!looksPgp && pgpCommand() && look().pgpAddress === 'required') return shipAddressScreen(from, user, texts.pgpInvalid);
+  if (!looksPgp && t.split('\n').filter(l => l.trim()).length < 2) return shipAddressScreen(from, user, texts.shipAddressShort);
+  const c = checkoutOf(user);
+  const address = t.slice(0, 6000);
+  await saveCheckout(user, { address, last: { name: c.name, street: c.street, address } });
+  return summaryScreen(user);
+}
+
+export async function reuseShipping(user) {
+  const { last } = checkoutOf(user);
+  if (last?.address) await saveCheckout(user, { name: last.name, street: last.street, address: last.address });
+  return summaryScreen(user);
+}
+
+// What the order costs with the voucher and the style's shipping fee (else the shop's)
+async function priced(user, lines) {
+  const subtotal = subtotalOf(lines);
+  const fixed = look().shippingFee;
+  const shippingFee = fixed != null && fixed !== '' ? Math.max(0, Number(fixed) || 0)
+    : (await priceCart(lines.map(l => ({ productId: l.productId, quantity: l.qty, option: l.option })), { delivery: true })).shippingFee;
+  let offer = null;
+  const code = checkoutOf(user).voucher;
+  if (code) {
+    try { offer = await checkVoucher(code, subtotal, catalog()); }
+    catch { await saveCheckout(user, { voucher: null }); }
+  }
+  const discount = offer?.discount || 0;
+  return { subtotal, shippingFee, offer, discount, total: Math.round((subtotal - discount + shippingFee) * 100) / 100 };
+}
+
+const shownAddress = c => [
+  escapeHtml(c.name || ''),
+  escapeHtml(c.street || ''),
+  /BEGIN PGP/.test(c.address || '') ? '🔒 <i>PGP encrypted shipping details</i>' : escapeHtml(c.address || ''),
+].filter(Boolean).join('\n');
+
+export async function summaryScreen(user) {
+  const { texts, labels } = look();
+  const lines = await cartLines(user);
+  if (!lines.length) return cartBoard(user);
+  const minimum = await minimumFor(user);
+  if (minimum && subtotalOf(lines) < minimum) return cartBoard(user);
+  const c = checkoutOf(user);
+  const ready = c.name && c.address;
+  const [{ subtotal, shippingFee, offer, discount, total }, { balance }] = await Promise.all([priced(user, lines), getUserBalance(user.id)]);
+  const enough = balance >= total;
+  const rows = [];
+  if (!ready) rows.push([{ text: labels.continue, callback_data: 'ckship' }]);
+  else if (enough) rows.push([{ text: `✅ PAY ${money(total)} FROM MY WALLET`, callback_data: 'cpay' }]);
+  else rows.push([{ text: '➕ Add funds', callback_data: 'w' }]);
+  rows.push([{ text: labels.changeShipping, callback_data: 'ckship' }, { text: labels.vouchers, callback_data: 'ck' }]);
+  rows.push([back('cart')]);
+  return {
+    text: [
+      texts.checkoutTitle,
+      '',
+      ...lines.map(l => `<b>${escapeHtml(l.product.name)}</b>\n• ${escapeHtml(l.label)} ×${l.qty} — ${money(l.total)}${l.note ? `\n📝 <i>${escapeHtml(l.note)}</i>` : ''}`),
+      '',
+      `Products  ${money(subtotal)}`,
+      ...(offer ? [`🎟 ${escapeHtml(offer.voucher.code)}  −${money(discount)}`] : []),
+      `Shipping  ${shippingFee > 0 ? money(shippingFee) : 'free'}`,
+      `<b>Total  ${money(total)}</b>`,
+      '',
+      `📦 <b>Ship to:</b>\n${ready ? shownAddress(c) : '<i>no shipping details yet</i>'}`,
+      '',
+      `💰 Wallet  <b>${money(balance)}</b>`,
+      ...(ready && !enough ? [`⚠️ <b>${money(total - balance)}</b> missing: add funds, then come back to /cart.`] : []),
     ].join('\n'),
     keyboard: rows,
   };
@@ -385,19 +579,30 @@ export async function cartPay(user) {
     const minimum = await minimumFor(user);
     const subtotal = lines.reduce((s, l) => s + l.total, 0);
     if (minimum && subtotal < minimum) return cartBoard(user);
+    const c = checkoutOf(user);
+    if (!c.name || !c.address) return summaryScreen(user);
+    const { shippingFee } = await priced(user, lines);
+    // The product notes travel with the order, so the shop's notification shows them
+    const notes = [...new Set(lines.filter(l => l.note).map(l => `${l.product.name}: ${l.note}`))];
     const { order, payments, newBalance } = await orderService.createOrder(user.id, {
       items: lines.map(l => ({ productId: l.productId, quantity: l.qty, option: l.option })),
       paymentMethod: 'wallet',
+      note: notes.join('\n') || null,
+      shipping: { name: c.name, address: [c.street, c.address].filter(Boolean).join('\n'), fee: shippingFee },
+      voucher: c.voucher || null,
+      source: catalog(),
     });
-    const notes = lines.filter(l => l.note).map(l => `${l.product.name}: ${l.note}`);
-    if (notes.length) await prisma.order.update({ where: { id: order.id }, data: { note: notes.join('\n').slice(0, 2000) } }).catch(() => {});
     await saveCart(user, []);
+    // The next order starts afresh; these details are offered again ("reuse")
+    await saveCheckout(user, { voucher: null, name: null, street: null, address: null });
     return {
       text: [
         '✅ <b>PAID</b>',
         `Order <code>${escapeHtml(order.orderNumber)}</code>`,
         '',
         ...order.items.map(i => `${i.quantity} × ${escapeHtml(i.name)}  ·  ${money(Number(i.price) * i.quantity)}`),
+        ...(order.voucherCode ? [`🎟 ${escapeHtml(order.voucherCode)}  −${money(order.discount)}`] : []),
+        `Shipping  ${Number(order.shippingFee) > 0 ? money(order.shippingFee) : 'free'}`,
         `<b>Total  ${money(order.totalAmount)}</b>`,
         `<i>Paid ${payments.map(p => `${p.amount} ${p.currency}`).join(' + ')}</i>`,
         '',
@@ -407,7 +612,7 @@ export async function cartPay(user) {
       keyboard: [[{ text: '📦 Previous orders', callback_data: 'o' }, back('menu')]],
     };
   } catch (err) {
-    return { text: `⚠️ <b>NOT PAID</b>\n${escapeHtml(err.message || 'The payment did not go through.')}`, keyboard: [[back('cart', '‹ Cart')]] };
+    return { text: `⚠️ <b>NOT PAID</b>\n${escapeHtml(err.message || 'The payment did not go through.')}`, keyboard: [[back('ck', '‹ Checkout')]] };
   } finally {
     paying.delete(user.id);
   }

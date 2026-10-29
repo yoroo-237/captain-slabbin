@@ -331,6 +331,7 @@ export async function notifyWalletOrder(order, user, payments) {
     order.shippingAddress
       ? `Delivery: ${Number(order.shippingFee) > 0 ? money(order.shippingFee) : 'Free'}`
       : 'Delivery: none (to arrange on Telegram)',
+    order.voucherCode ? `Voucher ${order.voucherCode}: -${money(order.discount)}` : null,
     `Total: ${money(order.totalAmount)}, paid ${paid}`,
     `Account: ${user.username}`,
     telegram ? `Telegram: ${telegram}` : null,
@@ -342,6 +343,7 @@ export async function notifyWalletOrder(order, user, payments) {
   const sent = await sendTelegram([
     `✅ <b>Paid order ${escapeHtml(order.orderNumber)}</b> (wallet)`,
     ...lines.map(escapeHtml),
+    order.voucherCode ? `🎟 Voucher ${escapeHtml(order.voucherCode)}: −${money(order.discount)}` : null,
     `<b>Total: ${money(order.totalAmount)}</b> · paid ${escapeHtml(paid)}`,
     `👤 ${escapeHtml(user.username)}`,
     telegram ? `✈️ Telegram: ${escapeHtml(telegram)}` : '✈️ Telegram: not on profile',
@@ -349,6 +351,7 @@ export async function notifyWalletOrder(order, user, payments) {
     order.shippingAddress
       ? `📦 <b>Ship to:</b> ${escapeHtml(order.name)}\n${escapeHtml(order.shippingAddress)}${Number(order.shippingFee) > 0 ? ` · ${money(order.shippingFee)}` : ' · free shipping'}`
       : '📦 No delivery, arrange on Telegram',
+    order.note ? `📝 <b>Notes:</b>\n${escapeHtml(order.note)}` : null,
   ].filter(Boolean).join('\n'), link ? [{ text: '📦 Open order', url: link }] : null);
   return { text, delivered: sent.delivered };
 }

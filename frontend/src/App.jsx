@@ -41,6 +41,7 @@ const AdminOrderDetail = lazyPage(() => import('./pages/admin/AdminOrderDetail.j
 const AdminProducts = lazyPage(() => import('./pages/admin/AdminProducts.jsx'))
 const AdminCategories = lazyPage(() => import('./pages/admin/AdminCategories.jsx'))
 const AdminBrands = lazyPage(() => import('./pages/admin/AdminBrands.jsx'))
+const AdminVouchers = lazyPage(() => import('./pages/admin/AdminVouchers.jsx'))
 const AdminSupport = lazyPage(() => import('./pages/admin/AdminSupport.jsx'))
 const AdminSupportDetail = lazyPage(() => import('./pages/admin/AdminSupportDetail.jsx'))
 const AdminReviews = lazyPage(() => import('./pages/admin/AdminReviews.jsx'))
@@ -159,6 +160,7 @@ export default function App() {
                 <Route path="products" element={<AdminProducts />} />
                 <Route path="categories" element={<AdminCategories />} />
                 <Route path="brands" element={<AdminBrands />} />
+                <Route path="vouchers" element={<AdminVouchers />} />
                 <Route path="support" element={<AdminSupport />} />
                 <Route path="support/:id" element={<AdminSupportDetail />} />
                 <Route path="reviews" element={<AdminReviews />} />

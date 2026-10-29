@@ -15,6 +15,7 @@ import sweepRoutes        from './sweep.routes.js';
 import inboxRoutes        from './inbox.routes.js';
 import telegramRoutes     from './telegram.routes.js';
 import pushRoutes         from './push.routes.js';
+import vouchersRoutes     from './vouchers.routes.js';
 import { prisma }         from '../../db.js';
 import { ok }             from '../../utils/response.js';
 
@@ -34,6 +35,7 @@ r.use('/analytics',    analyticsRoutes);
 r.use('/settings',     settingsRoutes);
 r.use('/telegram',     telegramRoutes);
 r.use('/push',         pushRoutes);
+r.use('/vouchers',     vouchersRoutes);
 
 // Counters for the admin menu: what is waiting for staff
 r.get('/badges', async (req, res) => {

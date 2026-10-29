@@ -5,13 +5,17 @@ import * as balanceService from './balance.service.js';
 import { getCachedUsdPrices } from './price.service.js';
 import { priceCart } from './pricing.service.js';
 import { notifyWalletOrder } from './telegram.service.js';
+import { checkVoucher, useVoucher } from './voucher.service.js';
 
 export const orderService = {
   // No customer details are required: the Telegram username/ID is optional (saved
   // to the profile when given at checkout). Delivery is an option: with it the
   // customer gives a US address, shipping is charged and the address goes on the
   // invoice; without it, nothing is asked and the shop arranges it on Telegram.
-  async createOrder(userId, { items, paymentMethod, payCurrency, telegram, delivery }) {
+  // From a "commands" bot: `shipping` { name, address, fee } is the address as the
+  // customer typed it (plain or PGP) and the style's flat fee; `voucher` a code,
+  // within the bot's catalog `source`.
+  async createOrder(userId, { items, paymentMethod, payCurrency, telegram, delivery, note, shipping, voucher, source = null }) {
     if (!items?.length)     throw appError('Cart is empty', 400);
 
     let shipTo = null;
@@ -22,13 +26,24 @@ export const orderService = {
       }
       shipTo = { name: d.name, address: `${d.street}${d.apt ? `, ${d.apt}` : ''}, ${d.city}, ${d.state} ${d.zip}, US` };
     }
+    if (shipping) {
+      const name = String(shipping.name || '').trim().slice(0, 120);
+      const address = String(shipping.address || '').trim().slice(0, 6000);
+      if (!name || !address) throw appError('Please give your shipping details first.', 400);
+      shipTo = { name, address };
+    }
 
     const handle = String(telegram || '').trim().replace(/^@/, '').slice(0, 64);
     if (handle) {
       await prisma.user.updateMany({ where: { id: userId, telegramHandle: null }, data: { telegramHandle: handle } });
     }
 
-    const { lines, shippingFee, total: totalAmount } = await priceCart(items, { delivery: !!shipTo });
+    const priced = await priceCart(items, { delivery: !!shipTo });
+    const { lines, subtotal } = priced;
+    const shippingFee = shipping && shipping.fee != null ? Math.max(0, Number(shipping.fee) || 0) : priced.shippingFee;
+    const offer = voucher ? await checkVoucher(voucher, subtotal, source) : null;
+    const discount = offer?.discount || 0;
+    const totalAmount = Math.round((subtotal - discount + shippingFee) * 100) / 100;
     const orderItems = lines.map(({ productId, name, price, quantity }) => ({ productId, name, price, quantity }));
 
     // Freeze the conversion now: these prices and quantities are what the order
@@ -48,6 +63,7 @@ export const orderService = {
     }
 
     const result = await prisma.$transaction(async (tx) => {
+      if (offer) await useVoucher(tx, offer.voucher);
       for (const p of payments) await balanceService.debit(tx, userId, p.currency, p.amount);
       // Take the stock; the guard makes two concurrent orders unable to oversell
       for (const item of orderItems) {
@@ -72,6 +88,9 @@ export const orderService = {
           shippingAddress: shipTo?.address || '',
           name:            shipTo?.name || '',
           email:           null,
+          note:            note ? String(note).slice(0, 2000) : null,
+          voucherCode:     offer?.voucher.code || null,
+          discount,
           payments,
           items:           { create: orderItems },
         },

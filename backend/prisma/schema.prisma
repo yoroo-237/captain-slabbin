@@ -30,6 +30,8 @@ model User {
   telegramBot      TelegramBot? @relation(fields: [telegramBotId], references: [id], onDelete: SetNull)
   // Cart of the "commands" bots: [{ productId, option, qty, note }], paid from the wallet at /cart
   telegramCart     Json      @default("[]")
+  // Checkout of a "commands" bot in progress: { voucher, name, street, address, last: { name, street, address } }
+  telegramCheckout Json?
   signalDetails    String?
   sessionDetails   String?
   btcRefundAddress String?
@@ -173,12 +175,31 @@ model Order {
   trackingNumber  String?
   carrier         String?
   note            String?
+  // Voucher used at checkout and what it took off the products
+  voucherCode     String?
+  discount        Decimal     @default(0) @db.Decimal(10, 2)
   // Crypto debited at checkout, frozen: [{ currency, amount, rate, usd }]
   payments        Json        @default("[]")
   placedAt        DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
   items           OrderItem[]
   transaction     Transaction?
+}
+
+// Voucher codes typed at checkout: an amount or a percentage off the products
+model Voucher {
+  id        Int       @id @default(autoincrement())
+  code      String    @unique              // stored in capitals
+  kind      String    @default("percent")  // percent | amount
+  value     Decimal   @db.Decimal(10, 2)
+  minOrder  Decimal   @default(0) @db.Decimal(10, 2)
+  maxUses   Int?                           // null = unlimited
+  uses      Int       @default(0)
+  expiresAt DateTime?
+  isActive  Boolean   @default(true)
+  // Catalog it applies to: null = the shop's own, or a Product `source` (e.g. 'qt')
+  source    String?
+  createdAt DateTime  @default(now())
 }
 
 model OrderItem {
