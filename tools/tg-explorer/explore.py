@@ -42,6 +42,7 @@ COMMAND = re.compile(r"(?<![\w/])/[A-Za-z][A-Za-z0-9_]{0,31}")
 BACK = re.compile(r"^\W*(⇇|⇆|<<?\s*back\b|back\b)", re.I)
 IMAGE_EXT = (".jpg", ".jpeg", ".png", ".webp", ".gif")
 SAVE_EVERY = 10
+RECONNECT_TRIES, RECONNECT_WAIT = 20, 30  # secondes entre deux essais quand le réseau tombe
 DEFAULT_CAPTURES = Path(__file__).with_name("captures")
 
 
@@ -263,11 +264,39 @@ class Explorer:
             if stop_requested(self.args):
                 print("Arrêt demandé.")
                 break
-            await self.step(self.queue.popleft())
+            action = self.queue.popleft()
+            try:
+                await self.step(action)
+            except (ConnectionError, OSError) as e:
+                # Réseau coupé : l'action repart en tête de file, la capture est écrite,
+                # puis on attend que la connexion revienne au lieu de s'arrêter
+                self.queue.appendleft(action)
+                self.save_state()
+                print(f"Connexion perdue ({type(e).__name__}) : capture enregistrée, nouvel essai en cours…")
+                if not await self.reconnect():
+                    print("Pas de réseau depuis plusieurs minutes : arrêt. Relancez pour reprendre là où le parcours s'est arrêté.")
+                    break
+                continue
             if len(self.steps) % SAVE_EVERY == 0:
                 self.save_state()
         if self.queue:
             print(f"{len(self.queue)} action(s) non jouée(s) : relancez pour continuer là où le parcours s'est arrêté.")
+
+    async def reconnect(self, tries=RECONNECT_TRIES):
+        """Attend le retour du réseau (environ 10 minutes au plus), sans rien rejouer."""
+        for i in range(tries):
+            if stop_requested(self.args):
+                return False
+            await asyncio.sleep(RECONNECT_WAIT)
+            try:
+                if not self.client.is_connected():
+                    await self.client.connect()
+                await self.client.get_me()
+                print("Connexion rétablie : le parcours continue.")
+                return True
+            except (ConnectionError, OSError) as e:
+                print(f"  toujours pas de réseau ({i + 1}/{tries}) : {type(e).__name__}")
+        return False
 
     # ---- reprise --------------------------------------------------------
 
@@ -301,7 +330,19 @@ class Explorer:
             self.queue.append(tuple(action))
         for kind, value in state["seen"]:
             self.seen.add((kind, base64.b64decode(value) if kind == "cb" else value))
-        print(f"Reprise : {len(self.steps)} actions déjà jouées, {len(self.queue)} en attente.")
+        # Une file enregistrée par une ancienne version garde un retour par écran : un seul par libellé
+        played = {s["action"] for s in self.steps}
+        queued, self.queue, dropped = list(self.queue), deque(), 0
+        for action in queued:
+            if action[0] == "cb" and BACK.search(action[3] or ""):
+                key = ("back", action[3].strip())
+                if key in self.seen or f"[{action[3]}]" in played:
+                    dropped += 1
+                    continue
+                self.seen.add(key)
+            self.queue.append(action)
+        print(f"Reprise : {len(self.steps)} actions déjà jouées, {len(self.queue)} en attente"
+              f"{f' ({dropped} retours en double retirés)' if dropped else ''}.")
 
     # ---- sorties --------------------------------------------------------
 
@@ -411,7 +452,8 @@ async def main():
     args = parse_args()
     if args.stop_file:
         Path(args.stop_file).unlink(missing_ok=True)
-    client, _ = make_client(args.profile)
+    # Coupures réseau : Telethon réessaie plus longtemps avant d'abandonner
+    client, _ = make_client(args.profile, connection_retries=10, retry_delay=5)
     client.parse_mode = "html"
     await client.connect()
     try:
@@ -434,3 +476,6 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         print("Interrompu : la capture partielle a été écrite.")
+    except (ConnectionError, OSError) as e:
+        print(f"Connexion à Telegram impossible ({e}). La capture est enregistrée : relancez quand le réseau est revenu.")
+        raise SystemExit(1)

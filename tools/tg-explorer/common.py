@@ -49,12 +49,13 @@ def session_path(profile):
     return str(HOME / profile)
 
 
-def make_client(profile, sync=False):
+def make_client(profile, sync=False, **options):
+    """options : réglages du client Telethon (connection_retries, retry_delay…)."""
     cfg = load_config()
     if sync:
         from telethon.sync import TelegramClient as SyncClient
-        return SyncClient(session_path(profile), int(cfg["API_ID"]), cfg["API_HASH"]), cfg
-    return TelegramClient(session_path(profile), int(cfg["API_ID"]), cfg["API_HASH"]), cfg
+        return SyncClient(session_path(profile), int(cfg["API_ID"]), cfg["API_HASH"], **options), cfg
+    return TelegramClient(session_path(profile), int(cfg["API_ID"]), cfg["API_HASH"], **options), cfg
 
 
 def normalize_bot(name):
