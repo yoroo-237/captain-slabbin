@@ -338,8 +338,10 @@ const CHECKOUT_TEXT_FIELDS = [
   ['ship_apt', 'Shipping: asking for the apartment'], ['ship_city', 'Shipping: asking for the city'], ['ship_state', 'Shipping: asking for the state'],
   ['ship_zip', 'Shipping: asking for the postcode'], ['shipCountry', 'Shipping: country'], ['shipAddressPgp', 'Shipping: asking for the encrypted address ({pgp} = the key page)'],
   ['pgpInvalid', 'Shipping: not a valid PGP message'], ['payTitle', 'Payment method: title'], ['refundAsk', 'Payment method: asking for the refund address ({coin})'],
-  ['myCartTitle', 'My Cart: title'], ['vendor', 'My Cart: vendor name ("by …")'], ['vouchersTitle', 'Vouchers: title'], ['noVouchers', 'Vouchers: none applied'],
-  ['voucherAsk', 'Vouchers: asking for a code'], ['orderNotesAsk', 'Order notes: asking for them'],
+  ['myCartTitle', 'My Cart: title'], ['cartHint', 'My Cart: tip under the title'], ['cartEmpty', 'My Cart: empty'], ['vendor', 'My Cart: vendor name ("by …")'],
+  ['vouchersTitle', 'Vouchers: title'], ['noVouchers', 'Vouchers: none applied'], ['voucherAsk', 'Vouchers: asking for a code'], ['orderNotesAsk', 'Order notes: asking for them'],
+  ['noteNotInCart', 'Product notes: product not in the cart'], ['ordersTitle', 'My Orders: title'], ['noOrdersYet', 'My Orders: none yet'],
+  ['unknownCommand', 'Unknown command'],
 ]
 const TEXT_FIELDS = [
   ['header', 'Menu header'], ['welcome', 'Welcome (before 21+ confirmation)'], ['menuIntro', 'Menu intro (customer)'],

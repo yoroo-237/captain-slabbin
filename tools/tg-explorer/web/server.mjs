@@ -27,6 +27,7 @@ const IMPORTS = { style: 'import-bot-capture.js', products: 'import-products-fro
 const BOT = /^[A-Za-z][A-Za-z0-9_]{2,63}$/;
 const REGEX = /^[^\r\n]{0,200}$/;
 const PROFILE = /^[\w-]{1,40}$/;
+const STYLE = /^[\w .'-]{1,60}$/;
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
   '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif', '.ico': 'image/x-icon' };
 
@@ -199,7 +200,12 @@ async function api(req, res, url) {
     if (!IMPORTS[body.kind] || !BOT.test(String(body.bot))) throw bad('Import invalide.');
     const dir = path.join(CAPTURES, body.bot.toLowerCase());
     await fs.access(path.join(dir, 'data.json')).catch(() => { throw bad('Capture introuvable.'); });
-    run(`Import ${body.kind}`, 'node', [path.join('scripts', IMPORTS[body.kind]), dir, ...(body.dry === false ? [] : ['--dry'])], BACKEND);
+    // Style: the information pages and pictures go into an existing style (its shelves,
+    // texts and checkout are kept); no style name = a new "Imported bot" style
+    const style = String(body.style || '').trim();
+    if (style && !STYLE.test(style)) throw bad('Nom de style invalide.');
+    const extra = body.kind === 'style' && style ? ['--merge-into', style] : [];
+    run(`Import ${body.kind}`, 'node', [path.join('scripts', IMPORTS[body.kind]), dir, ...extra, ...(body.dry === false ? [] : ['--dry'])], BACKEND);
     return json(res, 202, state());
   }
   return json(res, 404, { error: 'Introuvable' });

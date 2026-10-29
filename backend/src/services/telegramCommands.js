@@ -39,7 +39,12 @@ export const handle = () => {
 };
 const withHandle = s => fill(s, { handle: handle() });
 const back = (callback_data, text = look().labels.back) => ({ text, callback_data });
+// The original's error message: "❗️ERROR:" underlined, then what went wrong (Telegram HTML)
+export const errorText = html => `<b><u>❗️ERROR:</u></b>\n${html}`;
+export const unknownCommandScreen = () => ({ text: errorText(look().texts.unknownCommand), keyboard: [] });
 
+// "$1210.00": an amount as the original writes it (no thousands separator)
+const usd = v => `$${(Math.round(Number(v) * 100) / 100).toFixed(2)}`;
 // "$7²⁵": the price as the buttons show it
 const SUP = '⁰¹²³⁴⁵⁶⁷⁸⁹';
 export const priceTag = v => {
@@ -244,7 +249,7 @@ export async function productBoard(user, id) {
       '',
       ...(p.stock <= 0 ? ['✖️ <b>Sold out</b>'] : []),
       mine.length
-        ? [fill(texts.inCart, { total: money(inCart) }), ...mine.map(i => `• ${escapeHtml(opts[i.option]?.label || '')} ×${i.qty}`), ...(notes.length ? [`📝 <i>${escapeHtml(notes.join(' · '))}</i>`] : [])].join('\n')
+        ? [fill(texts.inCart, { total: usd(inCart) }), ...mine.map(i => `• ${escapeHtml(opts[i.option]?.label || '')} ×${i.qty}`), ...(notes.length ? [`📝 <i>${escapeHtml(notes.join(' · '))}</i>`] : [])].join('\n')
         : texts.notInCart,
     ].join('\n'),
     keyboard: rows,
@@ -286,6 +291,7 @@ export function takeWaiting(from) {
 export async function noteScreen(from, user, id) {
   const p = await prisma.product.findFirst({ where: { id: Number(id), source: catalog() }, select: { id: true, name: true } });
   if (!p) return productBoard(user, id);
+  if (!cartOf(user).some(i => i.productId === p.id)) return { text: errorText(look().texts.noteNotInCart), keyboard: [] };
   waiting.set(String(from.id), { kind: 'note', productId: p.id, until: Date.now() + 15 * 60_000 });
   return { text: fill(look().texts.notesPrompt, { product: escapeHtml(p.name) }), keyboard: [[{ text: '< Cancel', callback_data: `p:${p.id}` }]] };
 }
@@ -353,15 +359,15 @@ async function cartLines(user) {
   }).filter(Boolean);
 }
 
-// /cart, like the original: the shipping details one field at a time (or PGP
-// encrypted), then the refund address, then "My Cart" with Place Order. Placing
-// the order pays it from the wallet. Details and refund address stay for next time.
+// /cart, like the original: "My Cart" with Enter Shipping Details, then the
+// shipping details one field at a time (or PGP encrypted), then the refund address,
+// then "My Cart" with Place Order. Placing the order pays it from the wallet.
+// Details and refund address stay for next time.
 export async function cartBoard(user, from = null) {
   const lines = await cartLines(user);
   if (!lines.length) return { text: fill(look().texts.cartEmpty, { menu: `/${prefix()}` }), keyboard: [[back('menu')]] };
   const c = checkoutOf(user);
-  if (from && !shippingDone(c)) return shipScreen(from, user);
-  if (from && !c.refundAsked) return paymentScreen(from, user);
+  if (from && shippingDone(c) && !c.refundAsked) return paymentScreen(from, user);
   return summaryScreen(user);
 }
 
@@ -371,7 +377,7 @@ const checkoutOf = user => (user?.telegramCheckout && typeof user.telegramChecko
 const saveCheckout = (user, patch) => prisma.user.update({ where: { id: user.id }, data: { telegramCheckout: { ...checkoutOf(user), ...patch } } })
   .then(u => { user.telegramCheckout = u.telegramCheckout; });
 const subtotalOf = lines => Math.round(lines.reduce((s, l) => s + l.total, 0) * 100) / 100;
-const errorLine = e => (e ? [`❗️<b>ERROR:</b>\n${escapeHtml(e)}`, ''] : []);
+const errorLine = e => (e ? [errorText(escapeHtml(e)), ''] : []);
 const pairs = buttons => buttons.reduce((rows, b, i) => (i % 2 ? rows[rows.length - 1].push(b) : rows.push([b]), rows), []);
 const toCart = () => back('cart', look().labels.toCart);
 
@@ -619,27 +625,44 @@ export async function summaryScreen(user, error = null) {
   const vendor = texts.vendor ? escapeHtml(texts.vendor) : '';
   const [{ shippingFee, offer, discount, total, subtotal }, { balance }, minimum] = await Promise.all([priced(user, lines), getUserBalance(user.id), minimumFor(user)]);
   const below = minimum && subtotal < minimum;
+  // One block per product, its packs under it, as the original lists them
+  const products = [...new Set(lines.map(l => l.productId))].map(id => lines.filter(l => l.productId === id));
+  const head = [
+    ...errorLine(error),
+    texts.myCartTitle,
+    '',
+    ...(texts.cartHint ? [texts.cartHint, ''] : []),
+    ...products.map(ls => [
+      `<b>${escapeHtml(ls[0].product.name)}</b>`,
+      `/p${ls[0].product.id}`,
+      ...(vendor ? [`(<i>by ${vendor}</i>)`] : []),
+      ...ls.map(l => `${escapeHtml(l.label)} ×${l.qty} = <code>${usd(l.total)}</code>`),
+      ...[...new Set(ls.map(l => l.note).filter(Boolean))].map(n => `📝 <i>${escapeHtml(n)}</i>`),
+    ].join('\n') + '\n'),
+    '<b>Shipping:</b>',
+    ` ${vendor ? `${vendor}—` : ''}<code>${usd(shippingFee)}</code>`,
+    ...(offer ? ['', `🎟 Voucher ${escapeHtml(offer.voucher.code)}: <code>−${usd(discount)}</code>`] : []),
+    '',
+    `<b>Cart Total: ${usd(total)}</b>`,
+    ...(below ? [`⚠️ Minimum order <b>${usd(minimum)}</b>${minimum === Number(look().minimums?.first) ? ' on a first order' : ''}.`] : []),
+  ];
+  // Before the shipping details: the cart alone, and the way into them
+  if (!shippingDone(c)) {
+    return {
+      text: head.join('\n'),
+      keyboard: [
+        [back('menu')],
+        [{ text: labels.emptyCart, callback_data: 'cclr' }, { text: labels.enterShipping, callback_data: 'ckship' }],
+        [{ text: labels.applyVouchers, callback_data: 'ck' }],
+      ],
+    };
+  }
   return {
     text: [
-      ...errorLine(error),
-      texts.myCartTitle,
-      '',
-      ...lines.map(l => [
-        `<b>${escapeHtml(l.product.name)}</b>`,
-        `/p${l.product.id}`,
-        ...(vendor ? [`<i>(by ${vendor})</i>`] : []),
-        `${escapeHtml(l.label)} ×${l.qty} = <code>${money(l.total)}</code>`,
-        ...(l.note ? [`📝 <i>${escapeHtml(l.note)}</i>`] : []),
-      ].join('\n') + '\n'),
-      'Shipping:',
-      ` <code>${vendor ? `${vendor}—` : ''}${money(shippingFee)}</code>`,
-      ...(offer ? ['', `🎟 Voucher ${escapeHtml(offer.voucher.code)}: <code>−${money(discount)}</code>`] : []),
-      '',
-      `<b>Cart Total: ${money(total)}</b>`,
-      ...(below ? [`⚠️ Minimum order <b>${money(minimum)}</b>${minimum === Number(look().minimums?.first) ? ' on a first order' : ''}.`] : []),
+      ...head,
       '',
       '📦 <b>Shipping Details:</b>',
-      shippingDone(c) ? shownAddress(c) : '<i>not given yet</i>',
+      shownAddress(c),
       '',
       '💳 <b>Payment Method:</b>',
       `${coinOf(c)} - ${COINS[coinOf(c)]}`,
@@ -724,10 +747,35 @@ export async function cartPay(user, from = null) {
       keyboard: [[back('menu')]],
     };
   } catch (err) {
-    return { text: `❗️<b>ERROR:</b>\n${escapeHtml(err.message || 'The payment did not go through.')}`, keyboard: [[toCart()]] };
+    return { text: errorText(escapeHtml(err.message || 'The payment did not go through.')), keyboard: [[toCart()]] };
   } finally {
     paying.delete(user.id);
   }
+}
+
+// ─── My Orders ───────────────────────────────────────────────────────────────
+
+const ORDER_STATUS = { processing: 'Processing', shipped: 'Shipped', delivered: 'Delivered', cancelled: 'Cancelled', refunded: 'Refunded' };
+
+// /orders, like the original: "My Orders", then the latest orders of this catalog
+export async function ordersBoard(user) {
+  const { texts } = look();
+  const orders = await prisma.order.findMany({ where: { userId: user.id, items: { some: { product: { source: catalog() } } } }, orderBy: { placedAt: 'desc' }, take: 10, include: { items: true } });
+  return {
+    text: [
+      texts.ordersTitle,
+      '',
+      ...(orders.length
+        ? orders.map(o => [
+            `<b>${escapeHtml(o.orderNumber)}</b> — <code>${money(o.totalAmount)}</code>`,
+            `<i>${ORDER_STATUS[o.status] || escapeHtml(o.status)}</i> · ${new Date(o.placedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
+            ...o.items.map(i => `${escapeHtml(i.name)} ×${i.quantity}`),
+            ...(o.trackingNumber ? [`Tracking: <code>${escapeHtml(o.trackingNumber)}</code>${o.carrier ? ` (${escapeHtml(o.carrier)})` : ''}`] : []),
+          ].join('\n') + '\n')
+        : [texts.noOrdersYet]),
+    ].join('\n'),
+    keyboard: [[back('menu')]],
+  };
 }
 
 // A typed answer to the checkout's last question, or null

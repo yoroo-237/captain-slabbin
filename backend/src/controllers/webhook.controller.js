@@ -8,7 +8,7 @@ import { menuScreen, shelfScreen, pageScreen, homeScreen } from '../services/tel
 import { withBot, look, siteLinks } from '../services/telegramStyle.js';
 import * as shop from '../services/telegramShop.js';
 import * as board from '../services/telegramCommands.js';
-import { resolveCommand, customOrderScreen, takeWaiting, clearWaiting } from '../services/telegramCommands.js';
+import { resolveCommand, customOrderScreen, takeWaiting, clearWaiting, unknownCommandScreen } from '../services/telegramCommands.js';
 
 export const webhookController = {
   // BlockCypher webhook — BTC, LTC, DOGE (confirmed-tx on HD wallet address)
@@ -160,6 +160,7 @@ ${menu.text}` };
       case 'cclr': return board.clearCart(user);
       case 'cpay': return board.cartPay(user, from);
       // Checkout: a shipping field, restart, PGP, edit, payment method, vouchers, notes
+      case 'ckship': return board.shipScreen(from, user);
       case 'ckf':   return board.shipScreen(from, user, a);
       case 'ckrs':  return board.restartShipping(from, user);
       case 'ckpgp': return board.pgpScreen(from, user);
@@ -173,7 +174,7 @@ ${menu.text}` };
       case 'pay':  return shop.payScreen(user, a, b, c);
       case 'w':    return shop.walletScreen(user);
       case 'dep':  return shop.depositScreen(user, a);
-      case 'o':    return shop.ordersScreen(user);
+      case 'o':    return commands ? board.ordersBoard(user) : shop.ordersScreen(user);
       case 'co':   return customOrderScreen(from);
       default:     return menuScreen(account);
     }
@@ -257,6 +258,9 @@ ${body}` } });
       await show(msg.chat.id, { text: `${look().profile.name}: tap below to open the shop.`, keyboard: site ? [[{ text: look().labels.openShop, url: site }]] : [] });
     } else if (cmd === '/admin' && !priv) {
       await show(msg.chat.id, { text: 'Admin panel:', keyboard: site ? [[{ text: 'Open admin', url: `${site}/admin` }]] : [] });
+    } else if (priv && cmd && look().layout === 'commands') {
+      // A command the bot doesn't know: the original's error, nothing else
+      await show(msg.chat.id, unknownCommandScreen());
     } else if (priv) {
       await show(msg.chat.id, await screenFor(msg.from, 'menu'));
     }

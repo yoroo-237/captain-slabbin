@@ -8,14 +8,15 @@
 // Shelves come from the commands the capture opened (menu order, sub-shelves under
 // the shelf that lists them); each product screen becomes a product with its
 // description, photo and its priced packs ("1x" $8.50, "25x" $200…) in `options`.
-// A product is found again by its slug, so running this twice updates instead of
-// duplicating. Stock isn't in a capture: every product gets --stock (default 100).
+// A product is found again by its name (its /p code changes with every session),
+// so running this twice updates instead of duplicating; a photo that changed in the bot replaces the imported one (a photo
+// set by hand in the admin is kept). Stock isn't in a capture: every product gets
+// --stock (default 100).
 import fs from 'fs/promises';
 import path from 'path';
 import { prisma } from '../src/db.js';
-import { env } from '../src/config/env.js';
-import { uploadToCloudinary } from '../src/middlewares/upload.js';
 import { cmdName } from '../src/services/telegramCommands.js';
+import { captureMedia } from './capture-media.js';
 
 const args = process.argv.slice(2);
 const dir = args.find(a => !a.startsWith('--') && !args[args.indexOf(a) - 1]?.startsWith('--'));
@@ -108,31 +109,35 @@ for (const s of [...screens].sort((a, b) => a.order - b.order)) {
     const price = m && priceOf(b.text);
     return m && price != null ? { label: m[1].trim(), price } : null;
   }).filter(Boolean);
-  products.push({ cmd, group, name, description, options, media: s.media, shelf: groupShelf.get(group) || null });
+  // A screen of a product in the cart (with the cart's total): taken last
+  const inCart = /Product total in/.test(s.raw);
+  products.push({ cmd, group, name, description, options, media: s.media, shelf: groupShelf.get(group) || null, inCart });
 }
-const usable = products.filter(p => p.name && p.options.length);
+// The same product shows under several /p codes (they change with every session and
+// every page of a shelf), so a product is one name: its screen out of the cart
+// gives the packs, and the first shelf it was seen on is its shelf
+const byName = new Map();
+for (const p of [...products].sort((a, b) => a.inCart - b.inCart).filter(p => p.name && p.options.length)) {
+  const k = p.name.toLowerCase();
+  const had = byName.get(k);
+  if (!had) byName.set(k, p);
+  else byName.set(k, { ...had, shelf: had.shelf || p.shelf, media: had.media || p.media });
+}
+const usable = [...byName.values()];
 
 console.log(`Shelves: ${allShelves.length} (${topCmds.length} on the menu), products found: ${products.length}, with a price: ${usable.length}`);
 for (const c of allShelves) console.log(`  ${parentOf.has(c) ? '   └' : ' '} ${labelFor(c, texts)}  [${source}-${slugOf(c)}]  ${products.filter(p => p.shelf === c).length} products`);
-const skipped = products.filter(p => !usable.includes(p));
+const skipped = products.filter(p => !(p.name && p.options.length));
 if (skipped.length) console.log(`Without a name or price (skipped): ${skipped.map(p => p.cmd).join(' ')}`);
 const orphans = usable.filter(p => !p.shelf);
-if (orphans.length) console.log(`Without a shelf (created with no category): ${orphans.length}`);
+if (orphans.length) console.log(`Not seen on a shelf in this capture (an existing product keeps its shelf): ${orphans.length}`);
 if (dry) { console.log('Dry run: nothing written.'); process.exit(0); }
 
-// Photos, uploaded once each
-const media = new Map();
-async function imageUrl(file) {
-  if (!file) return null;
-  if (media.has(file)) return media.get(file);
-  let url = null;
-  try {
-    const buf = await fs.readFile(path.join(dir, 'media', file));
-    url = (await uploadToCloudinary(buf, 'image/jpeg', 'captain-slabbin/products', env.publicUrl)).url;
-  } catch (err) { console.error(`image ${file}:`, err.message); }
-  media.set(file, url);
-  return url;
-}
+// Photos, uploaded once each (across imports too: see capture-media.js)
+const FOLDER = 'captain-slabbin/products';
+const photos = await captureMedia(dir, FOLDER);
+// A photo this import put there earlier (not one chosen by hand in the admin) follows the capture
+const fromImport = url => photos.isCaptured(url) || url.includes(`/${FOLDER}/`);
 
 // Shelves first (parents before children)
 const categoryId = new Map();
@@ -144,22 +149,34 @@ for (const cmd of [...allShelves].sort((a, b) => Number(parentOf.has(a)) - Numbe
   categoryId.set(cmd, cat.id);
 }
 
-let created = 0, updated = 0;
+let created = 0, updated = 0, newPhotos = 0;
 for (const p of usable) {
   const slug = `${cmdName(p.name).slice(0, 60)}-${p.group.toLowerCase()}${p.cmd.match(/^\/p(\d+)_/)[1]}`;
+  const shelf = p.shelf ? categoryId.get(p.shelf) ?? null : null;
   const data = {
     name: p.name.slice(0, 200), description: p.description || null, price: p.options[0].price, unitLabel: p.options[0].label,
-    options: p.options, stock, isActive: true, source, categoryId: p.shelf ? categoryId.get(p.shelf) ?? null : null,
+    options: p.options, stock, isActive: true, source, ...(shelf ? { categoryId: shelf } : {}),
   };
-  const existing = await prisma.product.findUnique({ where: { slug }, include: { images: true } });
+  // Found again by its name (the oldest one, should copies exist), else by its slug
+  const existing = await prisma.product.findFirst({ where: { source, name: { equals: data.name, mode: 'insensitive' } }, orderBy: { id: 'asc' }, include: { images: true } })
+    || await prisma.product.findUnique({ where: { slug }, include: { images: true } });
   const product = existing
     ? await prisma.product.update({ where: { id: existing.id }, data })
     : await prisma.product.create({ data: { ...data, slug } });
-  if (!existing?.images.length) {
-    const url = await imageUrl(p.media);
+  const cover = existing?.images.slice().sort((a, b) => a.position - b.position)[0];
+  if (!cover) {
+    const url = await photos.url(p.media);
     if (url) await prisma.productImage.create({ data: { productId: product.id, url, thumbnail: url, position: 0 } });
+  } else if (p.media && fromImport(cover.url)) {
+    // The bot changed the product's photo: the new one replaces the imported one
+    await photos.adopt(cover.url, p.media);
+    const url = await photos.url(p.media);
+    if (url && url !== cover.url) {
+      await prisma.productImage.update({ where: { id: cover.id }, data: { url, thumbnail: url } });
+      newPhotos++;
+    }
   }
   existing ? updated++ : created++;
 }
-console.log(`Products: ${created} created, ${updated} updated. Shelves: ${categoryId.size}.`);
+console.log(`Products: ${created} created, ${updated} updated (${newPhotos} new photos). Shelves: ${categoryId.size}. Images: ${photos.stats.uploaded} uploaded, ${photos.stats.reused} already online.`);
 await prisma.$disconnect();

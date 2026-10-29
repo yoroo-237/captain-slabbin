@@ -17,9 +17,8 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { prisma } from '../src/db.js';
-import { env } from '../src/config/env.js';
-import { uploadToCloudinary } from '../src/middlewares/upload.js';
 import { cmdName } from '../src/services/telegramCommands.js';
+import { captureMedia } from './capture-media.js';
 
 const args = process.argv.slice(2);
 const dir = args.find(a => !a.startsWith('--') && !args[args.indexOf(a) - 1]?.startsWith('--'));
@@ -64,21 +63,19 @@ function targetOf(screen, button) {
   return later.sort((a, b) => a.order - b.order)[0] || null;
 }
 
-// Images, uploaded once each
-const media = new Map();
-async function imageUrl(file) {
-  if (!file) return '';
-  if (media.has(file)) return media.get(file);
-  let url = '';
-  if (!dry) {
-    try {
-      const buf = await fs.readFile(path.join(dir, 'media', file));
-      url = (await uploadToCloudinary(buf, 'image/jpeg', 'captain-slabbin/bots', env.publicUrl)).url;
-    } catch (err) { console.error(`image ${file}:`, err.message); }
-  }
-  media.set(file, url);
-  return url;
-}
+// Images, uploaded once each (across imports too: see capture-media.js), and only
+// those of the pages kept
+const media = await captureMedia(dir, 'captain-slabbin/bots', { dry });
+const imageUrl = async file => (await media.url(file)) || '';
+// Another shop's PGP key is never copied: customers would encrypt their address for them
+const PGP_KEY = /-----BEGIN PGP PUBLIC KEY BLOCK-----[\s\S]*?(-----END PGP PUBLIC KEY BLOCK-----|$)/g;
+const hasKey = html => /BEGIN PGP PUBLIC KEY BLOCK/.test(html || '');
+const keyBody = k => k.replace(/<[^>]+>|-----[^-]+-----|\s+/g, '');
+const capturedKeys = new Set();
+const blank = html => !String(html || '').replace(/<[^>]+>|[{}\s]/g, '');
+// A key that is the captured bot's own (also when an earlier import copied it in)
+const othersKey = html => (String(html || '').match(PGP_KEY) || []).some(k => capturedKeys.has(keyBody(k)));
+const NO_KEY = '<b>Our PGP key</b>\n\nPaste your PGP public key here (Admin, Telegram bots, Styles, this style, Pages). Until then, customers send their address in plain text.';
 
 const stats = { pages: 0, images: 0, back: 0, linked: 0, dropped: 0 };
 const pages = [];
@@ -95,39 +92,70 @@ for (const s of [...screens].sort((a, b) => a.order - b.order)) {
     }
     if (out.length) rows.push(out);
   }
-  const image = await imageUrl(s.media);
   if (s.media) stats.images++;
-  pages.push({ key: keyOf.get(s.key), html: clean(s.html || s.raw), image, buttons: rows });
+  let html = clean(s.html || s.raw);
+  if (hasKey(html)) {
+    for (const k of html.match(PGP_KEY)) capturedKeys.add(keyBody(k));
+    const rest = html.replace(PGP_KEY, '');
+    // Only the frame of the key left (<pre><code>, a stray "{}"): the page is the placeholder
+    html = blank(rest) ? NO_KEY : rest.trim();
+    stats.keys = (stats.keys || 0) + 1;
+  }
+  pages.push({ key: keyOf.get(s.key), html, media: s.media, buttons: rows });
   stats.pages++;
 }
+// The image of each page kept: all of them for a new style, the chosen ones when merging
+async function withImages(list) {
+  const out = [];
+  for (const { media: file, ...pg } of list) out.push({ ...pg, image: await imageUrl(file) }); // one at a time: uploads.json is written after each
+  return out;
+}
 
-console.log(`@${bot}: ${stats.pages} pages, ${stats.images} with an image, ${stats.back} back buttons, ${stats.linked} linked buttons, ${stats.dropped} dropped`);
-if (dry) { console.log('Dry run: nothing written.'); process.exit(0); }
+console.log(`@${bot}: ${stats.pages} pages, ${stats.images} with an image, ${stats.back} back buttons, ${stats.linked} linked buttons, ${stats.dropped} dropped${stats.keys ? `, PGP key left out of ${stats.keys}` : ''}`);
+if (dry && !mergeInto) { console.log('Dry run: nothing written.'); process.exit(0); }
 
 if (mergeInto) {
   const style = await prisma.botStyle.findFirst({ where: { name: mergeInto } });
   if (!style) { console.error(`No style called "${mergeInto}".`); process.exit(1); }
-  const chosen = pages.filter(pg => only.has(pg.key));
-  const missing = [...only].filter(k => !chosen.some(pg => pg.key === k));
   const old = style.look || {};
+  const before = new Map((old.pages || []).map(pg => [pg.key, pg]));
+  const picked = pages.filter(pg => only.has(pg.key));
+  const missing = [...only].filter(k => !picked.some(pg => pg.key === k));
+  // A key page keeps the shop's own key; the captured bot's key (left out above) never
+  // stays, even when an earlier import had copied it in
+  for (const pg of picked) {
+    const was = before.get(pg.key)?.html;
+    if (hasKey(was) && !othersKey(was)) pg.html = was;
+    else if (pg.html === NO_KEY && !hasKey(was) && !blank(was)) pg.html = was;
+  }
+  const changed = picked.filter(pg => (before.get(pg.key)?.html || '') !== pg.html).map(pg => pg.key);
+  console.log(`Pages changed in "${mergeInto}": ${changed.length ? changed.join(', ') : 'none'}${missing.length ? `; not found in the capture: ${missing.join(', ')}` : ''}`);
+  const chosen = await withImages(picked);
   const kept = (old.pages || []).filter(pg => !only.has(pg.key));
   const titles = Object.fromEntries((old.pages || []).map(pg => [pg.key, pg.title]));
+  // Welcome and menu pictures follow the capture, unless one was chosen by hand in the admin
   const images = { ...(old.images || {}) };
-  const startImg = startScreen && await imageUrl(startScreen.media);
-  const menuImg = menuScreen && await imageUrl(menuScreen.media);
-  if (startImg) images.start = startImg;
-  if (menuImg) images.menu = menuImg;
+  const pictures = [];
+  for (const [slot, screen] of [['start', startScreen], ['menu', menuScreen]]) {
+    if (!screen?.media) continue;
+    const current = images[slot];
+    if (current && !media.isCaptured(current) && !current.includes('/captain-slabbin/bots/')) { pictures.push(`${slot} kept (set by hand)`); continue; }
+    await media.adopt(current, screen.media);
+    const url = await imageUrl(screen.media);
+    if (url && url !== current) { images[slot] = url; pictures.push(`${slot} updated`); }
+  }
+  if (dry) { console.log(`Dry run: nothing written. Images to upload: ${media.stats.uploaded}${pictures.length ? `; ${pictures.join(', ')}` : ''}.`); process.exit(0); }
   await prisma.botStyle.update({
     where: { id: style.id },
     data: { look: { ...old, images, pages: [...kept, ...chosen.map(pg => ({ ...pg, title: titles[pg.key] || pg.key, buttons: pg.buttons.length ? pg.buttons : [[{ text: '⇆ Back', action: 'menu' }]] }))] } },
   });
-  console.log(`Style "${mergeInto}": ${chosen.length} information pages copied${missing.length ? `, not found in the capture: ${missing.join(', ')}` : ''}, welcome and menu pictures ${startImg || menuImg ? 'set' : 'unchanged'}. Catalog and payments stay the shop's.`);
+  console.log(`Style "${mergeInto}": ${chosen.length} information pages copied, pictures: ${pictures.join(', ') || 'unchanged'}. Images: ${media.stats.uploaded} uploaded, ${media.stats.reused} already online. Catalog and payments stay the shop's.`);
   await prisma.$disconnect();
   process.exit(0);
 }
 
 const home = startScreen ? keyOf.get(startScreen.key) : '';
-const look = { pages, home, upperTitles: false };
+const look = { pages: await withImages(pages), home, upperTitles: false };
 const existing = await prisma.botStyle.findFirst({ where: { name } });
 const data = { name, look, source: `@${bot}` };
 const style = existing

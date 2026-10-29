@@ -110,4 +110,20 @@ captures de chaque bot (écrans, images, actions en attente) avec **Rapport**,
 **Reprendre**, et les imports **Style** / **Produits** vers le backend. La case
 « essai » est cochée par défaut (`--dry` : rien n'est écrit) ; décochée, une
 confirmation est demandée. Variables : `PORT`, `PYTHON`, `CAPTURES_DIR`.
+
+## Ce que font les imports
+
+- **Style** met à jour le style nommé dans « Style mis à jour » (`QT Market` par
+  défaut, `--merge-into`) : seulement les pages d'information et les images
+  d'accueil et de menu. Rayons, textes et panier du style restent ; une image
+  choisie à la main dans l'admin n'est pas remplacée. Une clé PGP de la capture
+  n'est jamais copiée (le style garde la vôtre). Champ vide : crée ou remplace
+  entièrement un style « Imported bot ».
+- **Produits** retrouve chaque produit par son nom (les codes `/p0_14IBX`
+  changent à chaque session) : textes, prix et formats sont mis à jour, une photo
+  changée chez le bot remplace l'ancienne (pas une photo mise à la main).
+- Chaque image n'est envoyée qu'une fois sur Cloudinary : `captures/<bot>/uploads.json`
+  retient ce qui est déjà en ligne.
+- Des doublons laissés par un ancien import se fusionnent avec
+  `node scripts/dedupe-capture-products.js [--dry]` (dans `backend/`).
 Pour modifier l'interface : `npm run dev` (http://127.0.0.1:5175, avec le serveur lancé à côté).

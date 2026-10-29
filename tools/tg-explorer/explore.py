@@ -30,7 +30,7 @@ from common import make_client, normalize_bot
 # Seulement ce qui détruit ou vide quelque chose (suppression, retrait de fonds). Achats,
 # paiements, confirmations, panier, commandes, checkout et dépôt sont parcourus : le
 # compte n'a pas de carte liée. A resserrer avec --strict si le bot a un vrai solde.
-DEFAULT_SKIP = r"delete|remove|clear|withdraw|supprimer|retirer|vider|effacer"
+DEFAULT_SKIP = r"delete|remove|clear|empty|withdraw|supprimer|retirer|vider|effacer"
 # Ancienne liste, large : ignore aussi tout ce qui contient cart, order, checkout, deposit...
 STRICT_SKIP = (
     r"buy|pay|checkout|order|confirm|cart|purchase|delete|remove|cancel|withdraw|deposit|"

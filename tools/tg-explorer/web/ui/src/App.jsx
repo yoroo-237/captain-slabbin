@@ -153,6 +153,7 @@ export default function App() {
   const [opts, setOpts] = useState(DEFAULTS);
   const [captures, setCaptures] = useState([]);
   const [dry, setDry] = useState(true);
+  const [style, setStyle] = useState('QT Market');
   const [error, setError] = useState('');
   const set = (key) => (e) => setOpts((o) => ({ ...o, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
 
@@ -211,8 +212,9 @@ export default function App() {
   const connected = !!current?.authorized;
   const stop = guard(() => post('/api/stop'));
   const importCapture = guard(async (bot, kind) => {
-    if (!dry && !window.confirm(`Importer « ${kind === 'style' ? 'style' : 'produits'} » de @${bot} dans la base du backend (écriture réelle) ?`)) return;
-    await post('/api/import', { bot, kind, dry });
+    const target = kind === 'style' ? (style.trim() ? `les pages du style « ${style.trim()} »` : 'le style « Imported bot »') : 'les produits';
+    if (!dry && !window.confirm(`Importer ${target} depuis @${bot} dans la base du backend (écriture réelle) ?`)) return;
+    await post('/api/import', { bot, kind, dry, style: kind === 'style' ? style.trim() : '' });
   });
 
   const busy = state.running;
@@ -339,6 +341,15 @@ export default function App() {
         <p className={`small mode-note ${dry ? 'muted' : 'bad'}`}>
           {dry ? 'Imports en essai (--dry) : rien n\'est écrit dans la base du backend.'
             : 'Les imports écrivent dans la base du backend. Une confirmation est demandée.'}
+        </p>
+        <div className="profile-row">
+          <label className="field">Style mis à jour par « Importer style »
+            <input value={style} onChange={(e) => setStyle(e.target.value)} placeholder="vide = nouveau style « Imported bot »" spellCheck="false" />
+          </label>
+        </div>
+        <p className="small muted">
+          {style.trim() ? `Seules les pages d'information et les images d'accueil et de menu de « ${style.trim()} » sont remplacées ; rayons, textes et panier restent. Une clé PGP de la capture n'est jamais copiée.`
+            : 'Crée ou remplace entièrement le style « Imported bot ».'}
         </p>
         {captures.length === 0
           ? <div className="empty-state">Aucune capture pour l'instant. Lancez une exploration ci-dessus.</div>

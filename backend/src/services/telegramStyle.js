@@ -61,7 +61,12 @@ export const DEFAULT_LOOK = {
     inCart: '🛒 <b>Product total in </b><b>/cart</b><b> — {total}</b>',
     notesPrompt: '✏ <b>SEND ME PRODUCT NOTES for {product}:</b>',
     cartTitle: '🛒 <b>YOUR CART</b>',
-    cartEmpty: '🛒 Your cart is empty. Pick a shelf in {menu}.',
+    cartEmpty: '🛒 <b>My Cart</b>\n\n <i>Your cart is empty.</i> /start shopping.',
+    cartHint: '💡 To remove a product from cart or to change its quantity, press the blue link to the product under its name.',
+    ordersTitle: '📆 <b>My Orders</b>',
+    noOrdersYet: '<i>You have not made any orders yet.</i>\n<i>/start</i><i> shopping.</i>',
+    unknownCommand: 'Sorry, I could not recognize this command.',
+    noteNotInCart: 'You cannot edit order notes for this product because it is not added to the cart.',
     // The shop's Telegram username, written wherever a text or a product says {handle}
     // ('' = the bot's own username)
     handle: '',
@@ -115,6 +120,7 @@ export const DEFAULT_LOOK = {
     ship_state: 'State',
     ship_zip: 'Postcode',
     toCart: '< Cart',
+    enterShipping: 'Enter Shipping Details >',
     placeOrder: '✅ Place Order >',
     addOrderNotes: 'Add Order Notes',
     editPayment: 'Edit Payment Method',
