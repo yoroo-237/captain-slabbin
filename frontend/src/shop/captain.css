@@ -635,6 +635,13 @@
 .cs .pay-option.on { border-color: var(--red); background: var(--red-soft); box-shadow: inset 0 0 0 1px var(--red); }
 .cs .pay-option input { accent-color: var(--red); width: 18px; height: 18px; flex: none; }
 .cs .pay-option .amt { margin-left: auto; text-align: right; font-variant-numeric: tabular-nums; font-size: 14px; }
+.cs .pgp-box { border: 1px solid var(--line-2); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; }
+.cs .pgp-toggle { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; }
+.cs .pgp-toggle input { accent-color: var(--red); width: 18px; height: 18px; flex: none; margin-top: 2px; }
+.cs .pgp-box details { margin-top: 10px; font-size: 13px; }
+.cs .pgp-box summary { cursor: pointer; color: var(--muted); }
+.cs .pgp-box code { word-break: break-all; }
+.cs .pgp-key { width: 100%; font: 11px/1.4 ui-monospace, monospace; resize: vertical; }
 .cs .coin { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; color: #fff; font-weight: 800; font-size: 14px; flex: none; }
 .cs .coin.sm { width: 22px; height: 22px; font-size: 11px; }
 .cs .success-mark { width: 80px; height: 80px; margin: 0 auto 18px; border-radius: 50%; display: grid; place-items: center; background: rgb(76 184 119 / .14); color: var(--ok); animation: cs-pop .6s var(--ease); }

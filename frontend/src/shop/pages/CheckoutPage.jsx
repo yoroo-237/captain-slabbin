@@ -9,6 +9,7 @@ import { SignInForm, CreateAccountForm } from '../components/AuthForms.jsx'
 import { shippingFor } from './CartPage.jsx'
 import { Icon, money, Coin, fmtCrypto, ProductArt } from '../lib.jsx'
 import { smokePuff } from '../components/smoke.js'
+import { fingerprint, encryptTo } from '../../utils/pgp.js'
 
 const STATES = [
   ['AL', 'Alabama'], ['AK', 'Alaska'], ['AZ', 'Arizona'], ['AR', 'Arkansas'], ['CA', 'California'], ['CO', 'Colorado'], ['CT', 'Connecticut'],
@@ -48,6 +49,12 @@ export default function CheckoutPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [placed, setPlaced] = useState(null)
+  // The shop's PGP key: the address can then be encrypted on this device before it is sent
+  const shopKey = settings?.pgp_public_key?.trim() || ''
+  const [encrypt, setEncrypt] = useState(true)
+  const [keyPrint, setKeyPrint] = useState(null)
+  useEffect(() => { if (shopKey && delivery) fingerprint(shopKey).then(setKeyPrint) }, [shopKey, delivery])
+  const encrypting = !!(shopKey && encrypt && keyPrint)
 
   useEffect(() => {
     if (!user) return
@@ -88,13 +95,19 @@ export default function CheckoutPage() {
     if (short > 0) return
     setBusy(true); setError('')
     try {
-      if (delivery) { try { localStorage.setItem('cs_address', JSON.stringify(address)) } catch { /* storage blocked */ } }
+      // An encrypted address is not kept on the device either
+      if (delivery && !encrypting) { try { localStorage.setItem('cs_address', JSON.stringify(address)) } catch { /* storage blocked */ } }
+      let shipTo = delivery ? { ...address, zip: address.zip.trim() } : null
+      if (shipTo && encrypting) {
+        const { name, street, apt, city, state, zip } = shipTo
+        shipTo = { pgp: await encryptTo(shopKey, [name, street, apt, `${city}, ${state} ${zip}`, 'United States'].filter(Boolean).join('\n')) }
+      }
       const data = await apiFetch('/orders', {
         method: 'POST',
         body: JSON.stringify({
           items: items.map(i => ({ productId: i.id, quantity: i.quantity })),
           ...(!profileHandle && telegram.trim() ? { telegram: telegram.trim() } : {}),
-          ...(delivery ? { delivery: { ...address, zip: address.zip.trim() } } : {}),
+          ...(shipTo ? { delivery: shipTo } : {}),
           paymentMethod: payCurrency || 'wallet',
           ...(payCurrency ? { payCurrency } : {}),
         }),
@@ -201,7 +214,20 @@ export default function CheckoutPage() {
                           {bad('zip') && <span className="error">5-digit ZIP</span>}
                         </div>
                       </div>
-                      <p className="summary-note" style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 0 }}><Icon.box /> Shipped in discreet, unmarked packaging. Your address goes on the invoice the shop receives on Telegram.</p>
+                      {shopKey && keyPrint && (
+                        <div className="pgp-box">
+                          <label className="pgp-toggle">
+                            <input type="checkbox" checked={encrypt} onChange={e => setEncrypt(e.target.checked)} />
+                            <span><b>Encrypt my address with PGP</b><br /><span className="muted" style={{ fontSize: 12 }}>Encrypted on this device with the shop’s key before it is sent. Only the shop can read it.</span></span>
+                          </label>
+                          <details>
+                            <summary>Shop key {keyPrint.split(' ').slice(-4).join(' ')}</summary>
+                            <p className="muted" style={{ fontSize: 12, margin: '8px 0 4px' }}>Fingerprint: <code>{keyPrint}</code></p>
+                            <textarea className="input pgp-key" readOnly rows={6} value={shopKey} onFocus={e => e.target.select()} aria-label="The shop's PGP public key" />
+                          </details>
+                        </div>
+                      )}
+                      <p className="summary-note" style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 0 }}><Icon.box /> Shipped in discreet, unmarked packaging. {encrypting ? 'Your address is encrypted: the shop receives it as a PGP message.' : 'Your address goes on the invoice the shop receives on Telegram.'}</p>
                     </div>
                   )}
                 </div>

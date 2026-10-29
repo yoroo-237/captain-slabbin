@@ -8,7 +8,7 @@ const post = async (url, body = {}) => {
 };
 
 const DEFAULTS = { profile: 'explorer', wait: '2.5', maxActions: '200', skip: '', allow: '',
-  resume: false, noMedia: false, noCommands: false, strict: false };
+  fresh: false, noMedia: false, noCommands: false, strict: false };
 
 // Same rules as server.mjs: @bot, bot, t.me/bot?start=x all give 'bot'
 const BOT = /^[A-Za-z][A-Za-z0-9_]{2,63}$/;
@@ -201,8 +201,11 @@ export default function App() {
     setError('');
     try { await fn(...args); } catch (e) { setError(e.message); }
   };
-  const explore = guard(() => post('/api/explore', { ...opts, bots: parsed.map((b) => b.name) }));
-  const resume = guard((name) => post('/api/explore', { ...opts, resume: true, bots: [name] }));
+  const resume = guard((name) => post('/api/explore', { ...opts, fresh: false, bots: [name] }));
+  const explore = guard(async () => {
+    if (opts.fresh && !window.confirm('Tout recommencer efface les captures existantes de ces bots et rejoue toutes les actions. Continuer ?')) return;
+    await post('/api/explore', { ...opts, bots: parsed.map((b) => b.name) });
+  });
   const login = guard(async () => { await post('/api/login', { profile: opts.profile }); watchLogin(); });
   const logout = guard(async () => {
     if (!window.confirm(`Fermer la session « ${opts.profile} » ? Il faudra se reconnecter (code Telegram) pour explorer avec ce profil.`)) return;
@@ -280,11 +283,11 @@ export default function App() {
 
               <div className="row3">
                 <label className="field">Attente (s)<input type="number" min="0.5" max="60" step="0.5" value={opts.wait} onChange={set('wait')} /></label>
-                <label className="field">Actions max<input type="number" min="1" max="5000" value={opts.maxActions} onChange={set('maxActions')} /></label>
+                <label className="field">Actions max<input type="number" min="1" max="20000" value={opts.maxActions} onChange={set('maxActions')} /></label>
               </div>
 
               <div className="toggles">
-                <Toggle checked={opts.resume} onChange={set('resume')}>Reprendre les captures existantes</Toggle>
+                <Toggle checked={opts.fresh} onChange={set('fresh')}>Tout recommencer (sinon une capture existante reprend là où elle s'est arrêtée, sans rejouer ce qui est fait)</Toggle>
                 <Toggle checked={opts.noMedia} onChange={set('noMedia')}>Sans images</Toggle>
                 <Toggle checked={opts.noCommands} onChange={set('noCommands')}>Sans commandes trouvées dans les textes</Toggle>
                 <Toggle checked={opts.strict} onChange={set('strict')}>Mode strict (ignorer achats, paiements, panier, commandes, dépôt…)</Toggle>

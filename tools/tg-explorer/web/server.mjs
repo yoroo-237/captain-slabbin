@@ -128,14 +128,14 @@ function exploreArgs(b) {
     .map((x) => String(x).trim().replace(/^(https?:\/\/)?(t|telegram)\.me\//, '').split('?')[0].replace(/\/+$/, '').replace(/^@/, ''));
   if (!bots.length || !bots.every((x) => BOT.test(x))) throw bad('Noms de bots invalides.');
   const args = ['-u', 'explore.py', ...bots, '--captures-dir', CAPTURES, '--stop-file', STOP_FILE];
-  const num = (key, flag, min, max) => {
+  const num = (key, flag, min, max, label) => {
     if (b[key] === undefined || b[key] === '') return;
     const n = Number(b[key]);
-    if (!Number.isFinite(n) || n < min || n > max) throw bad(`${key} invalide.`);
+    if (!Number.isFinite(n) || n < min || n > max) throw bad(`${label} : entre ${min} et ${max}.`);
     args.push(flag, String(n));
   };
-  num('wait', '--wait', 0.5, 60);
-  num('maxActions', '--max-actions', 1, 5000);
+  num('wait', '--wait', 0.5, 60, 'Attente');
+  num('maxActions', '--max-actions', 1, 20000, 'Actions max');
   if (b.profile) { if (!PROFILE.test(b.profile)) throw bad('Profil invalide.'); args.push('--profile', b.profile); }
   for (const [key, flag] of [['skip', '--skip'], ['allow', '--allow']]) {
     for (const v of String(b[key] || '').split('\n').map((s) => s.trim()).filter(Boolean)) {
@@ -143,7 +143,7 @@ function exploreArgs(b) {
       args.push(flag, v);
     }
   }
-  for (const [key, flag] of [['resume', '--resume'], ['noMedia', '--no-media'], ['noCommands', '--no-commands'], ['strict', '--strict']]) if (b[key]) args.push(flag);
+  for (const [key, flag] of [['fresh', '--fresh'], ['noMedia', '--no-media'], ['noCommands', '--no-commands'], ['strict', '--strict']]) if (b[key]) args.push(flag);
   return args;
 }
 

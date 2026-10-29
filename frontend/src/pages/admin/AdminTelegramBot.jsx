@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { adminFetch } from './utils/api.js'
 import { askConfirm, showMessage } from './dialog'
+import PgpKeyField from '../../components/admin/PgpKeyField.jsx'
 
 // Admin → Telegram. Several bots sell the same shop: link each by pasting its
 // token, give it a style (profile, copy, images, pages) and the shelves it
@@ -60,6 +61,8 @@ export default function AdminTelegramBot({ canEdit }) {
 function BotCard({ bot, styles, shelves: allShelves, busy, act, post }) {
   const [picked, setPicked] = useState(bot.shelves || [])
   useEffect(() => { setPicked(bot.shelves || []) }, [bot.shelves])
+  const [pgpKey, setPgpKey] = useState(bot.pgpKey || '')
+  useEffect(() => { setPgpKey(bot.pgpKey || '') }, [bot.pgpKey])
   const id = bot.id
   // The shop's own picture belongs to the shop's own style only
   const isShopStyle = !bot.styleId || styles.find(s => s.id === bot.styleId)?.name === 'Captain Slabbin'
@@ -139,6 +142,17 @@ function BotCard({ bot, styles, shelves: allShelves, busy, act, post }) {
           <div style={muted}>None ticked: the bot shows every shelf.</div>
           {changed && <button type="button" className="admin-btn admin-btn-primary admin-btn-sm" style={{ marginTop: 8 }} disabled={!!busy} onClick={() => act(`shelves${id}`, () => post(`bots/${id}/shelves`, { shelves: picked }), 'Shelves saved.')}>Save shelves</button>}
         </div>
+      )}
+
+      <PgpKeyField label="PGP public key of this bot" value={pgpKey} onChange={setPgpKey}
+        help={bot.pgpFingerprint
+          ? `Customers of @${bot.username} can encrypt their shipping address to this key: it shows on the bot's key page and Place Order keeps the PGP message only you can read.`
+          : `Without a key, @${bot.username} uses the key page of its style if it holds one, and otherwise hides that page and asks for the address in plain text.`} />
+      {pgpKey.trim() !== (bot.pgpKey || '') && (
+        <button type="button" className="admin-btn admin-btn-primary admin-btn-sm" style={{ marginTop: -8, marginBottom: 16 }} disabled={!!busy || /PRIVATE KEY BLOCK/.test(pgpKey)}
+          onClick={() => act(`pgp${id}`, () => post(`bots/${id}/pgp`, { key: pgpKey }), pgpKey.trim() ? 'PGP key saved: the bot uses it right away.' : 'PGP key removed.')}>
+          {pgpKey.trim() ? 'Save PGP key' : 'Remove PGP key'}
+        </button>
       )}
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

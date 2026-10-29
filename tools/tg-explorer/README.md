@@ -69,12 +69,19 @@ Le bot peut s'écrire `QTMARKETBOT`, `@QTMARKETBOT` ou `https://t.me/QTMARKETBOT
 | `--skip REGEX` | motif supplémentaire à ne jamais jouer (répétable) |
 | `--allow REGEX` | motif à jouer malgré la liste d'exclusion (répétable) |
 | `--no-default-skip` | retire la liste d'exclusion par défaut (à utiliser avec prudence) |
-| `--resume` | reprend le parcours enregistré dans `--out` |
+| `--fresh` | tout recommencer : efface la capture du bot au lieu de la reprendre |
 | `--stop-file PATH` | s'arrête proprement (capture écrite) dès que ce fichier existe ; utilisé par le bouton **Arrêter** |
 
 Sortie : `data.json` (écrans, étapes, actions ignorées), `media/` (images),
-`report.html` (lecture façon chat), `state.json` (file d'attente pour `--resume`).
+`report.html` (lecture façon chat), `state.json` (file d'attente).
 L'écriture se fait aussi en cas de Ctrl+C ou d'erreur, et tous les 10 pas.
+
+Relancer un bot déjà capturé **reprend** sa capture : ce qui a déjà été joué ne
+l'est pas à nouveau, seules les actions en attente sont jouées (« Actions max »
+compte celles de ce lancement). Une capture terminée ne rejoue rien ; `--fresh`
+(case « Tout recommencer ») repart de zéro. Un bouton de retour (⇇, ⇆, Back) mène
+à un écran déjà vu : chaque libellé de retour n'est joué qu'une fois. Un bot lent à
+confirmer un clic (`BotResponseTimeoutError`) n'empêche plus de relire l'écran.
 
 ## Ce que le parcours ne touche pas
 

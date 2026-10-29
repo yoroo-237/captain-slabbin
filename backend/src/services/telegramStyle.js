@@ -203,11 +203,30 @@ export const siteLinks = () => look().siteLinks !== false;
 // false for any style but the shop's own: it never borrows the shop's pictures
 export const isShop = () => store.getStore()?.shop ?? true;
 
+// The PGP key page as the bot shows it: the bot's own key when it has one (on the
+// style's key page, added when the style has none); a key page with no key at all
+// is left out, so customers never see the "paste your key here" placeholder
+const hasPublicKey = html => /BEGIN PGP PUBLIC KEY BLOCK/.test(html || '');
+const htmlSafe = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+export function withBotKey(l, bot) {
+  const key = String(bot?.pgpKey || '').trim();
+  const pages = l.pages || [];
+  if (key) {
+    const pageKey = l.pgpPage || 'pgp';
+    const page = pages.find(p => p.key === pageKey);
+    const title = page?.title || 'Our PGP key';
+    const keyed = { buttons: [[{ text: '⇆ Back', action: 'menu' }]], ...page, key: pageKey, title, html: `<b>${htmlSafe(title)}</b>\n\n<pre>${htmlSafe(key)}</pre>` };
+    return { ...l, pgpPage: pageKey, pages: page ? pages.map(p => p === page ? keyed : p) : [...pages, keyed] };
+  }
+  const page = l.pgpPage && pages.find(p => p.key === l.pgpPage);
+  return page && !hasPublicKey(page.html) ? { ...l, pages: pages.filter(p => p !== page) } : l;
+}
+
 // Runs fn as `bot` (a TelegramBot row, its style included or not)
 export async function withBot(bot, fn) {
   const style = bot?.style !== undefined ? bot.style
     : bot?.styleId ? await prisma.botStyle.findUnique({ where: { id: bot.styleId } }) : null;
-  return store.run({ bot, look: lookOf(style), shop: isShopStyle(style) }, fn);
+  return store.run({ bot, look: withBotKey(lookOf(style), bot), shop: isShopStyle(style) }, fn);
 }
 
 export const title = s => look().upperTitles ? String(s).toUpperCase() : String(s);

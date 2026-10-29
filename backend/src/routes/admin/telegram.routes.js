@@ -6,7 +6,7 @@ import { ok } from '../../utils/response.js';
 import { appError } from '../../utils/formatters.js';
 import {
   telegramStatus, inspectBot, linkBot, applyStyle, setPrimary, changeChat, unlinkBot, sendTelegram,
-  setPostChat, setShelves, postProduct, setBotPhoto, setStylePhoto, styleFromBot, findBot,
+  setPostChat, setShelves, postProduct, setBotPhoto, setStylePhoto, styleFromBot, findBot, setPgpKey,
 } from '../../services/telegram.service.js';
 import { DEFAULT_LOOK, neutralLook } from '../../services/telegramStyle.js';
 
@@ -70,6 +70,11 @@ r.post('/bots/:id/post-chat', async (req, res) => {
 
 r.post('/bots/:id/shelves', async (req, res) => {
   res.json(ok({ shelves: await setShelves(req.params.id, req.body?.shelves) }));
+});
+
+// The bot's PGP public key ('' = none)
+r.post('/bots/:id/pgp', async (req, res) => {
+  res.json(ok(await setPgpKey(req.params.id, req.body?.key)));
 });
 
 r.post('/bots/:id/unlink', async (req, res) => {

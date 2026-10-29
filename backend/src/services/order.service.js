@@ -6,6 +6,7 @@ import { getCachedUsdPrices } from './price.service.js';
 import { priceCart } from './pricing.service.js';
 import { notifyWalletOrder } from './telegram.service.js';
 import { checkVoucher, useVoucher } from './voucher.service.js';
+import { isPgpMessage } from './pgp.service.js';
 
 export const orderService = {
   // No customer details are required: the Telegram username/ID is optional (saved
@@ -19,7 +20,12 @@ export const orderService = {
     if (!items?.length)     throw appError('Cart is empty', 400);
 
     let shipTo = null;
-    if (delivery) {
+    if (delivery?.pgp) {
+      // Encrypted in the customer's browser to the shop's key: only the shop can read it
+      const message = String(delivery.pgp).trim();
+      if (message.length > 6000 || !isPgpMessage(message)) throw appError('The encrypted address is not a valid PGP message. Please try again.', 400);
+      shipTo = { name: 'PGP encrypted', address: message };
+    } else if (delivery) {
       const d = Object.fromEntries(['name', 'street', 'apt', 'city', 'state', 'zip'].map(k => [k, String(delivery[k] || '').trim().slice(0, 120)]));
       if (!d.name || !d.street || !d.city || !/^[A-Z]{2}$/.test(d.state) || !/^\d{5}(-\d{4})?$/.test(d.zip)) {
         throw appError('Please complete the delivery address (name, street, city, state and 5-digit ZIP).', 400);

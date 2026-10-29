@@ -47,7 +47,7 @@
       },
       {
         "key": "pgp_qtetra",
-        "html": "<b>Our PGP key</b>\n\nPaste your PGP public key here (Admin, Telegram bots, Styles, this style, Pages). Until then, customers send their address in plain text.",
+        "html": "<b>Our PGP key</b>\n\nSet the PGP public key on each bot (Admin, Telegram bot, Bots) or paste it here. Until then this page is hidden and customers send their address in plain text.",
         "image": "",
         "title": "Our PGP key",
         "buttons": [

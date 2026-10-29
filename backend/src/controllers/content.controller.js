@@ -23,6 +23,7 @@ const PUBLIC_KEYS = [
   'announcements',
   'ad_banner',
   'about_text',
+  'pgp_public_key',
 ];
 
 export const contentController = {

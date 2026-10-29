@@ -2,6 +2,7 @@ import { prisma } from '../../db.js';
 import { ok } from '../../utils/response.js';
 import { appError } from '../../utils/formatters.js';
 import { TELEGRAM_PRIVATE_KEYS } from '../../services/telegram.service.js';
+import { readPublicKey } from '../../services/pgp.service.js';
 
 const ALLOWED_KEYS = new Set([
   'site_name', 'maintenance_mode', 'registration_open',
@@ -14,6 +15,8 @@ const ALLOWED_KEYS = new Set([
   'promo_enabled', 'promo_headline',
   // Shop contact & US location, announcement bar, ad banner
   'contact_email', 'store_address', 'store_city', 'store_state', 'store_zip', 'store_hours', 'announcements', 'ad_banner', 'about_text',
+  // Website checkout: the PGP public key customers encrypt their address to
+  'pgp_public_key',
 ]);
 
 const ADMIN_ROLES = ['admin', 'superadmin'];
@@ -34,6 +37,8 @@ export const adminSettingsController = {
   async update(req, res) {
     const entries = Object.entries(req.body).filter(([k]) => ALLOWED_KEYS.has(k));
     if (entries.length === 0) throw appError('No valid keys to update', 400);
+    // A public key only, checked (a private key is refused, never stored)
+    for (const e of entries) if (e[0] === 'pgp_public_key') e[1] = (await readPublicKey(e[1])).armored;
 
     await Promise.all(entries.map(([key, value]) =>
       prisma.siteSetting.upsert({

@@ -75,7 +75,7 @@ const capturedKeys = new Set();
 const blank = html => !String(html || '').replace(/<[^>]+>|[{}\s]/g, '');
 // A key that is the captured bot's own (also when an earlier import copied it in)
 const othersKey = html => (String(html || '').match(PGP_KEY) || []).some(k => capturedKeys.has(keyBody(k)));
-const NO_KEY = '<b>Our PGP key</b>\n\nPaste your PGP public key here (Admin, Telegram bots, Styles, this style, Pages). Until then, customers send their address in plain text.';
+const NO_KEY = '<b>Our PGP key</b>\n\nSet the PGP public key on each bot (Admin, Telegram bot, Bots) or paste it here. Until then this page is hidden and customers send their address in plain text.';
 
 const stats = { pages: 0, images: 0, back: 0, linked: 0, dropped: 0 };
 const pages = [];

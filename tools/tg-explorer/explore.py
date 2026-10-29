@@ -5,7 +5,8 @@ les commandes trouvées dans les textes, puis écrit :
   <out>/data.json    tous les écrans, toutes les étapes, ce qui a été ignoré
   <out>/media/       les images et fichiers reçus
   <out>/report.html  une page de lecture façon chat
-  <out>/state.json   file d'attente, pour reprendre avec --resume
+  <out>/state.json   file d'attente : relancer reprend là où le parcours s'est arrêté
+                     (--fresh pour tout recommencer)
 
 Les boutons qui ressemblent à un achat, un paiement ou une suppression sont
 ignorés pour ne rien déclencher chez le bot parcouru (voir --skip / --allow).
@@ -37,6 +38,8 @@ STRICT_SKIP = (
     r"acheter|payer|commander|panier|supprimer|annuler"
 )
 COMMAND = re.compile(r"(?<![\w/])/[A-Za-z][A-Za-z0-9_]{0,31}")
+# Un retour mène à un écran déjà vu : chaque libellé de retour n'est joué qu'une fois
+BACK = re.compile(r"^\W*(⇇|⇆|<<?\s*back\b|back\b)", re.I)
 IMAGE_EXT = (".jpg", ".jpeg", ".png", ".webp", ".gif")
 SAVE_EVERY = 10
 DEFAULT_CAPTURES = Path(__file__).with_name("captures")
@@ -86,6 +89,10 @@ class Explorer:
         label = action[-1] if kind == "cb" else action[1]
         if key in self.seen:
             return
+        if kind == "cb" and BACK.search(label or ""):
+            key = ("back", label.strip())
+            if key in self.seen:
+                return
         # Un bouton « ✅ » peut cacher confirm_order : on filtre aussi ses données
         tested = f"{label} {action[2].decode('utf-8', 'replace')}" if kind == "cb" else label
         if self.is_skipped(tested):
@@ -202,8 +209,13 @@ class Explorer:
         else:
             _, msg_id, data, _label = action
             msg_id = await self.button_message(msg_id, data)
-            answer = await self.client(functions.messages.GetBotCallbackAnswerRequest(
-                peer=self.bot, msg_id=msg_id, data=data))
+            try:
+                answer = await self.client(functions.messages.GetBotCallbackAnswerRequest(
+                    peer=self.bot, msg_id=msg_id, data=data))
+            except errors.BotResponseTimeoutError:
+                # Le clic est parti, le bot n'a juste pas confirmé à temps : il modifie
+                # souvent le message quand même, donc on le relit comme un clic réussi
+                return None, msg_id
             alert = answer.message or (f"url: {answer.url}" if answer.url else None)
             return alert, msg_id
         return alert, None
@@ -244,7 +256,10 @@ class Explorer:
             self.last_id = latest[0].id if latest else 0
             for cmd in self.args.start:
                 self.enqueue(("cmd", cmd))
-        while self.queue and len(self.steps) < self.args.max_actions:
+        elif not self.queue:
+            print("Capture déjà complète : rien à rejouer (--fresh pour tout recommencer).")
+        done = len(self.steps)
+        while self.queue and len(self.steps) - done < self.args.max_actions:
             if stop_requested(self.args):
                 print("Arrêt demandé.")
                 break
@@ -252,7 +267,7 @@ class Explorer:
             if len(self.steps) % SAVE_EVERY == 0:
                 self.save_state()
         if self.queue:
-            print(f"{len(self.queue)} action(s) non jouée(s) (reprise : --resume).")
+            print(f"{len(self.queue)} action(s) non jouée(s) : relancez pour continuer là où le parcours s'est arrêté.")
 
     # ---- reprise --------------------------------------------------------
 
@@ -363,7 +378,9 @@ def parse_args():
                         help="retirer la liste par défaut (suppression, vidage, retrait de fonds)")
     parser.add_argument("--allow", action="append", default=[], metavar="REGEX",
                         help="motif à jouer malgré la liste d'exclusion, répétable")
-    parser.add_argument("--resume", action="store_true", help="reprendre le parcours enregistré dans --out")
+    parser.add_argument("--fresh", action="store_true",
+                        help="tout recommencer : efface la capture existante au lieu de la reprendre")
+    parser.add_argument("--resume", action="store_true", help=argparse.SUPPRESS)  # reprise par défaut désormais
     parser.add_argument("--stop-file", metavar="PATH",
                         help="s'arrêter proprement dès que ce fichier existe (utilisé par les interfaces)")
     args = parser.parse_args()
@@ -380,7 +397,8 @@ async def explore_bot(client, name, args):
     args = argparse.Namespace(**{**vars(args), "bot": name})
     print(f"== @{name} -> {out}")
     explorer = Explorer(client, await client.get_entity(name), out, args)
-    if args.resume:
+    # Une capture existante est reprise : rien de ce qui a déjà été joué ne l'est à nouveau
+    if not args.fresh:
         explorer.load_state()
     try:
         await explorer.run()

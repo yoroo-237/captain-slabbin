@@ -5,6 +5,7 @@ import { prisma } from '../db.js';
 import { env } from '../config/env.js';
 import { lookOf, isShopStyle } from './telegramStyle.js';
 import { pushStaff } from './push.service.js';
+import { readPublicKey, keyFingerprint } from './pgp.service.js';
 
 // The shop's Telegram bots. Several can be linked from Admin → Telegram; they all
 // sell the same shop, each with its own style (services/telegramStyle.js) and
@@ -150,6 +151,7 @@ export async function telegramStatus() {
       chatId: bot.chatId, chat: bot.seenChats.find(c => c.id === bot.chatId) || null,
       postChatId: bot.postChatId, seenChats: bot.seenChats, shelves: bot.shelves,
       styleId: bot.styleId, customers: bot._count.users,
+      pgpKey: bot.pgpKey, pgpFingerprint: await keyFingerprint(bot.pgpKey),
     };
     try {
       const [me, hook] = await Promise.all([tg(bot.token, 'getMe'), tg(bot.token, 'getWebhookInfo')]);
@@ -296,6 +298,14 @@ export async function setShelves(botId, slugs) {
   return clean;
 }
 
+// The PGP public key this bot's customers encrypt their address to ('' = none:
+// the style's key page is used, if it holds one)
+export async function setPgpKey(botId, text) {
+  const { armored, fingerprint } = await readPublicKey(text);
+  await prisma.telegramBot.update({ where: { id: (await botOrFail(botId)).id }, data: { pgpKey: armored } });
+  return { pgpKey: armored, pgpFingerprint: fingerprint };
+}
+
 // Unlink: stop the webhook and forget the bot (its own profile is left as is).
 // Removing the primary bot hands the role to the oldest one left.
 export async function unlinkBot(botId) {
@@ -335,7 +345,8 @@ export async function notifyWalletOrder(order, user, payments) {
     `Total: ${money(order.totalAmount)}, paid ${paid}`,
     `Account: ${user.username}`,
     telegram ? `Telegram: ${telegram}` : null,
-    order.shippingAddress ? `Ship to: ${order.name}\n${order.shippingAddress}` : null,
+    // (an encrypted address stays on the order: too long for a link the customer sends)
+    order.shippingAddress ? (/^-----BEGIN PGP MESSAGE/.test(order.shippingAddress) ? 'Ship to: PGP encrypted address, on the order' : `Ship to: ${order.name}\n${order.shippingAddress}`) : null,
   ].filter(Boolean).join('\n');
   const link = adminLink(`/orders/${order.id}`);
   pushStaff({ title: `Paid order ${order.orderNumber}`, body: `${money(order.totalAmount)} · ${user.username}`, url: `/admin/orders/${order.id}`, tag: `order-${order.id}` });

@@ -455,6 +455,7 @@ model TelegramBot {
   postChatId String    @default("")   // where new products are announced
   seenChats  Json      @default("[]") // [{ id, type, title }], newest first
   shelves    Json      @default("[]") // top-level category slugs shown; [] = all
+  pgpKey     String    @default("")   // this bot's PGP public key (overrides the style's key page)
   styleId    Int?
   style      BotStyle? @relation(fields: [styleId], references: [id], onDelete: SetNull)
   createdAt  DateTime  @default(now())

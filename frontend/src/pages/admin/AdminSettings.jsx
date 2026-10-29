@@ -4,6 +4,7 @@ import { useApp } from '../../context/AppContext.jsx'
 import { isAdmin } from '../../utils/roles.js'
 import { PendingTiles, SweepResult, SweepLogTable } from '../../components/admin/SweepParts.jsx'
 import AdminTelegramBot from './AdminTelegramBot.jsx'
+import PgpKeyField from '../../components/admin/PgpKeyField.jsx'
 
 const TABS = ['General', 'Storefront', 'Telegram bot', 'Shipping', 'Loyalty', 'Deposits', 'Crypto']
 
@@ -269,6 +270,10 @@ export default function AdminSettings() {
                   <input className="admin-input" type="number" min="0" max="59" value={settings.shipping_deadline_m ?? ''} onChange={e => setS('shipping_deadline_m', e.target.value)} />
                 </div>
               </div>
+
+              <h2 className="admin-card-title" style={{ marginTop: 24 }}>PGP key for delivery addresses</h2>
+              <PgpKeyField value={settings.pgp_public_key || ''} onChange={v => setS('pgp_public_key', v)}
+                help="With a key, customers on the website can encrypt their address on their device before it is sent: the order then holds a PGP message only you can read. The Telegram bots have their own key (Telegram bot tab, on each bot)." />
             </>
           )}
 

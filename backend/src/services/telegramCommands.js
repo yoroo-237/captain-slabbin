@@ -7,6 +7,7 @@ import { orderService } from './order.service.js';
 import { priceCart } from './pricing.service.js';
 import { checkVoucher, voucherLabel } from './voucher.service.js';
 import { cryptoService } from './crypto.service.js';
+import { isPgpMessage } from './pgp.service.js';
 import { isAddress } from 'ethers';
 
 // The "commands" layout: a menu-board bot navigated with typed commands, like a
@@ -391,16 +392,10 @@ const shippingDone = c => !!(c.pgp || ASKED.every(f => c[f]));
 const nextField = c => ASKED.find(f => !c[f]);
 const country = () => look().texts.shipCountry;
 
-// A whole ASCII-armored PGP message
-// (header lines such as "Version: …" allowed, then base64 and its checksum)
-function isPgp(t) {
-  const m = t.trim().match(/^-----BEGIN PGP MESSAGE-----([\s\S]+)-----END PGP MESSAGE-----$/);
-  if (!m) return false;
-  const body = m[1].split(/\r?\n/).filter(l => !/^[\w-]+:\s/.test(l)).join('').replace(/\s+/g, '');
-  return body.length >= 40 && /^[A-Za-z0-9+/]+=*(=[A-Za-z0-9+/]{4})?$/.test(body);
-}
+const isPgp = isPgpMessage;
 
-// The style's PGP key page, when it holds a public key: addresses may then be encrypted to it
+// The PGP key page (the bot's own key, else the style's page), when it holds a
+// public key: addresses may then be encrypted to it (see withBot)
 function pgpCommand() {
   const page = (look().pages || []).find(p => p.key === look().pgpPage);
   return page && /BEGIN PGP PUBLIC KEY BLOCK/.test(page.html || '') ? `/${cmdName(page.key)}` : null;
