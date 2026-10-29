@@ -25,7 +25,7 @@ import ProductPage from './shop/pages/ProductPage.jsx'
 import CartPage from './shop/pages/CartPage.jsx'
 import CheckoutPage from './shop/pages/CheckoutPage.jsx'
 import WalletPage from './shop/pages/WalletPage.jsx'
-import { LoginPage, CreateAccountPage, TelegramLoginPage } from './shop/pages/AuthPages.jsx'
+import { LoginPage, CreateAccountPage, TelegramLoginPage, StaffTelegramPage } from './shop/pages/AuthPages.jsx'
 import AboutPage from './shop/pages/AboutPage.jsx'
 import FaqPage from './shop/pages/FaqPage.jsx'
 import { Locked, AgeNotice } from './shop/components/Locks.jsx'
@@ -173,6 +173,7 @@ export default function App() {
                 <Route path="telegram" element={<AdminTelegram />} />
                 <Route path="super" element={<SuperAdminRoute><AdminSuperDashboard /></SuperAdminRoute>} />
               </Route>
+              <Route path="/admin-tg" element={<StaffTelegramPage />} />
               <Route path="/*" element={<Storefront />} />
             </Routes>
           </ShopProvider>

@@ -1,6 +1,7 @@
 import { prisma } from '../../db.js';
 import { ok } from '../../utils/response.js';
 import { appError } from '../../utils/formatters.js';
+import { shopWhere, newSource } from '../../utils/shops.js';
 
 // "Blue Gumbo!" → "blue-gumbo" — used when the admin leaves the slug field empty
 const slugify = v => String(v || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
@@ -9,8 +10,10 @@ const slugify = v => String(v || '').toLowerCase().normalize('NFKD').replace(/[\
 // ─── Categories ───────────────────────────────────────────────────────────────
 
 export const categoriesController = {
+  // ?shop=site | <catalog>: only that shop's shelves
   async list(req, res) {
     const cats = await prisma.category.findMany({
+      where: shopWhere(req.query.shop),
       orderBy: { name: 'asc' },
       include: { children: { orderBy: { name: 'asc' } }, _count: { select: { products: true } } },
     });
@@ -20,9 +23,14 @@ export const categoriesController = {
   async create(req, res) {
     const { name, slug, parentId } = req.body;
     if (!name?.trim()) throw appError('name is required', 400);
+    // In the shop being viewed; a bot catalog's shelves are stored as "<source>-<slug>"
+    // so they never clash with the website's
+    const source = newSource(req.body.source);
+    const base = slugify(slug?.trim() || name);
     const cat = await prisma.category.create({
       data: {
-        name: name.trim(), slug: slugify(slug?.trim() || name), parentId: parentId ? parseInt(parentId, 10) : null,
+        name: name.trim(), slug: source && !base.startsWith(`${source}-`) ? `${source}-${base}` : base, source,
+        parentId: parentId ? parseInt(parentId, 10) : null,
         imageUrl: req.body.imageUrl?.trim() || null, position: parseInt(req.body.position || 0, 10) || 0,
       },
     });

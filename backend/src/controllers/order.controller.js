@@ -5,7 +5,10 @@ import { parsePaginationParams, buildPagination } from '../utils/pagination.js';
 
 export const orderController = {
   async create(req, res) {
-    const result = await orderService.createOrder(req.user.sub, req.body);
+    // Only what the website's checkout sends: the bot-only fields (a shipping fee of
+    // its own, a catalog) are never taken from a customer's request
+    const { items, paymentMethod, payCurrency, telegram, delivery, note, refund } = req.body || {};
+    const result = await orderService.createOrder(req.user.sub, { items, paymentMethod, payCurrency, telegram, delivery, note, refund, channel: 'site' });
     res.status(201).json(ok(result));
   },
 

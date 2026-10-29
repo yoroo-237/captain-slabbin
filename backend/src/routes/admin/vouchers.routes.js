@@ -4,6 +4,7 @@ import { prisma } from '../../db.js';
 import { ok } from '../../utils/response.js';
 import { appError } from '../../utils/formatters.js';
 import { normalizeCode } from '../../services/voucher.service.js';
+import { shopWhere } from '../../utils/shops.js';
 
 // Admin → Vouchers: codes customers type at a bot's checkout. Money off, so admins only.
 const r = Router();
@@ -31,7 +32,7 @@ const taken = err => err?.code === 'P2002' ? appError('A voucher with that code 
 
 r.get('/', async (req, res) => {
   const [vouchers, sources] = await Promise.all([
-    prisma.voucher.findMany({ orderBy: { createdAt: 'desc' } }),
+    prisma.voucher.findMany({ where: shopWhere(req.query.shop), orderBy: { createdAt: 'desc' } }),
     prisma.product.findMany({ where: { source: { not: null } }, distinct: ['source'], select: { source: true } }),
   ]);
   res.json(ok({ vouchers, catalogs: sources.map(s => s.source) }));

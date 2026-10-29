@@ -3,10 +3,10 @@ import { adminFetch } from './utils/api.js'
 import { useApp } from '../../context/AppContext.jsx'
 import { isAdmin } from '../../utils/roles.js'
 import { PendingTiles, SweepResult, SweepLogTable } from '../../components/admin/SweepParts.jsx'
-import AdminTelegramBot from './AdminTelegramBot.jsx'
 import PgpKeyField from '../../components/admin/PgpKeyField.jsx'
 
-const TABS = ['General', 'Storefront', 'Telegram bot', 'Shipping', 'Loyalty', 'Deposits', 'Crypto']
+// (the Telegram bots have their own page: Admin → Telegram bots)
+const TABS = ['General', 'Storefront', 'Shipping', 'Loyalty', 'Deposits', 'Crypto']
 
 // Mirrors getUserTier / getCashbackRate in backend/src/utils/formatters.js
 const TIERS = [
@@ -144,7 +144,7 @@ export default function AdminSettings() {
         ))}
       </div>
 
-      {tab === 'Telegram bot' ? <AdminTelegramBot canEdit={canEdit} /> : (
+      {(
       <form onSubmit={handleSave}>
         <fieldset disabled={!canEdit} style={{ border: 'none', padding: 0, margin: 0, minWidth: 0 }}>
         <div className="admin-card">
@@ -274,7 +274,7 @@ export default function AdminSettings() {
               <h2 className="admin-card-title" style={{ marginTop: 24 }}>PGP key for delivery addresses</h2>
               <PgpKeyField value={settings.pgp_public_key || ''} onChange={v => setS('pgp_public_key', v)} name={settings.site_name || 'Shop'} fileName="website"
                 onGenerated={async key => { await adminFetch('/admin/settings', { method: 'PUT', body: JSON.stringify({ pgp_public_key: key }) }); setSaved(s => ({ ...s, pgp_public_key: key })); setSuccess('New key saved for the website. Its private key was downloaded: keep the file and the passphrase safe.') }}
-                help="With a key, customers on the website can encrypt their address on their device before it is sent: the order then holds a PGP message only you can read. The Telegram bots have their own key (Telegram bot tab, on each bot)." />
+                help="With a key, customers on the website can encrypt their address on their device before it is sent: the order then holds a PGP message only you can read. The Telegram bots have their own key (Telegram bots page, PGP key on each bot)." />
             </>
           )}
 

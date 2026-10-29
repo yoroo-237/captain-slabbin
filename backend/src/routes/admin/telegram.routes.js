@@ -26,7 +26,14 @@ const tokenOf = body => {
 const chatOf = body => String(body?.chatId || '').trim();
 
 r.get('/', async (req, res) => {
-  res.json(ok({ ...(await telegramStatus()), publicBase: publicBase(req) }));
+  const [status, me] = await Promise.all([telegramStatus(), prisma.user.findUnique({ where: { id: req.user.sub }, select: { staffTelegramId: true } })]);
+  res.json(ok({ ...status, staffLogin: { ...status.staffLogin, linked: !!me?.staffTelegramId }, publicBase: publicBase(req) }));
+});
+
+// Your own Telegram account no longer signs you in from staff buttons
+r.post('/staff-unlink', async (req, res) => {
+  await prisma.user.update({ where: { id: req.user.sub }, data: { staffTelegramId: null } });
+  res.json(ok({ linked: false }));
 });
 
 r.post('/inspect', async (req, res) => {

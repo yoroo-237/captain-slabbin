@@ -6,9 +6,8 @@ import { getUserBalance } from './balance.service.js';
 import { orderService } from './order.service.js';
 import { priceCart } from './pricing.service.js';
 import { checkVoucher, voucherLabel } from './voucher.service.js';
-import { cryptoService } from './crypto.service.js';
 import { isPgpMessage } from './pgp.service.js';
-import { isAddress } from 'ethers';
+import { REFUND_COINS, validRefund, refundNote, keepRefundOnAccount } from './refund.service.js';
 
 // The "commands" layout: a menu-board bot navigated with typed commands, like a
 // classic Telegram shop (modelled on the bots it was copied from).
@@ -482,11 +481,8 @@ export function shipEditScreen(user) {
 
 // ─── Payment method: the refund address ──────────────────────────────────────
 
-const COINS = { BTC: 'Bitcoin', LTC: 'Litecoin', ETH: 'Ethereum', DOGE: 'Dogecoin', XMR: 'Monero' };
+const COINS = REFUND_COINS;
 const coinOf = c => (COINS[c.refundCurrency] ? c.refundCurrency : 'BTC');
-const validRefund = (coin, a) => coin === 'ETH' ? isAddress(a)
-  : coin === 'XMR' ? /^[48][1-9A-HJ-NP-Za-km-z]{94}([1-9A-HJ-NP-Za-km-z]{11})?$/.test(a)
-  : cryptoService.isValidUtxoAddress(coin, a);
 
 export async function paymentScreen(from, user, error = null) {
   const c = checkoutOf(user);
@@ -514,8 +510,7 @@ export async function saveRefund(from, user, text) {
   if (!validRefund(coin, address)) return paymentScreen(from, user, `This does not look like a ${COINS[coin]} address.`);
   await saveCheckout(user, { refund: address, refundCurrency: coin });
   // The account keeps it too, for refunds from the admin
-  const field = { BTC: 'btcRefundAddress', XMR: 'xmrRefundAddress' }[coin];
-  if (field) await prisma.user.update({ where: { id: user.id }, data: { [field]: address } }).catch(() => {});
+  await keepRefundOnAccount(user.id, coin, address);
   return summaryScreen(user);
 }
 
@@ -707,9 +702,10 @@ export async function cartPay(user, from = null) {
     const notes = [
       ...new Set(lines.filter(l => l.note).map(l => `${l.product.name}: ${l.note}`)),
       ...(c.orderNote ? [`Order notes: ${c.orderNote}`] : []),
-      ...(c.refund ? [`Refund address (${coinOf(c)}): ${c.refund}`] : []),
+      ...(c.refund ? [refundNote(coinOf(c), c.refund)] : []),
     ];
     const { order, payments, newBalance } = await orderService.createOrder(user.id, {
+      channel: 'bot',
       items: lines.map(l => ({ productId: l.productId, quantity: l.qty, option: l.option })),
       paymentMethod: 'wallet',
       note: notes.join('\n') || null,

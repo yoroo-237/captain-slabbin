@@ -4,6 +4,7 @@ import { parsePaginationParams, buildPagination } from '../../utils/pagination.j
 import { appError } from '../../utils/formatters.js';
 import { uploadToCloudinary } from '../../middlewares/upload.js';
 import { postProduct } from '../../services/telegram.service.js';
+import { shopWhere, newSource } from '../../utils/shops.js';
 
 // Storefront fields: SKU (shown on the invoice), strike-through price (Fire Sale
 // shelf), unit label, card badge and featured flag. Only fields sent are returned.
@@ -18,9 +19,6 @@ function merchFields(body) {
   return out;
 }
 
-// Which shop a product belongs to: the website (source null) or a bot catalog
-// (`source`, e.g. 'qt', sold by the bots whose style names it). ?shop=site | <source>
-const shopWhere = shop => (!shop || shop === 'all' ? {} : { source: shop === 'site' ? null : String(shop) });
 
 export const adminProductsController = {
   // The shops to filter by: the website, then each catalog with the bots selling it
@@ -86,7 +84,7 @@ export const adminProductsController = {
         categoryId:  categoryId ? parseInt(categoryId, 10) : null,
         brandId:     brandId    ? parseInt(brandId, 10)    : null,
         // Created in the shop being viewed: the website, or a bot catalog
-        source:      req.body.source && req.body.source !== 'site' ? String(req.body.source).toLowerCase().replace(/[^a-z0-9]/g, '') || null : null,
+        source:      newSource(req.body.source),
         ...extra,
         images:      images.length ? { create: images.map((img, i) => ({ url: img.url, thumbnail: img.thumbnail || null, position: i, mediaType: img.mediaType || 'image' })) } : undefined,
       },

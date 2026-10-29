@@ -17,6 +17,8 @@ const ALLOWED_KEYS = new Set([
   'contact_email', 'store_address', 'store_city', 'store_state', 'store_zip', 'store_hours', 'announcements', 'ad_banner', 'about_text',
   // Website checkout: the PGP public key customers encrypt their address to
   'pgp_public_key',
+  // Staff buttons on Telegram notifications sign in with Telegram (needs /setdomain)
+  'telegram_staff_login',
 ]);
 
 const ADMIN_ROLES = ['admin', 'superadmin'];

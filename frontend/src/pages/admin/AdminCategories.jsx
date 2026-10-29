@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { adminFetch } from './utils/api.js'
 import { askConfirm, showMessage } from './dialog'
+import ShopTabs, { useShopFilter } from '../../components/admin/ShopTabs.jsx'
 
 function Modal({ title, onClose, children }) {
   return (
@@ -21,6 +22,12 @@ export default function AdminCategories() {
   const [form, setForm] = useState({ name: '', slug: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  // Each shop has its own shelves: the website's and each bot catalog's
+  const shopFilter = useShopFilter()
+  const { shop, shopOf, target } = shopFilter
+  const keyOf = c => c.source || 'site'
+  const shown = shop === 'all' ? items : items.filter(c => keyOf(c) === shop)
+  const counts = items.reduce((m, c) => ({ ...m, [keyOf(c)]: (m[keyOf(c)] || 0) + 1 }), {})
 
   const fetchItems = useCallback(async () => {
     setLoading(true)
@@ -42,7 +49,7 @@ export default function AdminCategories() {
     setError('')
     try {
       if (modal.mode === 'create') {
-        await adminFetch('/admin/categories', { method: 'POST', body: JSON.stringify(form) })
+        await adminFetch('/admin/categories', { method: 'POST', body: JSON.stringify({ ...form, source: target }) })
       } else {
         await adminFetch(`/admin/categories/${modal.item.id}`, { method: 'PUT', body: JSON.stringify(form) })
       }
@@ -70,22 +77,27 @@ export default function AdminCategories() {
         <button className="admin-btn admin-btn-primary" onClick={openCreate}>+ Add Category</button>
       </div>
 
+      <div className="admin-card" style={{ marginBottom: 12, padding: '12px 16px' }}>
+        <ShopTabs filter={shopFilter} counts={counts} />
+      </div>
+
       <div className="admin-card">
         <div className="admin-table-wrap">
           <table className="admin-table">
             <thead>
-              <tr><th>Name</th><th>Slug</th><th>Products</th><th>Actions</th></tr>
+              <tr><th>Name</th>{shop === 'all' && <th>Shop</th>}<th>Slug</th><th>Products</th><th>Actions</th></tr>
             </thead>
             <tbody>
               {loading ? (
                 Array.from({ length: 4 }).map((_, i) => (
                   <tr key={i}>{Array.from({ length: 4 }).map((_, j) => <td key={j}><span className="admin-skel" style={{ width: '80px', height: '16px' }} /></td>)}</tr>
                 ))
-              ) : items.length === 0 ? (
-                <tr><td colSpan={4} className="admin-table-empty">No data found.</td></tr>
-              ) : items.map(item => (
+              ) : shown.length === 0 ? (
+                <tr><td colSpan={5} className="admin-table-empty">No data found.</td></tr>
+              ) : shown.map(item => (
                 <tr key={item.id}>
                   <td><strong>{item.name}</strong></td>
+                  {shop === 'all' && <td style={{ color: '#555' }}>{shopOf(item.source)?.label || item.source || 'Website'}</td>}
                   <td><span className="admin-code">{item.slug}</span></td>
                   <td>{item.productCount ?? item._count?.products ?? '—'}</td>
                   <td>
@@ -105,6 +117,7 @@ export default function AdminCategories() {
         <Modal title={modal.mode === 'create' ? 'Add Category' : 'Edit Category'} onClose={() => setModal(null)}>
           {error && <div style={{ color: '#dc3545', marginBottom: '12px' }}>{error}</div>}
           <form onSubmit={handleSubmit}>
+            <p className="admin-text-muted" style={{ marginTop: 0, fontSize: 13 }}>Shop: <b>{modal.mode === 'create' ? (shopOf(target)?.label || 'Website') : (shopOf(modal.item.source)?.label || 'Website')}</b></p>
             <div className="admin-form-group">
               <label className="admin-label">Name</label>
               <input className="admin-input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required />

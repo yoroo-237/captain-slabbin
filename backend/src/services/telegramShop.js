@@ -205,6 +205,7 @@ export async function payScreen(user, id, qty, opt = 0) {
   paying.add(user.id);
   try {
     const { order, payments, newBalance } = await orderService.createOrder(user.id, {
+      channel: 'bot',
       items: [{ productId: Number(id), quantity: Number(qty), option: Number(opt) || 0 }],
       paymentMethod: 'wallet',
     });

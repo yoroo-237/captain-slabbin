@@ -25,6 +25,7 @@ model User {
   telegramHandle   String?
   // Telegram user id, set when the account is opened or connected from the shop's bot
   telegramId       String?   @unique
+  staffTelegramId  String?   @unique  // staff: Telegram account that signs in from notification buttons
   // The bot this customer last used: their Telegram messages go out through it
   telegramBotId    Int?
   telegramBot      TelegramBot? @relation(fields: [telegramBotId], references: [id], onDelete: SetNull)

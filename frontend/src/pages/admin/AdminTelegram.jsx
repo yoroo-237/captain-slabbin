@@ -2,7 +2,7 @@ import { useApp } from '../../context/AppContext.jsx'
 import { isAdmin } from '../../utils/roles.js'
 import AdminTelegramBot from './AdminTelegramBot.jsx'
 
-// Telegram bots on their own page, also reachable from Settings → Telegram bot
+// Telegram bots on their own page (Admin → Telegram bots)
 export default function AdminTelegram() {
   const { user } = useApp()
   return (

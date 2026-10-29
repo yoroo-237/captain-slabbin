@@ -3,6 +3,7 @@ import { adminFetch } from './utils/api.js'
 import { BASE } from '../../utils/api.js'
 import Pagination from '../../components/admin/Pagination.jsx'
 import { askConfirm, showMessage } from './dialog'
+import ShopTabs, { useShopFilter } from '../../components/admin/ShopTabs.jsx'
 
 const PLACEHOLDER = 'https://bestofthebay.net/wp-content/uploads/woocommerce-placeholder.webp'
 
@@ -577,11 +578,10 @@ export default function AdminProducts() {
   const [deleting, setDeleting]         = useState(false)
   const [showCreate, setShowCreate]   = useState(false)
   const [categories, setCategories]   = useState([])
-  // The website and each bot catalog are separate shops; the one picked is remembered
-  const [shops, setShops]             = useState([])
-  const [shop, setShopState]          = useState(() => { try { return localStorage.getItem('admin_products_shop') || 'all' } catch { return 'all' } })
-  const setShop = v => { setShopState(v); setPage(1); try { localStorage.setItem('admin_products_shop', v) } catch { /* storage blocked */ } }
-  const shopOf = key => shops.find(s => s.key === (key || 'site'))
+  // The website and each bot catalog are separate shops (the pick follows you across the admin)
+  const shopFilter = useShopFilter()
+  const { shop, shopOf, reload: loadShops } = shopFilter
+  useEffect(() => { setPage(1) }, [shop])
 
   const fetchProducts = useCallback(async () => {
     setLoading(true)
@@ -601,13 +601,9 @@ export default function AdminProducts() {
 
   useEffect(() => { fetchProducts() }, [fetchProducts])
 
-  const loadShops = useCallback(() => adminFetch('/admin/products/shops').then(d => setShops(d || [])).catch(() => {}), [])
   useEffect(() => {
     adminFetch('/admin/categories').then(d => setCategories(d || [])).catch(() => {})
-    loadShops()
-  }, [loadShops])
-  // A shop that no longer exists falls back to all of them
-  useEffect(() => { if (shops.length && shop !== 'all' && !shopOf(shop)) setShop('all') }, [shops]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
   // Shelves of the shop a product belongs to (the website's have no source)
   const shelvesOf = key => categories.filter(c => (c.source || 'site') === (key || 'site'))
 
@@ -643,18 +639,7 @@ export default function AdminProducts() {
       </div>
 
       <div className="admin-card" style={{ marginBottom: '12px', padding: '12px 16px', display: 'grid', gap: 10 }}>
-        {shops.length > 1 && (
-          <div className="admin-tabs" style={{ margin: 0, flexWrap: 'wrap' }} role="tablist" aria-label="Shop">
-            {[{ key: 'all', label: 'All shops', count: shops.reduce((n, s) => n + s.count, 0) }, ...shops].map(s => (
-              <button key={s.key} type="button" role="tab" aria-selected={shop === s.key} className={'admin-tab' + (shop === s.key ? ' active' : '')}
-                title={s.bots?.length ? `Sold by ${s.bots.join(', ')}` : s.key === 'site' ? 'The website and the shop’s own bot' : undefined}
-                onClick={() => setShop(s.key)}>
-                {s.label} <span style={{ color: '#888', fontWeight: 400 }}>({s.count})</span>
-              </button>
-            ))}
-          </div>
-        )}
-        {shopOf(shop)?.bots?.length > 0 && <div className="admin-text-muted" style={{ fontSize: 13 }}>Sold by {shopOf(shop).bots.join(', ')}</div>}
+        <ShopTabs filter={shopFilter} />
         <input
           className="admin-input"
           placeholder="Search by name…"

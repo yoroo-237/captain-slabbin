@@ -9,7 +9,7 @@ import PgpKeyField from '../../components/admin/PgpKeyField.jsx'
 // chat. Styles are written under "Styles", or recreated from one of the shop's
 // own bots by its token.
 const muted = { fontSize: '0.8rem', color: '#777', marginTop: 4 }
-const TABS = ['Bots', 'Styles']
+const TABS = ['Bots', 'Styles', 'Staff sign-in']
 
 export default function AdminTelegramBot({ canEdit }) {
   const [tab, setTab] = useState('Bots')
@@ -47,18 +47,22 @@ export default function AdminTelegramBot({ canEdit }) {
 
       {tab === 'Bots' && (
         <div style={{ display: 'grid', gap: 16 }}>
-          {status.bots.map(bot => <BotCard key={bot.id} bot={bot} styles={status.styles} shelves={shelves} busy={busy} act={act} post={post} />)}
+          {status.bots.length > 1 && <p style={{ ...muted, margin: 0 }}>Click a bot to open its settings.</p>}
+          {status.bots.map(bot => <BotCard key={bot.id} bot={bot} styles={status.styles} shelves={shelves} busy={busy} act={act} post={post} defaultOpen={status.bots.length === 1} />)}
           <LinkForm hasBots={status.bots.length > 0} styles={status.styles} busy={busy} act={act} post={post} />
         </div>
       )}
       {tab === 'Styles' && <StylesTab bots={status.bots} styles={status.styles} shelves={shelves} busy={busy} act={act} post={post} reload={load} />}
+      {tab === 'Staff sign-in' && <StaffSignIn status={status} busy={busy} act={act} reload={load} />}
     </div>
   )
 }
 
 // ─── Bots ────────────────────────────────────────────────────────────────────
 
-function BotCard({ bot, styles, shelves: allShelves, busy, act, post }) {
+function BotCard({ bot, styles, shelves: allShelves, busy, act, post, defaultOpen }) {
+  const [open, setOpen] = useState(!!defaultOpen)
+  const [section, setSection] = useState('overview')
   const [picked, setPicked] = useState(bot.shelves || [])
   useEffect(() => { setPicked(bot.shelves || []) }, [bot.shelves])
   const [pgpKey, setPgpKey] = useState(bot.pgpKey || '')
@@ -82,12 +86,33 @@ function BotCard({ bot, styles, shelves: allShelves, busy, act, post }) {
   const toggle = slug => setPicked(p => p.includes(slug) ? p.filter(s => s !== slug) : [...p, slug])
   const changed = JSON.stringify([...picked].sort()) !== JSON.stringify([...(bot.shelves || [])].sort())
 
+  const styleName = styles.find(s => s.id === bot.styleId)?.name
+  const SECTIONS = [['overview', 'Overview'], ['chats', 'Chats'], ...(shelves.length ? [['shelves', 'Shelves']] : []), ['pgp', `PGP key${bot.pgpFingerprint ? ' ✓' : ''}`], ['profile', 'Profile & photo']]
+
   return (
-    <div className="admin-card">
-      <h2 className="admin-card-title">
-        @{bot.username || 'bot'} <span style={{ fontWeight: 400, color: '#777' }}>({bot.name})</span>
+    <div className="admin-card" style={{ padding: 0, overflow: 'hidden' }}>
+      {/* One line per bot: who it is, its state, what it sells; open it to change it */}
+      <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open}
+        style={{ all: 'unset', boxSizing: 'border-box', width: '100%', cursor: 'pointer', padding: '14px 18px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <span title={bot.error ? 'Not answering' : bot.webhook?.url ? 'Online' : 'Webhook off'} style={{ width: 10, height: 10, borderRadius: '50%', flex: 'none', background: bot.error ? '#dc3545' : bot.webhook?.url ? '#28a745' : '#f0ad4e' }} />
+        <span style={{ fontWeight: 700 }}>@{bot.username || 'bot'}</span>
+        <span style={{ color: '#777' }}>{bot.name}</span>
         {bot.isPrimary && <span className="admin-pill">Primary</span>}
-      </h2>
+        <span style={{ marginLeft: 'auto', color: '#555', fontSize: 13, display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+          <span>Style: <b>{styleName || 'none'}</b></span>
+          <span>Catalog: <b>{catalog || 'shop'}</b></span>
+          <span>{bot.customers} customer{bot.customers === 1 ? '' : 's'}</span>
+          <span aria-hidden="true">{open ? '▴' : '▾'}</span>
+        </span>
+      </button>
+
+      {open && (
+      <div style={{ borderTop: '1px solid #eee', padding: '14px 18px 18px' }}>
+      <div className="admin-tabs" style={{ marginTop: 0 }}>
+        {SECTIONS.map(([k, label]) => <button key={k} type="button" className={'admin-tab' + (section === k ? ' active' : '')} onClick={() => setSection(k)}>{label}</button>)}
+      </div>
+
+      {section === 'overview' && (<>
       {bot.error ? (
         <div className="admin-alert admin-alert-error">This bot does not answer: {String(bot.error).replace(/[.\s]+$/, '')}. Its token may have been revoked: unlink it and link it again.</div>
       ) : (
@@ -95,6 +120,7 @@ function BotCard({ bot, styles, shelves: allShelves, busy, act, post }) {
           <div><b>Link for customers:</b> <a href={`https://t.me/${bot.username}`} target="_blank" rel="noreferrer">t.me/{bot.username}</a> · {bot.customers} customer{bot.customers === 1 ? '' : 's'}</div>
           {bot.isPrimary && <div><b>Orders and messages go to:</b> {bot.chat ? `${bot.chat.title} (${bot.chatId})` : bot.chatId || "waiting: add the bot to your shop's group or channel, it picks it by itself"}</div>}
           <div><b>Catalog and commands:</b> {bot.webhook?.url ? 'on' : 'off until the site runs on HTTPS'}{bot.webhook?.lastError ? ` · last error: ${bot.webhook.lastError}` : ''}</div>
+          <div><b>PGP key:</b> {bot.pgpFingerprint ? <code>{bot.pgpFingerprint}</code> : 'none'}</div>
         </div>
       )}
 
@@ -108,7 +134,14 @@ function BotCard({ bot, styles, shelves: allShelves, busy, act, post }) {
           {styles.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
       </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {bot.isPrimary && <button type="button" className="admin-btn admin-btn-primary" disabled={!!busy} onClick={() => act('test', () => post('test'), 'Test message sent.')}>{busy === 'test' ? 'Sending…' : 'Send a test message'}</button>}
+        {!bot.isPrimary && <button type="button" className="admin-btn admin-btn-secondary" disabled={!!busy} onClick={() => act(`primary${id}`, () => post(`bots/${id}/primary`), `@${bot.username} now posts the shop's notifications. Pick its chat under Chats.`)}>Make primary</button>}
+      </div>
+      </>)}
 
+      {section === 'chats' && (<>
+      {!bot.isPrimary && groups.length === 0 && <p style={muted}>Only the primary bot posts orders and messages. Add this bot to a group or channel to have it announce new products there.</p>}
       {bot.isPrimary && bot.seenChats.length > 0 && (
         <div className="admin-form-group">
           <label className="admin-label">Orders and messages go to</label>
@@ -128,8 +161,9 @@ function BotCard({ bot, styles, shelves: allShelves, busy, act, post }) {
           </select>
         </div>
       )}
+      </>)}
 
-      {shelves.length > 0 && (
+      {section === 'shelves' && shelves.length > 0 && (
         <div className="admin-form-group">
           <label className="admin-label">Shelves this bot shows</label>
           <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
@@ -144,6 +178,7 @@ function BotCard({ bot, styles, shelves: allShelves, busy, act, post }) {
         </div>
       )}
 
+      {section === 'pgp' && (<>
       <PgpKeyField label="PGP public key of this bot" value={pgpKey} onChange={setPgpKey} name={bot.name || bot.username} fileName={bot.username || 'bot'}
         onGenerated={key => act(`pgp${id}`, () => post(`bots/${id}/pgp`, { key }), 'New key saved on the bot. Its private key was downloaded: keep the file and the passphrase safe.')}
         help={bot.pgpFingerprint
@@ -155,10 +190,11 @@ function BotCard({ bot, styles, shelves: allShelves, busy, act, post }) {
           {pgpKey.trim() ? 'Save PGP key' : 'Remove PGP key'}
         </button>
       )}
+      </>)}
 
+      {section === 'profile' && (<>
+      <p style={{ ...muted, marginTop: 0 }}>The name, descriptions and commands come from the style (Overview). The profile photo can be changed here.</p>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        {bot.isPrimary && <button type="button" className="admin-btn admin-btn-primary" disabled={!!busy} onClick={() => act('test', () => post('test'), 'Test message sent.')}>{busy === 'test' ? 'Sending…' : 'Send a test message'}</button>}
-        {!bot.isPrimary && <button type="button" className="admin-btn admin-btn-secondary" disabled={!!busy} onClick={() => act(`primary${id}`, () => post(`bots/${id}/primary`), `@${bot.username} now posts the shop's notifications. Pick its chat below.`)}>Make primary</button>}
         {isShopStyle
           ? <button type="button" className="admin-btn admin-btn-secondary" disabled={!!busy} onClick={() => act(`photo${id}`, () => post(`bots/${id}/photo`), 'The shop photo is now the bot’s profile photo.')}>Use the shop photo</button>
           : <button type="button" className="admin-btn admin-btn-secondary" disabled={!!busy} onClick={() => act(`photo${id}`, () => post(`bots/${id}/photo`, { fromStyle: true }), 'The style’s photo is now the bot’s profile photo.')}>Use the style’s photo</button>}
@@ -169,6 +205,42 @@ function BotCard({ bot, styles, shelves: allShelves, busy, act, post }) {
         <button type="button" className="admin-btn admin-btn-danger" disabled={!!busy}
           onClick={async () => await askConfirm(`Unlink @${bot.username}? It stops answering customers here.`, { okLabel: 'Unlink', danger: true }) && act(`unlink${id}`, () => post(`bots/${id}/unlink`), 'Bot unlinked.')}>Unlink</button>
       </div>
+      </>)}
+      </div>
+      )}
+    </div>
+  )
+}
+
+// The buttons on staff notifications (Open order, Reply in admin, Open admin) sign
+// you in with Telegram and open the dashboard page directly, instead of the site's
+// sign-in page in Telegram's browser
+function StaffSignIn({ status, busy, act, reload }) {
+  const primary = status.bots.find(b => b.isPrimary)
+  const on = status.staffLogin?.enabled
+  const domain = status.staffLogin?.domain
+  const toggle = v => act('stafflogin', () => adminFetch('/admin/settings', { method: 'PUT', body: JSON.stringify({ telegram_staff_login: v ? 'true' : 'false' }) }),
+    v ? 'Telegram sign-in is on: the next buttons open the dashboard directly.' : 'Telegram sign-in is off: the buttons are plain links again.').then(reload)
+  return (
+    <div className="admin-card">
+      <h2 className="admin-card-title">Open the dashboard straight from Telegram</h2>
+      <ol style={{ ...muted, fontSize: '0.9rem', paddingLeft: 18, lineHeight: 1.8 }}>
+        <li>In Telegram, open <b>@BotFather</b>, send <code>/setdomain</code>, choose <b>@{primary?.username || 'your primary bot'}</b> and send <code>{domain || 'your site domain'}</code>.</li>
+        <li>Turn it on below.</li>
+        <li>The first time you tap <b>Open order</b> (or any staff button), sign in once with your admin account: your Telegram is then linked to it. After that, the button opens the page already signed in.</li>
+      </ol>
+      <p style={muted}>Each person who taps a button signs in as themselves: a Telegram account linked to no staff account only gets the sign-in page.</p>
+      <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 12 }}>
+        <input type="checkbox" checked={!!on} disabled={!!busy || !primary} onChange={e => toggle(e.target.checked)} />
+        Sign in with Telegram from staff buttons {on ? <span className="admin-pill">On</span> : null}
+      </label>
+      {on && <p style={muted}>If a button says “Bot domain invalid”, step 1 is missing or the domain differs from {domain}.</p>}
+      {status.staffLogin?.linked && (
+        <p style={muted}>Your account is linked to a Telegram account.{' '}
+          <button type="button" className="admin-btn admin-btn-secondary admin-btn-sm" disabled={!!busy}
+            onClick={() => act('staffunlink', () => adminFetch('/admin/telegram/staff-unlink', { method: 'POST', body: '{}' }), 'Your Telegram is no longer linked: the buttons will ask you to sign in.').then(reload)}>Unlink my Telegram</button>
+        </p>
+      )}
     </div>
   )
 }

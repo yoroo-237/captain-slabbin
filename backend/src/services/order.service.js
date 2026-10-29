@@ -7,6 +7,7 @@ import { priceCart } from './pricing.service.js';
 import { notifyWalletOrder } from './telegram.service.js';
 import { checkVoucher, useVoucher } from './voucher.service.js';
 import { isPgpMessage } from './pgp.service.js';
+import { REFUND_COINS, validRefund, refundNote, keepRefundOnAccount } from './refund.service.js';
 
 export const orderService = {
   // No customer details are required: the Telegram username/ID is optional (saved
@@ -16,8 +17,19 @@ export const orderService = {
   // From a "commands" bot: `shipping` { name, address, fee } is the address as the
   // customer typed it (plain or PGP) and the style's flat fee; `voucher` a code,
   // within the bot's catalog `source`.
-  async createOrder(userId, { items, paymentMethod, payCurrency, telegram, delivery, note, shipping, voucher, source = null }) {
+  // `refund` { currency, address }: optional, where a refund would be sent (website;
+  // the bot puts it in `note` itself). `channel`: 'site' or 'bot', where it was placed.
+  async createOrder(userId, { items, paymentMethod, payCurrency, telegram, delivery, note, shipping, voucher, refund, channel = 'site', source = null }) {
     if (!items?.length)     throw appError('Cart is empty', 400);
+    let refundLine = null;
+    if (refund?.address) {
+      const coin = String(refund.currency || '').toUpperCase();
+      const address = String(refund.address).trim();
+      if (!validRefund(coin, address)) throw appError(`This does not look like a ${REFUND_COINS[coin] || 'crypto'} refund address.`, 400);
+      refundLine = refundNote(coin, address);
+      await keepRefundOnAccount(userId, coin, address);
+    }
+    const notes = [note ? String(note).slice(0, 2000) : null, refundLine].filter(Boolean).join('\n') || null;
 
     let shipTo = null;
     if (delivery?.pgp) {
@@ -94,7 +106,7 @@ export const orderService = {
           shippingAddress: shipTo?.address || '',
           name:            shipTo?.name || '',
           email:           null,
-          note:            note ? String(note).slice(0, 2000) : null,
+          note:            notes,
           voucherCode:     offer?.voucher.code || null,
           discount,
           payments,
@@ -134,7 +146,7 @@ export const orderService = {
     const buyer = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, username: true, telegramHandle: true } });
     // Paid in the app, invoiced on Telegram (best-effort: never fails the order)
     const [invoice, contact, { balance }] = await Promise.all([
-      notifyWalletOrder(result, buyer, payments).catch(() => null),
+      notifyWalletOrder(result, buyer, payments, { channel }).catch(() => null),
       prisma.siteSetting.findUnique({ where: { key: 'telegram_username' } }),
       balanceService.getUserBalance(userId),
     ]);
@@ -144,6 +156,7 @@ export const orderService = {
       invoice: invoice && {
         text: invoice.text,
         delivered: invoice.delivered,
+        receiptDelivered: invoice.receiptDelivered,
         shopTelegramUrl: shopUsername ? `https://t.me/${shopUsername}?text=${encodeURIComponent(invoice.text)}` : null,
       },
     };

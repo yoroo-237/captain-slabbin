@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { adminFetch } from './utils/api.js'
 import StatusBadge from '../../components/admin/StatusBadge.jsx'
 import Pagination from '../../components/admin/Pagination.jsx'
+import ShopTabs, { useShopFilter } from '../../components/admin/ShopTabs.jsx'
 
 // Must match VALID_STATUSES in backend/src/controllers/admin/orders.controller.js
 const ORDER_STATUSES = ['processing', 'shipped', 'delivered', 'cancelled', 'refunded']
@@ -69,6 +70,11 @@ export default function AdminOrders() {
   const [loading, setLoading] = useState(true)
   const [updateOrder, setUpdateOrder] = useState(null)
   const requestIdRef = useRef(0)
+  // Orders of one shop: the website's or a bot catalog's (by the products they hold)
+  const shopFilter = useShopFilter()
+  const { shop, shopOf, query: shopQuery } = shopFilter
+  useEffect(() => { setPage(1) }, [shop])
+  const shopOfOrder = o => shopOf(o.items?.find(i => i.product)?.product.source)?.label || 'Website'
 
   // Debounce search input before it triggers a fetch
   useEffect(() => {
@@ -83,6 +89,7 @@ export default function AdminOrders() {
       const params = new URLSearchParams({ page, limit: 20 })
       if (search) params.set('search', search)
       if (status) params.set('status', status)
+      if (shopQuery) params.set('shop', shopQuery)
       const data = await adminFetch(`/admin/orders?${params}`)
       if (requestId !== requestIdRef.current) return
       setOrders(data.orders || [])
@@ -92,7 +99,7 @@ export default function AdminOrders() {
     } finally {
       if (requestId === requestIdRef.current) setLoading(false)
     }
-  }, [page, search, status])
+  }, [page, search, status, shopQuery])
 
   useEffect(() => { fetchOrders() }, [fetchOrders])
 
@@ -108,6 +115,10 @@ export default function AdminOrders() {
           <h1 className="admin-page-title">Orders</h1>
           <p className="admin-page-subtitle">Manage customer orders</p>
         </div>
+      </div>
+
+      <div className="admin-card" style={{ marginBottom: 12, padding: '12px 16px' }}>
+        <ShopTabs filter={shopFilter} counts={null} />
       </div>
 
       <div className="admin-filters">
@@ -126,6 +137,7 @@ export default function AdminOrders() {
               <tr>
                 <th>Order #</th>
                 <th>Customer</th>
+                {shop === 'all' && <th>Shop</th>}
                 <th>Items</th>
                 <th>Total</th>
                 <th>Payment</th>
@@ -144,11 +156,12 @@ export default function AdminOrders() {
                   </tr>
                 ))
               ) : orders.length === 0 ? (
-                <tr><td colSpan={8} className="admin-table-empty">No data found.</td></tr>
+                <tr><td colSpan={9} className="admin-table-empty">No data found.</td></tr>
               ) : orders.map(o => (
                 <tr key={o.id}>
                   <td><span className="admin-code">#{o.orderNumber || o.id}</span></td>
                   <td>{o.user?.username || o.name || '—'}</td>
+                  {shop === 'all' && <td style={{ color: '#555', whiteSpace: 'nowrap' }}>{shopOfOrder(o)}</td>}
                   <td>{o.items ? o.items.reduce((n, i) => n + i.quantity, 0) : '—'}</td>
                   <td>${Number(o.totalAmount || 0).toFixed(2)}</td>
                   <td>{o.paymentMethod || '—'}</td>

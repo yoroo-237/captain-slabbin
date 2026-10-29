@@ -3,6 +3,7 @@ import { ok } from '../../utils/response.js';
 import { parsePaginationParams, buildPagination } from '../../utils/pagination.js';
 import { appError } from '../../utils/formatters.js';
 import { dmUser, escapeHtml } from '../../services/telegram.service.js';
+import { orderShopWhere } from '../../utils/shops.js';
 
 const STATUS_TEXT = { processing: 'is being prepared', shipped: 'has shipped', delivered: 'was delivered', cancelled: 'was cancelled', refunded: 'was refunded' };
 
@@ -20,9 +21,9 @@ const VALID_STATUSES = ['processing', 'shipped', 'delivered', 'cancelled', 'refu
 export const adminOrdersController = {
   async list(req, res) {
     const { page, limit, skip } = parsePaginationParams(req.query);
-    const { search, status, paymentMethod } = req.query;
+    const { search, status, paymentMethod, shop } = req.query;
 
-    const where = {};
+    const where = { ...orderShopWhere(shop) };
     if (status)        where.status        = status;
     if (paymentMethod) where.paymentMethod = paymentMethod;
     if (search) {
@@ -37,7 +38,7 @@ export const adminOrdersController = {
       prisma.order.findMany({
         where, skip, take: limit,
         orderBy: { placedAt: 'desc' },
-        include: { user: { select: { id: true, username: true } }, items: true },
+        include: { user: { select: { id: true, username: true } }, items: { include: { product: { select: { source: true } } } } },
       }),
       prisma.order.count({ where }),
     ]);

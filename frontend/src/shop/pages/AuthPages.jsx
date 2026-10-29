@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { apiFetch } from '../../utils/api.js'
+import { apiFetch, BASE } from '../../utils/api.js'
 import { useApp } from '../../context/AppContext.jsx'
 import { useSeo } from '../seo.js'
 import { SignInForm, CreateAccountForm } from '../components/AuthForms.jsx'
@@ -59,6 +59,39 @@ export function CreateAccountPage() {
     >
       <CreateAccountForm onDone={() => navigate(location.state?.from?.pathname || '/account/wallet', { replace: true })} />
     </AuthShell>
+  )
+}
+
+// /admin-tg?to=/admin/…&id=…&hash=…: a staff button on a Telegram notification.
+// Telegram signs the account of the person who tapped it; a Telegram account linked
+// to a staff account opens the page signed in. The first time, the person signs in
+// normally and comes back here, which links their Telegram to that account.
+export function StaffTelegramPage() {
+  const { login, loadUserData } = useApp()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const [error, setError] = useState('')
+  useEffect(() => {
+    const q = new URLSearchParams(location.search)
+    const to = /^\/admin(\/|$)/.test(q.get('to') || '') ? q.get('to') : '/admin'
+    const data = Object.fromEntries([...q].filter(([k]) => k !== 'to'))
+    const token = localStorage.getItem('token')
+    fetch(`${BASE}/api/auth/telegram-staff`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ data }),
+    }).then(async r => {
+      const d = await r.json().catch(() => ({}))
+      if (r.ok) { const s = d.data || d; login(s.accessToken, s.refreshToken, s.user); await loadUserData(); return navigate(to, { replace: true }) }
+      // Not linked yet: sign in once, then come back here to link this Telegram account
+      if (d.needLogin) return navigate('/login', { replace: true, state: { from: { pathname: location.pathname + location.search } } })
+      setError(d.message || d.error || 'This sign-in did not work.')
+    }).catch(() => setError('The shop could not be reached. Try again.'))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <div style={{ padding: '64px 16px', textAlign: 'center', fontFamily: 'system-ui, sans-serif' }}>
+      {error ? <><p role="alert" style={{ color: '#c0392b' }}>{error}</p><p><a href="/login">Sign in</a></p></> : <p>Opening the dashboard…</p>}
+    </div>
   )
 }
 

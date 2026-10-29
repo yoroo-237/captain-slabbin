@@ -49,6 +49,8 @@ export default function CheckoutPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [placed, setPlaced] = useState(null)
+  // Optional: where the shop sends money back should the order be refunded
+  const [refund, setRefund] = useState({ currency: 'BTC', address: '' })
   // The shop's PGP key: the address can then be encrypted on this device before it is sent
   const shopKey = settings?.pgp_public_key?.trim() || ''
   const [encrypt, setEncrypt] = useState(true)
@@ -59,7 +61,12 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (!user) return
     refreshBalance?.()
-    apiFetch('/profile').then(p => setProfileHandle(p.telegramHandle || '')).catch(() => setProfileHandle(''))
+    apiFetch('/profile').then(p => {
+      setProfileHandle(p.telegramHandle || '')
+      // The refund address given last time (kept on the account for BTC and XMR)
+      if (p.btcRefundAddress) setRefund(r => r.address ? r : { currency: 'BTC', address: p.btcRefundAddress })
+      else if (p.xmrRefundAddress) setRefund(r => r.address ? r : { currency: 'XMR', address: p.xmrRefundAddress })
+    }).catch(() => setProfileHandle(''))
   }, [user]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const shipping = delivery ? shippingFor(subtotal, settings).shipping : 0
@@ -108,6 +115,7 @@ export default function CheckoutPage() {
           items: items.map(i => ({ productId: i.id, quantity: i.quantity })),
           ...(!profileHandle && telegram.trim() ? { telegram: telegram.trim() } : {}),
           ...(shipTo ? { delivery: shipTo } : {}),
+          ...(refund.address.trim() ? { refund: { currency: refund.currency, address: refund.address.trim() } } : {}),
           paymentMethod: payCurrency || 'wallet',
           ...(payCurrency ? { payCurrency } : {}),
         }),
@@ -232,6 +240,23 @@ export default function CheckoutPage() {
                   )}
                 </div>
 
+                <div className="panel">
+                  <div className="panel-title"><Icon.wallet /> Refund address <span className="muted" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 600 }}>(optional)</span></div>
+                  <div className="refund-row">
+                    <div className="field" style={{ marginBottom: 0 }}>
+                      <label htmlFor="rf-coin">Coin</label>
+                      <select id="rf-coin" className="select" value={refund.currency} onChange={e => setRefund(r => ({ ...r, currency: e.target.value }))}>
+                        {[['BTC', 'Bitcoin'], ['LTC', 'Litecoin'], ['ETH', 'Ethereum'], ['DOGE', 'Dogecoin'], ['XMR', 'Monero']].map(([k, n]) => <option key={k} value={k}>{n}</option>)}
+                      </select>
+                    </div>
+                    <div className="field" style={{ marginBottom: 0 }}>
+                      <label htmlFor="rf-addr">Your {refund.currency} address</label>
+                      <input id="rf-addr" className="input" autoComplete="off" spellCheck={false} placeholder="Leave empty if you prefer" value={refund.address} onChange={e => setRefund(r => ({ ...r, address: e.target.value }))} />
+                    </div>
+                  </div>
+                  <span className="hint" style={{ display: 'block', marginTop: 8 }}>Paid from your wallet: this is only where we send money back, should your order be refunded. It goes on your order.</span>
+                </div>
+
                 <div className="panel step-panel">
                   <div className="panel-title"><span className="n">2</span> Payment</div>
                   {holdings.length === 0 ? (
@@ -331,7 +356,7 @@ function OrderPlaced({ placed }) {
       {invoice && (
         <div className={'alert ' + (invoice.delivered ? 'alert-ok' : 'alert-info')} style={{ marginTop: 16, marginBottom: 0 }}>
           <Icon.telegram />
-          <span>{invoice.delivered ? 'Your invoice has been sent to the shop on Telegram.' : 'Open Telegram to send your invoice to the shop.'}</span>
+          <span>{invoice.delivered ? 'Your invoice has been sent to the shop on Telegram.' : 'Open Telegram to send your invoice to the shop.'}{invoice.receiptDelivered ? ' Your receipt is in your Telegram too.' : ''}</span>
         </div>
       )}
 

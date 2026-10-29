@@ -6,6 +6,7 @@ import { env } from '../config/env.js';
 import { lookOf, isShopStyle } from './telegramStyle.js';
 import { pushStaff } from './push.service.js';
 import { readPublicKey, keyFingerprint } from './pgp.service.js';
+import { staffButton, staffLoginEnabled, siteDomain } from './staffLogin.service.js';
 
 // The shop's Telegram bots. Several can be linked from Admin → Telegram; they all
 // sell the same shop, each with its own style (services/telegramStyle.js) and
@@ -168,7 +169,10 @@ export async function telegramStatus() {
     }
   }));
   // (a style's look can be large: only the catalog it sells goes to the admin)
-  return { bots: rows, styles: styles.map(({ look, ...s }) => ({ ...s, catalog: look?.catalog || null })) };
+  return {
+    bots: rows, styles: styles.map(({ look, ...s }) => ({ ...s, catalog: look?.catalog || null })),
+    staffLogin: { enabled: await staffLoginEnabled(), domain: siteDomain() },
+  };
 }
 
 // Step 1: check a token before linking it. Lists the chats the bot has seen so
@@ -232,7 +236,7 @@ export async function linkBot(token, chatId, { styleId = null, primary = false, 
   if (!isPrimary) return result;
   if (!chatId) return { ...result, waitingForChat: true };
   const site = (env.frontendUrl || '').replace(/\/$/, '');
-  const hello = await sendAs(bot, chatId, `✅ <b>${escapeHtml(me.first_name)}</b> is now linked to the shop. Paid orders and customer messages will appear here.`, site ? [{ text: 'Open admin', url: `${site}/admin` }] : null);
+  const hello = await sendAs(bot, chatId, `✅ <b>${escapeHtml(me.first_name)}</b> is now linked to the shop. Paid orders and customer messages will appear here.`, site ? [await staffButton('Open the dashboard', `${site}/admin`)] : null);
   return { ...result, helloDelivered: hello.delivered, helloError: hello.reason || null };
 }
 
@@ -331,7 +335,7 @@ const adminLink = path => env.frontendUrl ? `${env.frontendUrl.replace(/\/$/, ''
 // Every order is paid in the app; its invoice then goes to Telegram: posted to the
 // shop's chat here (with a button straight to the order in admin), and returned
 // as plain text so the customer can send it too.
-export async function notifyWalletOrder(order, user, payments) {
+export async function notifyWalletOrder(order, user, payments, { channel = 'site' } = {}) {
   const telegram = formatTelegramContact(user.telegramHandle);
   const paid = (payments || []).map(p => `${p.amount} ${p.currency}`).join(' + ') || 'wallet';
   const lines = (order.items || []).map(i => `• ${i.quantity} × ${i.name}: ${money(Number(i.price) * i.quantity)}`);
@@ -364,8 +368,20 @@ export async function notifyWalletOrder(order, user, payments) {
       ? `📦 <b>Ship to:</b> ${/^-----BEGIN PGP MESSAGE/.test(order.shippingAddress) ? '🔒 PGP encrypted address, decrypt it on the order' : `${escapeHtml(order.name)}\n${escapeHtml(order.shippingAddress)}`}${Number(order.shippingFee) > 0 ? ` · ${money(order.shippingFee)}` : ' · free shipping'}`
       : '📦 No delivery, arrange on Telegram',
     order.note ? `📝 <b>Notes:</b>\n${escapeHtml(order.note)}` : null,
-  ].filter(Boolean).join('\n'), link ? [{ text: '📦 Open order', url: link }] : null);
-  return { text, delivered: sent.delivered };
+  ].filter(Boolean).join('\n'), link ? [await staffButton('📦 Open order', link)] : null);
+  // An order placed on the website: its receipt also goes to the customer's own
+  // Telegram, through the bot they use (the bot shows its own receipt already)
+  const receipt = channel === 'site' ? await dmUser(user.id, [
+    `✅ <b>Order ${escapeHtml(order.orderNumber)} is paid</b>`,
+    '',
+    ...lines.map(escapeHtml),
+    order.voucherCode ? `🎟 ${escapeHtml(order.voucherCode)}: −${money(order.discount)}` : null,
+    order.shippingAddress ? `Shipping: ${Number(order.shippingFee) > 0 ? money(order.shippingFee) : 'free'}` : 'No delivery: we arrange it with you here.',
+    `<b>Total: ${money(order.totalAmount)}</b> · paid ${escapeHtml(paid)}`,
+    '',
+    'We have your order and message you here about the delivery.',
+  ].filter(v => v !== null).join('\n'), (env.frontendUrl || '').startsWith('https://') ? [{ text: '📦 Track my order', url: `${env.frontendUrl.replace(/\/$/, '')}/account/orders` }] : null) : null;
+  return { text, delivered: sent.delivered, receiptDelivered: !!receipt?.delivered };
 }
 
 export async function notifyNewMessage(user, body) {
@@ -377,7 +393,7 @@ export async function notifyNewMessage(user, body) {
     `💬 <b>New message from ${escapeHtml(user.username)}</b>`,
     telegram ? `✈️ ${escapeHtml(telegram)}` : null,
     escapeHtml(preview),
-  ].filter(Boolean).join('\n'), link ? [{ text: '💬 Reply in admin', url: link }] : null);
+  ].filter(Boolean).join('\n'), link ? [await staffButton('💬 Reply in admin', link)] : null);
 }
 
 // ─── Customers on the bot ────────────────────────────────────────────────────

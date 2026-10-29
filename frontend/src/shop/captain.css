@@ -635,7 +635,9 @@
 .cs .pay-option.on { border-color: var(--red); background: var(--red-soft); box-shadow: inset 0 0 0 1px var(--red); }
 .cs .pay-option input { accent-color: var(--red); width: 18px; height: 18px; flex: none; }
 .cs .pay-option .amt { margin-left: auto; text-align: right; font-variant-numeric: tabular-nums; font-size: 14px; }
-.cs .pgp-box { border: 1px solid var(--line-2); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; }
+.cs .refund-row { display: grid; grid-template-columns: minmax(120px, 1fr) 3fr; gap: 12px; }
+@media (max-width: 560px) { .cs .refund-row { grid-template-columns: 1fr; } }
+.cs .pgp-box {border: 1px solid var(--line-2); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; }
 .cs .pgp-toggle { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; }
 .cs .pgp-toggle input { accent-color: var(--red); width: 18px; height: 18px; flex: none; margin-top: 2px; }
 .cs .pgp-box details { margin-top: 10px; font-size: 13px; }
