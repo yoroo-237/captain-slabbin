@@ -1,7 +1,7 @@
 """Connexion unique du compte utilisateur Telethon.
 
 Lit API_ID, API_HASH et PHONE (voir README) et crée la session
-<profil>.session dans C:\\Users\\<vous>\\.tg-explorer\\.
+sessions/<profil>.session dans le dossier de l'outil.
 A lancer soi-même dans un terminal : le code reçu (et le mot de passe 2FA
 éventuel) se tape au clavier et ne passe jamais par le chat.
 
@@ -15,9 +15,20 @@ from common import HOME, make_client
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--profile", default="explorer", help="nom de la session (défaut : explorer)")
+    parser.add_argument("--logout", action="store_true",
+                        help="ferme la session (l'appareil disparaît de Telegram) pour se connecter avec un autre compte")
     args = parser.parse_args()
 
     client, cfg = make_client(args.profile, sync=True)
+    if args.logout:
+        client.connect()
+        if client.is_user_authorized():
+            client.log_out()  # supprime aussi le fichier .session
+            print(f"Session « {args.profile} » fermée.")
+        else:
+            client.disconnect()
+            print(f"Session « {args.profile} » déjà déconnectée.")
+        return
     client.start(phone=cfg["PHONE"] or None)
     me = client.get_me()
     print(f"Connecté : {me.first_name} (id {me.id}). Session « {args.profile} » enregistrée dans {HOME}.")

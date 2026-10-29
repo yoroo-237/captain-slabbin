@@ -334,10 +334,12 @@ const LAYOUT_TEXT_FIELDS = [
 const LAYOUT_LINE_FIELDS = [['handle', 'Shop username, written where a text or product says {handle} (empty = the bot’s own)']]
 // Checkout of the commands layout: voucher, shipping details, summary
 const CHECKOUT_TEXT_FIELDS = [
-  ['vouchersTitle', 'Vouchers: title'], ['noVouchers', 'Vouchers: none applied'], ['voucherAsk', 'Vouchers: asking for a code'],
-  ['shipTitle', 'Shipping: title'], ['shipName', 'Shipping: asking for the name'], ['shipStreet', 'Shipping: asking for the street'],
-  ['shipAddress', 'Shipping: asking for the address (no PGP key)'], ['shipAddressPgp', 'Shipping: asking for the encrypted address ({pgp} = the key page)'],
-  ['pgpInvalid', 'Shipping: not a valid PGP message'], ['checkoutTitle', 'Summary: title'],
+  ['shipTitle', 'Shipping: title'], ['ship_name', 'Shipping: asking for the name'], ['ship_street', 'Shipping: asking for the street'],
+  ['ship_apt', 'Shipping: asking for the apartment'], ['ship_city', 'Shipping: asking for the city'], ['ship_state', 'Shipping: asking for the state'],
+  ['ship_zip', 'Shipping: asking for the postcode'], ['shipCountry', 'Shipping: country'], ['shipAddressPgp', 'Shipping: asking for the encrypted address ({pgp} = the key page)'],
+  ['pgpInvalid', 'Shipping: not a valid PGP message'], ['payTitle', 'Payment method: title'], ['refundAsk', 'Payment method: asking for the refund address ({coin})'],
+  ['myCartTitle', 'My Cart: title'], ['vendor', 'My Cart: vendor name ("by …")'], ['vouchersTitle', 'Vouchers: title'], ['noVouchers', 'Vouchers: none applied'],
+  ['voucherAsk', 'Vouchers: asking for a code'], ['orderNotesAsk', 'Order notes: asking for them'],
 ]
 const TEXT_FIELDS = [
   ['header', 'Menu header'], ['welcome', 'Welcome (before 21+ confirmation)'], ['menuIntro', 'Menu intro (customer)'],

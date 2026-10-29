@@ -156,13 +156,19 @@ ${menu.text}` };
       case 'add':  return board.addToCart(user, a, b);
       case 'rm':   return board.removeFromCart(user, a);
       case 'note': return board.noteScreen(from, user, a);
-      case 'cart': return board.cartBoard(user);
+      case 'cart': return board.cartBoard(user, from);
       case 'cclr': return board.clearCart(user);
-      case 'cpay': return board.cartPay(user);
-      case 'ck':     return board.voucherScreen(from, user);
-      case 'ckvrm':  return board.removeVoucher(from, user);
-      case 'ckship': return board.shipNameScreen(from, user);
-      case 'ckreuse': return board.reuseShipping(user);
+      case 'cpay': return board.cartPay(user, from);
+      // Checkout: a shipping field, restart, PGP, edit, payment method, vouchers, notes
+      case 'ckf':   return board.shipScreen(from, user, a);
+      case 'ckrs':  return board.restartShipping(from, user);
+      case 'ckpgp': return board.pgpScreen(from, user);
+      case 'ckedit': return board.shipEditScreen(user);
+      case 'ckpm':  return board.coinScreen();
+      case 'ckcur': return board.pickCoin(from, user, a);
+      case 'ck':    return board.voucherScreen(from, user);
+      case 'ckvrm': return board.removeVoucher(from, user);
+      case 'ckon':  return board.orderNotesScreen(from);
       case 'buy':  return shop.buyScreen(user, a, b, c);
       case 'pay':  return shop.payScreen(user, a, b, c);
       case 'w':    return shop.walletScreen(user);
@@ -214,11 +220,11 @@ ${menu.text}` });
       const user = await shop.findCustomer(msg.from);
       if (user) return show(msg.chat.id, await board.saveNote(user, asked.productId, text));
     }
-    // Checkout answers: voucher code, recipient name, street, full shipping details
-    const CHECKOUT = { voucher: board.applyVoucher, shipName: board.saveShipName, shipStreet: board.saveShipStreet, shipAddr: board.saveShipAddress };
-    if (asked && CHECKOUT[asked.kind]) {
+    // Checkout answers: a shipping field, the PGP address, the refund address, a voucher, order notes
+    if (asked && asked.kind !== 'note' && asked.kind !== 'custom') {
       const user = await shop.findCustomer(msg.from);
-      if (user) return show(msg.chat.id, await CHECKOUT[asked.kind](msg.from, user, text));
+      const screen = user && await board.checkoutAnswer(msg.from, user, asked, text);
+      if (screen) return show(msg.chat.id, screen);
     }
     if (asked?.kind === 'custom') {
       const user = await shop.findCustomer(msg.from);

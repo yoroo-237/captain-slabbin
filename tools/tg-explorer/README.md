@@ -5,26 +5,32 @@ ses écrans (textes, boutons, images). La sortie se donne ensuite à
 `backend/scripts/import-bot-capture.js` (style) et
 `backend/scripts/import-products-from-capture.js` (produits).
 
-Rien de secret n'est dans ce dossier : les clés et la session restent dans
-`C:\Users\Miguel\.tg-explorer\` (ou dans un `.env` ignoré par git).
+Le dossier est autonome : copiez-le (ou clonez le dépôt) sur n'importe quel PC,
+tout ce que l'outil crée reste dedans, rien n'est écrit dans le profil Windows.
 
-## Installation (une fois)
+| Dans `tools/tg-explorer/` | Contenu | Git |
+|---|---|---|
+| `.env` | API_ID, API_HASH, PHONE, BOT_USERNAME (modèle : `.env.example`) | ignoré |
+| `sessions/` | sessions Telegram, une par profil (**secret** : équivaut à être connecté) | ignoré |
+| `captures/` | une capture par bot | ignoré |
+| `.venv/` | Python isolé de l'outil | ignoré |
+| `.cache/` | caches pip, npm, Python et fichiers temporaires | ignoré |
+| `web/node_modules/`, `web/ui/dist/` | interface web installée et construite | ignorés |
 
-```powershell
-cd M:\Travail\mario\tools\tg-explorer
-python -m pip install -r requirements.txt
-```
+## Installation sur un nouveau PC
 
-La configuration se lit, dans l'ordre : variables d'environnement, `.env` à côté
-des scripts, `C:\Users\Miguel\.tg-explorer\config.env` :
+Prérequis : [Python 3.8+](https://www.python.org/downloads/) (case « Add python.exe
+to PATH ») et [Node.js LTS](https://nodejs.org). Puis double-clic sur `lancer.bat`
+(`./lancer.sh` sur macOS / Linux). Le premier lancement crée `.venv`, installe les
+dépendances, crée `.env` depuis `.env.example` et l'ouvre pour le remplir
+(API_ID et API_HASH : https://my.telegram.org, rubrique API development tools),
+construit l'interface puis l'ouvre sur http://127.0.0.1:5174.
 
-```
-API_ID=...
-API_HASH=...
-PHONE=+...
-```
+Pour reprendre une session existante sans retaper de code, copiez aussi le dossier
+`sessions/` (à transporter comme un mot de passe).
 
-(API_ID et API_HASH viennent de https://my.telegram.org, rubrique API development tools.)
+En ligne de commande, utilisez le Python de l'outil : `.venv\Scripts\python.exe`
+(Windows) ou `.venv/bin/python` (macOS / Linux) à la place de `python` ci-dessous.
 
 ## Connexion (une fois par profil)
 
@@ -34,7 +40,8 @@ python login.py --profile autre    # un second compte
 ```
 
 Telegram envoie un code dans l'application : tapez-le dans le terminal (et le
-mot de passe 2FA s'il y en a un).
+mot de passe 2FA s'il y en a un). Depuis l'interface, le bouton « Se connecter »
+ouvre `connexion.bat`, qui fait la même chose (aussi utilisable en double-clic).
 
 ## Parcours
 
@@ -71,12 +78,18 @@ L'écriture se fait aussi en cas de Ctrl+C ou d'erreur, et tous les 10 pas.
 
 ## Ce que le parcours ne touche pas
 
-Par défaut, tout bouton ou commande contenant buy, pay, checkout, order, confirm,
-cart, purchase, delete, remove, cancel, withdraw, deposit (et leurs équivalents
-français) est ignoré, pour ne rien acheter ni supprimer. La liste des actions
-ignorées est dans `data.json` (`ignored`) et en bas de `report.html`. Ces écrans
-(`/cart`, `/orders`, paiement) se capturent à la main, ou avec `--allow` quand
-vous savez que c'est sans danger, par exemple `--allow "^/cart$"`.
+Le compte n'ayant pas de carte liée, le parcours joue presque tout : panier,
+commandes, checkout, dépôt, achat, paiement, confirmation. Il n'ignore que ce qui
+détruit ou vide quelque chose : delete, remove, clear, withdraw, supprimer,
+retirer, vider, effacer. Attention : acheter,
+payer ou confirmer peut créer des commandes ou des factures en attente chez le bot
+parcouru, et débiter un éventuel solde interne.
+
+`--strict` (case « Mode strict » dans l'interface) remet l'ancienne liste large
+(buy, pay, checkout, order, confirm, cart, purchase, delete, remove, cancel,
+withdraw, deposit et leurs équivalents français), à utiliser si le bot a un vrai
+solde. `--skip REGEX` en exclut une de plus, `--allow REGEX` en rejoue une précise.
+Les actions ignorées sont dans `data.json` (`ignored`) et en bas de `report.html`.
 
 ## Interface web
 

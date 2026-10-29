@@ -27,7 +27,12 @@ from telethon.tl import functions, types
 
 from common import make_client, normalize_bot
 
-DEFAULT_SKIP = (
+# Seulement ce qui détruit ou vide quelque chose (suppression, retrait de fonds). Achats,
+# paiements, confirmations, panier, commandes, checkout et dépôt sont parcourus : le
+# compte n'a pas de carte liée. A resserrer avec --strict si le bot a un vrai solde.
+DEFAULT_SKIP = r"delete|remove|clear|withdraw|supprimer|retirer|vider|effacer"
+# Ancienne liste, large : ignore aussi tout ce qui contient cart, order, checkout, deposit...
+STRICT_SKIP = (
     r"buy|pay|checkout|order|confirm|cart|purchase|delete|remove|cancel|withdraw|deposit|"
     r"acheter|payer|commander|panier|supprimer|annuler"
 )
@@ -45,7 +50,7 @@ def stop_requested(args):
 
 def compile_skip(args):
     """Motif des actions à ne pas jouer : défaut + --skip, moins ce que --allow rend permis."""
-    parts = [] if args.no_default_skip else [DEFAULT_SKIP]
+    parts = [] if args.no_default_skip else [STRICT_SKIP if args.strict else DEFAULT_SKIP]
     parts += args.skip
     skip = re.compile("|".join(parts), re.I) if parts else None
     allow = re.compile("|".join(args.allow), re.I) if args.allow else None
@@ -352,8 +357,10 @@ def parse_args():
     parser.add_argument("--max-media-mb", type=int, default=20, help="taille max d'un média téléchargé")
     parser.add_argument("--skip", action="append", default=[], metavar="REGEX",
                         help="motif supplémentaire à ne jamais jouer, répétable")
+    parser.add_argument("--strict", action="store_true",
+                        help="liste d'exclusion large : ignore aussi panier, commandes, checkout, dépôt")
     parser.add_argument("--no-default-skip", action="store_true",
-                        help="retirer la liste par défaut (achat, paiement, suppression...)")
+                        help="retirer la liste par défaut (suppression, vidage, retrait de fonds)")
     parser.add_argument("--allow", action="append", default=[], metavar="REGEX",
                         help="motif à jouer malgré la liste d'exclusion, répétable")
     parser.add_argument("--resume", action="store_true", help="reprendre le parcours enregistré dans --out")

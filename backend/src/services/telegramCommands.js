@@ -6,6 +6,8 @@ import { getUserBalance } from './balance.service.js';
 import { orderService } from './order.service.js';
 import { priceCart } from './pricing.service.js';
 import { checkVoucher, voucherLabel } from './voucher.service.js';
+import { cryptoService } from './crypto.service.js';
+import { isAddress } from 'ethers';
 
 // The "commands" layout: a menu-board bot navigated with typed commands, like a
 // classic Telegram shop (modelled on the bots it was copied from).
@@ -14,9 +16,9 @@ import { checkVoucher, voucherLabel } from './voucher.service.js';
 //   a shelf     its sub-shelves, or 5 products a page with rating, sales and /p<id>
 //   a product   rating out of 10, sales, its priced packs as buttons that fill the
 //               cart, product notes, reviews, previous / next product of the shelf
-//   /cart       the cart (with the style's minimum order), then checkout like the
-//               original: voucher code, recipient name, street, full shipping
-//               details (PGP encrypted or plain), a summary, paid from the wallet
+//   /cart       checkout like the original: shipping details field by field (or
+//               PGP encrypted), the refund address, then "My Cart" (vouchers,
+//               order notes, the style's minimum) and Place Order, paid from the wallet
 // Browsing needs no account; the cart, the wallet and orders ask for 21+ first.
 
 const PAGE = 5;
@@ -94,8 +96,6 @@ export async function menuBoard() {
     texts.menuIntro,
     ...(custom ? ['', block('Custom Order', `/${custom}`)] : []),
     '', block('Previous Orders', '/orders'),
-    '', block('Your Cart', '/cart'),
-    '', block('Wallet', '/wallet'),
     ...(fire ? ['', block(labels.fireSale, shelfCmd(FIRE))] : []),
     ...cats.flatMap(c => ['', block(c.name, shelfCmd(c))]),
     ...pages.flatMap(p => ['', block(p.title, `/${cmdName(p.key)}`)]),
@@ -353,39 +353,37 @@ async function cartLines(user) {
   }).filter(Boolean);
 }
 
-export async function cartBoard(user) {
-  const { texts } = look();
+// /cart, like the original: the shipping details one field at a time (or PGP
+// encrypted), then the refund address, then "My Cart" with Place Order. Placing
+// the order pays it from the wallet. Details and refund address stay for next time.
+export async function cartBoard(user, from = null) {
   const lines = await cartLines(user);
-  if (!lines.length) return { text: fill(texts.cartEmpty, { menu: `/${prefix()}` }), keyboard: [[back('menu')]] };
-  const subtotal = lines.reduce((s, l) => s + l.total, 0);
-  const [{ balance }, minimum] = await Promise.all([getUserBalance(user.id), minimumFor(user)]);
-  const below = minimum && subtotal < minimum;
-  const rows = [];
-  if (below) rows.push([back('menu', `🛒 Add ${money(minimum - subtotal)} more`)]);
-  else rows.push([{ text: look().labels.checkout, callback_data: 'ck' }]);
-  rows.push([{ text: '🗑 Empty cart', callback_data: 'cclr' }, back('menu')]);
-  return {
-    text: [
-      texts.cartTitle,
-      '',
-      ...lines.map(l => `<b>${escapeHtml(l.product.name)}</b>\n• ${escapeHtml(l.label)} ×${l.qty} — ${money(l.total)}  /p${l.product.id}${l.note ? `\n📝 <i>${escapeHtml(l.note)}</i>` : ''}`),
-      '',
-      `<b>Total  ${money(subtotal)}</b>`,
-      ...(below ? [`⚠️ Minimum order <b>${money(minimum)}</b>${minimum === Number(look().minimums?.first) ? ' on a first order' : ''}.`] : []),
-      `💰 Wallet  <b>${money(balance)}</b>`,
-    ].join('\n'),
-    keyboard: rows,
-  };
+  if (!lines.length) return { text: fill(look().texts.cartEmpty, { menu: `/${prefix()}` }), keyboard: [[back('menu')]] };
+  const c = checkoutOf(user);
+  if (from && !shippingDone(c)) return shipScreen(from, user);
+  if (from && !c.refundAsked) return paymentScreen(from, user);
+  return summaryScreen(user);
 }
 
-// ─── Checkout: voucher, shipping details, summary ────────────────────────────
+// ─── Checkout ────────────────────────────────────────────────────────────────
 
 const checkoutOf = user => (user?.telegramCheckout && typeof user.telegramCheckout === 'object' ? user.telegramCheckout : {});
 const saveCheckout = (user, patch) => prisma.user.update({ where: { id: user.id }, data: { telegramCheckout: { ...checkoutOf(user), ...patch } } })
   .then(u => { user.telegramCheckout = u.telegramCheckout; });
 const subtotalOf = lines => Math.round(lines.reduce((s, l) => s + l.total, 0) * 100) / 100;
-const cancel = () => back('cart', look().labels.cancel);
 const errorLine = e => (e ? [`❗️<b>ERROR:</b>\n${escapeHtml(e)}`, ''] : []);
+const pairs = buttons => buttons.reduce((rows, b, i) => (i % 2 ? rows[rows.length - 1].push(b) : rows.push([b]), rows), []);
+const toCart = () => back('cart', look().labels.toCart);
+
+// The shipping fields in the order they are asked; the apartment is n/a unless set
+const FIELDS = ['name', 'street', 'apt', 'city', 'state', 'zip'];
+const ASKED = ['name', 'street', 'city', 'state', 'zip'];
+const fieldTitle = { name: 'Recipient Full Name', street: 'Street Address', apt: 'Apartment number or PO Box', city: 'City', state: 'State', zip: 'Postcode' };
+const fieldButton = f => look().labels[`ship_${f}`];
+const fieldPrompt = f => look().texts[`ship_${f}`];
+const shippingDone = c => !!(c.pgp || ASKED.every(f => c[f]));
+const nextField = c => ASKED.find(f => !c[f]);
+const country = () => look().texts.shipCountry;
 
 // A whole ASCII-armored PGP message
 // (header lines such as "Version: …" allowed, then base64 and its checksum)
@@ -402,7 +400,141 @@ function pgpCommand() {
   return page && /BEGIN PGP PUBLIC KEY BLOCK/.test(page.html || '') ? `/${cmdName(page.key)}` : null;
 }
 
-// Shown first, like the original: the voucher on the cart, and a code to type
+// What is filled so far, as the original lists it under "Shipping Details"
+function shipBlock(c) {
+  const v = s => `  <b>${escapeHtml(s)}</b>`;
+  const out = [];
+  if (c.name) out.push(`${fieldTitle.name}:`, v(c.name));
+  if (c.street) out.push(`${fieldTitle.street}:`, v(c.street), `${fieldTitle.apt}:`, c.apt ? v(c.apt) : '  <i>n/a</i>');
+  if (c.city) out.push(`${fieldTitle.city}:`, v(c.city));
+  if (c.state) out.push(`${fieldTitle.state}:`, v(c.state));
+  if (c.zip) out.push(`${fieldTitle.zip}:`, v(c.zip));
+  if (c.street) out.push('Country:', v(country()));
+  return out;
+}
+
+// The buttons to correct a field already given (the apartment once the street is in)
+const editButtons = (c, all = false) => FIELDS
+  .filter(f => all || (f === 'apt' ? c.street : c[f]))
+  .map(f => ({ text: fieldButton(f), callback_data: `ckf:${f}` }));
+
+export function shipScreen(from, user, field = null, error = null) {
+  const { texts, labels } = look();
+  const c = checkoutOf(user);
+  const f = field || nextField(c) || 'name';
+  ask(from, 'ship', { field: f });
+  const block = shipBlock(c);
+  const first = !block.length;
+  const pgp = pgpCommand();
+  const keyboard = first
+    ? [[{ text: labels.cancel, callback_data: 'menu' }], ...(pgp ? [[{ text: labels.encrypt, callback_data: 'ckpgp' }]] : [])]
+    : [[{ text: labels.cancel, callback_data: 'menu' }, { text: labels.restart, callback_data: 'ckrs' }], ...pairs(editButtons(c))];
+  return {
+    text: [...errorLine(error), texts.shipTitle, '', ...(block.length ? [...block, ''] : []), fieldPrompt(f)].join('\n'),
+    keyboard,
+  };
+}
+
+async function afterShipping(from, user) {
+  const c = checkoutOf(user);
+  if (!shippingDone(c)) return shipScreen(from, user);
+  return c.refundAsked ? summaryScreen(user) : paymentScreen(from, user);
+}
+
+export async function saveShipField(from, user, field, text) {
+  if (!FIELDS.includes(field)) return shipScreen(from, user);
+  const value = String(text).trim().slice(0, 200);
+  if (!value) return shipScreen(from, user, field);
+  await saveCheckout(user, { [field]: /^n\/?a$/i.test(value) && field === 'apt' ? null : value, pgp: null });
+  return afterShipping(from, user);
+}
+
+export async function restartShipping(from, user) {
+  await saveCheckout(user, { ...Object.fromEntries(FIELDS.map(f => [f, null])), pgp: null });
+  return shipScreen(from, user, 'name');
+}
+
+export function pgpScreen(from, user, error = null) {
+  const pgp = pgpCommand();
+  if (!pgp) return shipScreen(from, user);
+  ask(from, 'pgp');
+  return {
+    text: [...errorLine(error), look().texts.shipTitle, '', fill(look().texts.shipAddressPgp, { pgp })].join('\n'),
+    keyboard: [[{ text: look().labels.cancel, callback_data: 'menu' }, { text: look().labels.restart, callback_data: 'ckrs' }]],
+  };
+}
+
+export async function savePgp(from, user, text) {
+  const t = String(text).trim();
+  if (!isPgp(t)) return pgpScreen(from, user, look().texts.pgpInvalid);
+  await saveCheckout(user, { pgp: t.slice(0, 6000) });
+  return afterShipping(from, user);
+}
+
+// Edit Shipping Details: every field to correct, or start again
+export function shipEditScreen(user) {
+  const { texts, labels } = look();
+  const c = checkoutOf(user);
+  return {
+    text: [texts.shipTitle, '', ...(c.pgp ? ['🔒 <i>PGP encrypted shipping details</i>'] : shipBlock(c)), '', texts.shipEditAsk].join('\n'),
+    keyboard: [...(c.pgp ? [] : pairs(editButtons(c, true))), [{ text: labels.restart, callback_data: 'ckrs' }, toCart()]],
+  };
+}
+
+// ─── Payment method: the refund address ──────────────────────────────────────
+
+const COINS = { BTC: 'Bitcoin', LTC: 'Litecoin', ETH: 'Ethereum', DOGE: 'Dogecoin', XMR: 'Monero' };
+const coinOf = c => (COINS[c.refundCurrency] ? c.refundCurrency : 'BTC');
+const validRefund = (coin, a) => coin === 'ETH' ? isAddress(a)
+  : coin === 'XMR' ? /^[48][1-9A-HJ-NP-Za-km-z]{94}([1-9A-HJ-NP-Za-km-z]{11})?$/.test(a)
+  : cryptoService.isValidUtxoAddress(coin, a);
+
+export async function paymentScreen(from, user, error = null) {
+  const c = checkoutOf(user);
+  const coin = coinOf(c);
+  ask(from, 'refund');
+  if (!c.refundAsked) await saveCheckout(user, { refundAsked: true });
+  return {
+    text: [
+      ...errorLine(error),
+      look().texts.payTitle,
+      '',
+      'Currency:', `  <b>${COINS[coin]}</b>`,
+      'Refund address:', c.refund ? `  <code>${escapeHtml(c.refund)}</code>` : '  …',
+      '',
+      fill(look().texts.refundAsk, { coin: COINS[coin].toUpperCase() }),
+    ].join('\n'),
+    keyboard: [[toCart()]],
+  };
+}
+
+export async function saveRefund(from, user, text) {
+  const c = checkoutOf(user);
+  const coin = coinOf(c);
+  const address = String(text).trim();
+  if (!validRefund(coin, address)) return paymentScreen(from, user, `This does not look like a ${COINS[coin]} address.`);
+  await saveCheckout(user, { refund: address, refundCurrency: coin });
+  // The account keeps it too, for refunds from the admin
+  const field = { BTC: 'btcRefundAddress', XMR: 'xmrRefundAddress' }[coin];
+  if (field) await prisma.user.update({ where: { id: user.id }, data: { [field]: address } }).catch(() => {});
+  return summaryScreen(user);
+}
+
+// Edit Payment Method: the coin of the refund address, then the address
+export function coinScreen() {
+  return {
+    text: [look().texts.payTitle, '', look().texts.coinAsk].join('\n'),
+    keyboard: [...pairs(Object.entries(COINS).map(([k, name]) => ({ text: name, callback_data: `ckcur:${k}` }))), [toCart()]],
+  };
+}
+
+export async function pickCoin(from, user, coin) {
+  if (COINS[coin]) await saveCheckout(user, { refundCurrency: coin, refund: null });
+  return paymentScreen(from, user);
+}
+
+// ─── Vouchers and order notes ────────────────────────────────────────────────
+
 export async function voucherScreen(from, user, error = null) {
   const { texts, labels } = look();
   const lines = await cartLines(user);
@@ -414,9 +546,6 @@ export async function voucherScreen(from, user, error = null) {
     catch { await saveCheckout(user, { voucher: null }); }
   }
   ask(from, 'voucher');
-  const rows = [[{ text: labels.continue, callback_data: 'ckship' }]];
-  if (applied) rows.push([{ text: labels.removeVoucher, callback_data: 'ckvrm' }]);
-  rows.push([back('cart')]);
   return {
     text: [
       ...errorLine(error),
@@ -426,7 +555,7 @@ export async function voucherScreen(from, user, error = null) {
       '',
       texts.voucherAsk,
     ].join('\n'),
-    keyboard: rows,
+    keyboard: [...(applied ? [[{ text: labels.removeVoucher, callback_data: 'ckvrm' }]] : []), [toCart()]],
   };
 }
 
@@ -436,7 +565,7 @@ export async function applyVoucher(from, user, text) {
   try {
     const { voucher } = await checkVoucher(text, subtotalOf(lines), catalog());
     await saveCheckout(user, { voucher: voucher.code });
-    return voucherScreen(from, user);
+    return summaryScreen(user);
   } catch (err) {
     return voucherScreen(from, user, err.message);
   }
@@ -447,62 +576,17 @@ export async function removeVoucher(from, user) {
   return voucherScreen(from, user);
 }
 
-export function shipNameScreen(from, user) {
-  ask(from, 'shipName');
-  const rows = [];
-  if (checkoutOf(user).last?.address) rows.push([{ text: look().labels.reuseShipping, callback_data: 'ckreuse' }]);
-  rows.push([cancel()]);
-  return { text: [look().texts.shipTitle, '', look().texts.shipName].join('\n'), keyboard: rows };
+export function orderNotesScreen(from) {
+  ask(from, 'onote');
+  return { text: look().texts.orderNotesAsk, keyboard: [[toCart()]] };
 }
 
-export async function saveShipName(from, user, text) {
-  await saveCheckout(user, { name: text.slice(0, 120) });
-  return shipStreetScreen(from, user);
-}
-
-function shipStreetScreen(from, user) {
-  ask(from, 'shipStreet');
-  return {
-    text: [look().texts.shipTitle, '', 'Recipient Full Name:', `  ${escapeHtml(checkoutOf(user).name || '')}`, '', look().texts.shipStreet].join('\n'),
-    keyboard: [[cancel()]],
-  };
-}
-
-export async function saveShipStreet(from, user, text) {
-  await saveCheckout(user, { street: text.slice(0, 200) });
-  return shipAddressScreen(from, user);
-}
-
-function shipAddressScreen(from, user, error = null) {
-  ask(from, 'shipAddr');
-  const pgp = pgpCommand();
-  const { texts } = look();
-  return {
-    text: [...errorLine(error), texts.shipTitle, '', pgp ? fill(texts.shipAddressPgp, { pgp }) : texts.shipAddress].join('\n'),
-    keyboard: [[cancel()]],
-  };
-}
-
-// The full shipping details: a PGP message when the style has a key (plain text too,
-// unless the style requires PGP), else plain text
-export async function saveShipAddress(from, user, text) {
-  const { texts } = look();
-  const t = String(text).trim();
-  const looksPgp = /BEGIN PGP/.test(t);
-  if (looksPgp && !isPgp(t)) return shipAddressScreen(from, user, texts.pgpInvalid);
-  if (!looksPgp && pgpCommand() && look().pgpAddress === 'required') return shipAddressScreen(from, user, texts.pgpInvalid);
-  if (!looksPgp && t.split('\n').filter(l => l.trim()).length < 2) return shipAddressScreen(from, user, texts.shipAddressShort);
-  const c = checkoutOf(user);
-  const address = t.slice(0, 6000);
-  await saveCheckout(user, { address, last: { name: c.name, street: c.street, address } });
+export async function saveOrderNotes(user, text) {
+  await saveCheckout(user, { orderNote: String(text).trim().slice(0, 1000) || null });
   return summaryScreen(user);
 }
 
-export async function reuseShipping(user) {
-  const { last } = checkoutOf(user);
-  if (last?.address) await saveCheckout(user, { name: last.name, street: last.street, address: last.address });
-  return summaryScreen(user);
-}
+// ─── My Cart ─────────────────────────────────────────────────────────────────
 
 // What the order costs with the voucher and the style's shipping fee (else the shop's)
 async function priced(user, lines) {
@@ -520,101 +604,141 @@ async function priced(user, lines) {
   return { subtotal, shippingFee, offer, discount, total: Math.round((subtotal - discount + shippingFee) * 100) / 100 };
 }
 
-const shownAddress = c => [
-  escapeHtml(c.name || ''),
-  escapeHtml(c.street || ''),
-  /BEGIN PGP/.test(c.address || '') ? '🔒 <i>PGP encrypted shipping details</i>' : escapeHtml(c.address || ''),
-].filter(Boolean).join('\n');
+// The address as the order keeps it: the PGP message, or one line per part
+const addressLines = c => c.pgp ? [c.pgp] : [
+  c.street, c.apt, [c.city, c.state, c.zip].filter(Boolean).join(' '), ...(country() ? [country()] : []),
+].filter(Boolean);
+const shownAddress = c => c.pgp ? '🔒 <i>PGP encrypted shipping details</i>'
+  : [c.name, c.street, c.apt, [c.city, c.state, c.zip].filter(Boolean).join(' ')].filter(Boolean).map(escapeHtml).join('\n');
 
-export async function summaryScreen(user) {
+export async function summaryScreen(user, error = null) {
   const { texts, labels } = look();
   const lines = await cartLines(user);
   if (!lines.length) return cartBoard(user);
-  const minimum = await minimumFor(user);
-  if (minimum && subtotalOf(lines) < minimum) return cartBoard(user);
   const c = checkoutOf(user);
-  const ready = c.name && c.address;
-  const [{ subtotal, shippingFee, offer, discount, total }, { balance }] = await Promise.all([priced(user, lines), getUserBalance(user.id)]);
-  const enough = balance >= total;
-  const rows = [];
-  if (!ready) rows.push([{ text: labels.continue, callback_data: 'ckship' }]);
-  else if (enough) rows.push([{ text: `✅ PAY ${money(total)} FROM MY WALLET`, callback_data: 'cpay' }]);
-  else rows.push([{ text: '➕ Add funds', callback_data: 'w' }]);
-  rows.push([{ text: labels.changeShipping, callback_data: 'ckship' }, { text: labels.vouchers, callback_data: 'ck' }]);
-  rows.push([back('cart')]);
+  const vendor = texts.vendor ? escapeHtml(texts.vendor) : '';
+  const [{ shippingFee, offer, discount, total, subtotal }, { balance }, minimum] = await Promise.all([priced(user, lines), getUserBalance(user.id), minimumFor(user)]);
+  const below = minimum && subtotal < minimum;
   return {
     text: [
-      texts.checkoutTitle,
+      ...errorLine(error),
+      texts.myCartTitle,
       '',
-      ...lines.map(l => `<b>${escapeHtml(l.product.name)}</b>\n• ${escapeHtml(l.label)} ×${l.qty} — ${money(l.total)}${l.note ? `\n📝 <i>${escapeHtml(l.note)}</i>` : ''}`),
+      ...lines.map(l => [
+        `<b>${escapeHtml(l.product.name)}</b>`,
+        `/p${l.product.id}`,
+        ...(vendor ? [`<i>(by ${vendor})</i>`] : []),
+        `${escapeHtml(l.label)} ×${l.qty} = <code>${money(l.total)}</code>`,
+        ...(l.note ? [`📝 <i>${escapeHtml(l.note)}</i>`] : []),
+      ].join('\n') + '\n'),
+      'Shipping:',
+      ` <code>${vendor ? `${vendor}—` : ''}${money(shippingFee)}</code>`,
+      ...(offer ? ['', `🎟 Voucher ${escapeHtml(offer.voucher.code)}: <code>−${money(discount)}</code>`] : []),
       '',
-      `Products  ${money(subtotal)}`,
-      ...(offer ? [`🎟 ${escapeHtml(offer.voucher.code)}  −${money(discount)}`] : []),
-      `Shipping  ${shippingFee > 0 ? money(shippingFee) : 'free'}`,
-      `<b>Total  ${money(total)}</b>`,
+      `<b>Cart Total: ${money(total)}</b>`,
+      ...(below ? [`⚠️ Minimum order <b>${money(minimum)}</b>${minimum === Number(look().minimums?.first) ? ' on a first order' : ''}.`] : []),
       '',
-      `📦 <b>Ship to:</b>\n${ready ? shownAddress(c) : '<i>no shipping details yet</i>'}`,
+      '📦 <b>Shipping Details:</b>',
+      shippingDone(c) ? shownAddress(c) : '<i>not given yet</i>',
+      '',
+      '💳 <b>Payment Method:</b>',
+      `${coinOf(c)} - ${COINS[coinOf(c)]}`,
+      'Refund address:',
+      c.refund ? `<code>${escapeHtml(c.refund)}</code>` : '…',
+      ...(c.orderNote ? ['', '📝 <b>Order Notes:</b>', escapeHtml(c.orderNote)] : []),
       '',
       `💰 Wallet  <b>${money(balance)}</b>`,
-      ...(ready && !enough ? [`⚠️ <b>${money(total - balance)}</b> missing: add funds, then come back to /cart.`] : []),
     ].join('\n'),
-    keyboard: rows,
+    keyboard: [
+      [back('menu'), { text: labels.placeOrder, callback_data: 'cpay' }],
+      [{ text: labels.addOrderNotes, callback_data: 'ckon' }, { text: labels.editPayment, callback_data: 'ckpm' }],
+      [{ text: labels.emptyCart, callback_data: 'cclr' }, { text: labels.editShipping, callback_data: 'ckedit' }],
+      [{ text: labels.applyVouchers, callback_data: 'ck' }],
+    ],
   };
 }
 
 export async function clearCart(user) {
   await saveCart(user, []);
+  await saveCheckout(user, { voucher: null, orderNote: null });
   return cartBoard(user);
 }
 
 // One payment at a time per customer: a double tap never makes two orders
 const paying = new Set();
 
-export async function cartPay(user) {
+// Place Order: paid from the wallet, as everywhere in the shop
+export async function cartPay(user, from = null) {
   if (paying.has(user.id)) return null;
   paying.add(user.id);
   try {
     const lines = await cartLines(user);
     if (!lines.length) return cartBoard(user);
-    const minimum = await minimumFor(user);
-    const subtotal = lines.reduce((s, l) => s + l.total, 0);
-    if (minimum && subtotal < minimum) return cartBoard(user);
     const c = checkoutOf(user);
-    if (!c.name || !c.address) return summaryScreen(user);
-    const { shippingFee } = await priced(user, lines);
-    // The product notes travel with the order, so the shop's notification shows them
-    const notes = [...new Set(lines.filter(l => l.note).map(l => `${l.product.name}: ${l.note}`))];
+    if (!shippingDone(c)) return from ? shipScreen(from, user) : summaryScreen(user);
+    const minimum = await minimumFor(user);
+    const subtotal = subtotalOf(lines);
+    if (minimum && subtotal < minimum) return summaryScreen(user, `The minimum order is ${money(minimum)}${minimum === Number(look().minimums?.first) ? ' on a first order' : ''}. Add ${money(minimum - subtotal)} more.`);
+    const { shippingFee, total } = await priced(user, lines);
+    const { balance } = await getUserBalance(user.id);
+    if (balance < total) {
+      return {
+        text: [...errorLine(`Your wallet has ${money(balance)} and this order is ${money(total)}.`), `Add at least <b>${money(total - balance)}</b> to your wallet, then come back to /cart and tap Place Order.`].join('\n'),
+        keyboard: [[{ text: '➕ Add funds', callback_data: 'w' }], [toCart()]],
+      };
+    }
+    // Product notes, order notes and the refund address travel with the order
+    const notes = [
+      ...new Set(lines.filter(l => l.note).map(l => `${l.product.name}: ${l.note}`)),
+      ...(c.orderNote ? [`Order notes: ${c.orderNote}`] : []),
+      ...(c.refund ? [`Refund address (${coinOf(c)}): ${c.refund}`] : []),
+    ];
     const { order, payments, newBalance } = await orderService.createOrder(user.id, {
       items: lines.map(l => ({ productId: l.productId, quantity: l.qty, option: l.option })),
       paymentMethod: 'wallet',
       note: notes.join('\n') || null,
-      shipping: { name: c.name, address: [c.street, c.address].filter(Boolean).join('\n'), fee: shippingFee },
+      shipping: { name: c.pgp ? 'PGP encrypted' : c.name, address: addressLines(c).join('\n'), fee: shippingFee },
       voucher: c.voucher || null,
       source: catalog(),
     });
     await saveCart(user, []);
-    // The next order starts afresh; these details are offered again ("reuse")
-    await saveCheckout(user, { voucher: null, name: null, street: null, address: null });
+    // The shipping details and refund address are kept for the next order
+    await saveCheckout(user, { voucher: null, orderNote: null });
     return {
       text: [
-        '✅ <b>PAID</b>',
         `Order <code>${escapeHtml(order.orderNumber)}</code>`,
+        '',
+        '✅ <b>Paid from your wallet</b>',
+        `<code>${payments.map(p => `${p.amount} ${p.currency}`).join(' + ')}</code>`,
         '',
         ...order.items.map(i => `${i.quantity} × ${escapeHtml(i.name)}  ·  ${money(Number(i.price) * i.quantity)}`),
         ...(order.voucherCode ? [`🎟 ${escapeHtml(order.voucherCode)}  −${money(order.discount)}`] : []),
         `Shipping  ${Number(order.shippingFee) > 0 ? money(order.shippingFee) : 'free'}`,
         `<b>Total  ${money(order.totalAmount)}</b>`,
-        `<i>Paid ${payments.map(p => `${p.amount} ${p.currency}`).join(' + ')}</i>`,
         '',
         look().texts.paidNote,
         `💰 Wallet  <b>${money(newBalance)}</b>`,
+        '',
+        'Order details: /orders',
       ].join('\n'),
-      keyboard: [[{ text: '📦 Previous orders', callback_data: 'o' }, back('menu')]],
+      keyboard: [[back('menu')]],
     };
   } catch (err) {
-    return { text: `⚠️ <b>NOT PAID</b>\n${escapeHtml(err.message || 'The payment did not go through.')}`, keyboard: [[back('ck', '‹ Checkout')]] };
+    return { text: `❗️<b>ERROR:</b>\n${escapeHtml(err.message || 'The payment did not go through.')}`, keyboard: [[toCart()]] };
   } finally {
     paying.delete(user.id);
+  }
+}
+
+// A typed answer to the checkout's last question, or null
+export function checkoutAnswer(from, user, asked, text) {
+  switch (asked.kind) {
+    case 'ship':    return saveShipField(from, user, asked.field, text);
+    case 'pgp':     return savePgp(from, user, text);
+    case 'refund':  return saveRefund(from, user, text);
+    case 'voucher': return applyVoucher(from, user, text);
+    case 'onote':   return saveOrderNotes(user, text);
+    default:        return null;
   }
 }
 

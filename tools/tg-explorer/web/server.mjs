@@ -2,7 +2,7 @@
 // and streams their output. Listens on 127.0.0.1 only; it drives a personal Telegram session.
 import http from 'node:http';
 import fs from 'node:fs/promises';
-import { createReadStream } from 'node:fs';
+import { createReadStream, existsSync } from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -12,15 +12,23 @@ const TOOL = path.resolve(HERE, '..');
 const BACKEND = path.resolve(TOOL, '..', '..', 'backend');
 const DIST = path.join(HERE, 'ui', 'dist');
 const PORT = Number(process.env.PORT) || 5174;
-const PYTHON = process.env.PYTHON || 'python';
+const WINDOWS = process.platform === 'win32';
+const CACHE = path.join(TOOL, '.cache');
+// The tool's own Python env (created by lancer.bat / lancer.sh), else the system one
+const VENV_PY = path.join(TOOL, '.venv', WINDOWS ? 'Scripts\\python.exe' : 'bin/python');
+const PYTHON = process.env.PYTHON || (existsSync(VENV_PY) ? VENV_PY : WINDOWS ? 'python' : 'python3');
 const CAPTURES = path.resolve(process.env.CAPTURES_DIR || path.join(TOOL, 'captures'));
+// Children keep their caches inside the tool folder too
+const CHILD_ENV = { ...process.env, PYTHON, PYTHONIOENCODING: 'utf-8', PYTHONPYCACHEPREFIX: path.join(CACHE, 'pycache'),
+  PIP_CACHE_DIR: path.join(CACHE, 'pip'), npm_config_cache: path.join(CACHE, 'npm') };
 const STOP_FILE = path.join(CAPTURES, '.stop');
 const IMAGE = /\.(jpe?g|png|webp|gif)$/i;
 const IMPORTS = { style: 'import-bot-capture.js', products: 'import-products-from-capture.js' };
 const BOT = /^[A-Za-z][A-Za-z0-9_]{2,63}$/;
 const REGEX = /^[^\r\n]{0,200}$/;
+const PROFILE = /^[\w-]{1,40}$/;
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
-  '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif' };
+  '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif', '.ico': 'image/x-icon' };
 
 // ---- the one running task ---------------------------------------------------
 let task = null; // { name, child }
@@ -37,7 +45,7 @@ const state = () => ({ running: !!task, name: task?.name || null });
 function run(name, cmd, args, cwd) {
   if (task) throw Object.assign(new Error('Une tâche est déjà en cours.'), { status: 409 });
   emit('line', `$ ${[cmd, ...args].join(' ')}`);
-  const child = spawn(cmd, args, { cwd, env: { ...process.env, PYTHONIOENCODING: 'utf-8' }, windowsHide: true });
+  const child = spawn(cmd, args, { cwd, env: CHILD_ENV, windowsHide: true });
   task = { name, child };
   // A chunk can end mid-line: keep the tail until the next one
   const feed = (stream) => {
@@ -60,6 +68,26 @@ function run(name, cmd, args, cwd) {
   child.on('error', (err) => done(`Impossible de lancer : ${err.message}`));
   child.on('close', (code) => done(`-- terminé (code ${code})`));
   emit('state', state());
+}
+
+// ---- account ----------------------------------------------------------------
+// status.py reads the same .env / sessions as explore.py and login.py (through a copy
+// of the session, so it can run while they use it): the page shows what they will use.
+function readAccount(profile) {
+  return new Promise((resolve) => {
+    const args = ['status.py', ...(profile ? ['--profile', profile] : [])];
+    const child = spawn(PYTHON, args, { cwd: TOOL, env: CHILD_ENV, windowsHide: true });
+    let out = '';
+    let err = '';
+    const timer = setTimeout(() => child.kill(), 60000);
+    child.stdout.on('data', (c) => { out += c; });
+    child.stderr.on('data', (c) => { err += c; });
+    child.on('error', (e) => { clearTimeout(timer); resolve({ error: `Impossible de lancer ${PYTHON} : ${e.message}` }); });
+    child.on('close', () => {
+      clearTimeout(timer);
+      try { resolve(JSON.parse(out)); } catch { resolve({ error: (err.trim().split('\n').pop() || 'status.py a échoué.') }); }
+    });
+  });
 }
 
 // ---- captures ---------------------------------------------------------------
@@ -107,20 +135,25 @@ function exploreArgs(b) {
   };
   num('wait', '--wait', 0.5, 60);
   num('maxActions', '--max-actions', 1, 5000);
-  if (b.profile) { if (!/^[\w-]{1,40}$/.test(b.profile)) throw bad('Profil invalide.'); args.push('--profile', b.profile); }
+  if (b.profile) { if (!PROFILE.test(b.profile)) throw bad('Profil invalide.'); args.push('--profile', b.profile); }
   for (const [key, flag] of [['skip', '--skip'], ['allow', '--allow']]) {
     for (const v of String(b[key] || '').split('\n').map((s) => s.trim()).filter(Boolean)) {
       if (!REGEX.test(v)) throw bad(`${key} invalide.`);
       args.push(flag, v);
     }
   }
-  for (const [key, flag] of [['resume', '--resume'], ['noMedia', '--no-media'], ['noCommands', '--no-commands']]) if (b[key]) args.push(flag);
+  for (const [key, flag] of [['resume', '--resume'], ['noMedia', '--no-media'], ['noCommands', '--no-commands'], ['strict', '--strict']]) if (b[key]) args.push(flag);
   return args;
 }
 
 async function api(req, res, url) {
   if (req.method === 'GET' && url.pathname === '/api/captures') return json(res, 200, await listCaptures());
   if (req.method === 'GET' && url.pathname === '/api/state') return json(res, 200, state());
+  if (req.method === 'GET' && url.pathname === '/api/account') {
+    const profile = url.searchParams.get('profile');
+    if (profile && !PROFILE.test(profile)) throw bad('Profil invalide.');
+    return json(res, 200, await readAccount(profile));
+  }
   if (req.method === 'GET' && url.pathname === '/api/events') {
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
     res.write(`event: init\ndata: ${JSON.stringify({ state: state(), log })}\n\n`);
@@ -146,11 +179,21 @@ async function api(req, res, url) {
     return json(res, 200, state());
   }
   if (url.pathname === '/api/login') {
-    // Needs a real console to type the Telegram code
-    const profile = body.profile && /^[\w-]{1,40}$/.test(body.profile) ? body.profile : 'explorer';
-    spawn('cmd.exe', ['/c', 'start', 'Connexion Telegram', PYTHON, 'login.py', '--profile', profile],
-      { cwd: TOOL, detached: true, stdio: 'ignore' }).unref();
+    // Needs a real console to type the Telegram code. connexion.bat is called by a
+    // relative name (cwd = TOOL) and finds Python itself: no path to quote for cmd.exe,
+    // whatever folder the tool was copied to.
+    const profile = body.profile && PROFILE.test(body.profile) ? body.profile : 'explorer';
+    if (!WINDOWS) {
+      throw bad(`Ouvrez un terminal dans ${TOOL} et lancez : ${PYTHON} login.py --profile ${profile}`);
+    }
+    spawn('cmd.exe', ['/c', 'start', 'Connexion Telegram', 'cmd', '/k', 'connexion.bat', profile],
+      { cwd: TOOL, env: CHILD_ENV, detached: true, stdio: 'ignore' }).unref();
     return json(res, 202, { ok: true });
+  }
+  if (url.pathname === '/api/logout') {
+    if (!PROFILE.test(String(body.profile))) throw bad('Profil invalide.');
+    run('Déconnexion', PYTHON, ['-u', 'login.py', '--profile', body.profile, '--logout'], TOOL);
+    return json(res, 202, state());
   }
   if (url.pathname === '/api/import') {
     if (!IMPORTS[body.kind] || !BOT.test(String(body.bot))) throw bad('Import invalide.');

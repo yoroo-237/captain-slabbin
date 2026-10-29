@@ -4,27 +4,42 @@ from pathlib import Path
 
 from telethon import TelegramClient
 
-HOME = Path.home() / ".tg-explorer"
+# Tout reste dans le dossier de l'outil : rien n'est écrit dans le profil Windows,
+# le dossier peut être copié tel quel sur un autre PC.
+TOOL = Path(__file__).resolve().parent
+HOME = TOOL / "sessions"          # sessions Telegram (secrets, ignorées par git)
+CACHE = TOOL / ".cache"           # fichiers temporaires
 
 
-def load_config():
-    """API_ID, API_HASH, PHONE : variables d'environnement, sinon .env à côté
-    des scripts, sinon config.env dans le dossier de session."""
+def config_file():
+    return TOOL / ".env"
+
+
+def read_config():
+    """API_ID, API_HASH, PHONE, BOT_USERNAME : variables d'environnement, sinon .env
+    à côté des scripts (modèle : .env.example)."""
     values = {}
-    local = Path(__file__).with_name(".env")
-    config = local if local.exists() else HOME / "config.env"
+    config = config_file()
     if config.exists():
-        for line in config.read_text(encoding="utf-8").splitlines():
+        for line in config.read_text(encoding="utf-8-sig").splitlines():
             line = line.strip()
             if line and not line.startswith("#") and "=" in line:
                 key, value = line.split("=", 1)
-                values[key.strip()] = value.strip()
-    for key in ("API_ID", "API_HASH", "PHONE"):
+                values[key.strip()] = value.strip().strip('"\'')
+    for key in ("API_ID", "API_HASH", "PHONE", "BOT_USERNAME"):
         values[key] = os.environ.get(key, values.get(key, ""))
+    return values
+
+
+def load_config():
+    values = read_config()
+    config = config_file()
     missing = [k for k in ("API_ID", "API_HASH") if not values[k]]
+    if not missing and not values["API_ID"].isdigit():
+        missing = ["API_ID (doit être un nombre)"]
     if missing:
         raise SystemExit(f"Configuration manquante : {', '.join(missing)} "
-                         f"(voir README, fichier {config}).")
+                         f"(copiez .env.example en .env et remplissez-le : {config}).")
     return values
 
 

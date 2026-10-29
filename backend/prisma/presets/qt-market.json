@@ -65,7 +65,8 @@
       "header": "<b>QUEEN TETRA'S</b>\n<i>Exclusive private menu</i>",
       "menuIntro": "<b>■All orders are shipped within 24-48hrs and tracking will be provided upon request ■$10 shipping on all orders\n■Wholesale Pricing Available\n■Exclusive Products\n■$50 minimum on first time orders ONLY, after that its $100 minimum</b>",
       "shelfIntro": "<b>{slug}</b>",
-      "vendorLine": "-- by QueenTetra"
+      "vendorLine": "-- by QueenTetra",
+      "vendor": "QueenTetra"
     },
     "images": {
       "menu": "https://res.cloudinary.com/dhsroj1sc/image/upload/v1793203131/captain-slabbin/uploads/cqraoooroprck85dc6cs.jpg",

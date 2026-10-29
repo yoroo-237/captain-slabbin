@@ -8,7 +8,7 @@ const post = async (url, body = {}) => {
 };
 
 const DEFAULTS = { profile: 'explorer', wait: '2.5', maxActions: '200', skip: '', allow: '',
-  resume: false, noMedia: false, noCommands: false };
+  resume: false, noMedia: false, noCommands: false, strict: false };
 
 // Same rules as server.mjs: @bot, bot, t.me/bot?start=x all give 'bot'
 const BOT = /^[A-Za-z][A-Za-z0-9_]{2,63}$/;
@@ -64,6 +64,58 @@ function Toggle({ checked, onChange, children }) {
   );
 }
 
+function Account({ account, checking, profile, setProfile, busy, onLogin, onLogout, onCheck }) {
+  const cfg = account?.config;
+  const current = account?.profiles?.find((p) => p.name === profile);
+  const others = (account?.profiles || []).filter((p) => p.name !== profile);
+  return (
+    <div className="account">
+      {account?.error && <p className="bad small">{account.error}</p>}
+      {cfg && (
+        <p className="small muted">
+          Configuration : <code title={cfg.file}>{cfg.file.split(/[\\/]/).slice(-2).join('\\')}</code>
+          {!cfg.exists && <span className="bad"> (introuvable)</span>}
+          {cfg.exists && !cfg.api && <span className="bad"> (API_ID / API_HASH manquants)</span>}
+          {cfg.phone && <> · numéro {cfg.phone}</>}
+        </p>
+      )}
+
+      <div className={`who ${current?.authorized ? 'ok' : ''}`}>
+        <span className="avatar" aria-hidden="true">{current?.authorized ? (current.first_name || '?').slice(0, 1) : '–'}</span>
+        <div className="who-text">
+          {checking && !current ? <b>Vérification…</b>
+            : current?.authorized ? <><b>{current.first_name}</b>{current.username && <span className="muted"> @{current.username}</span>}
+                <div className="small muted">{current.phone} · profil « {profile} »</div></>
+            : <><b>Non connecté</b><div className="small muted">{current?.error || `Aucune session pour le profil « ${profile} ».`}</div></>}
+        </div>
+        <div className="actions">
+          <button className="btn sm" onClick={onCheck} disabled={checking} title="Relire la configuration et la session">{checking ? '…' : '↻'}</button>
+          {current?.authorized
+            ? <button className="btn sm" disabled={busy} onClick={onLogout}>Changer de compte</button>
+            : <button className="btn sm primary" onClick={onLogin}>Se connecter</button>}
+        </div>
+      </div>
+      {current?.authorized && current.phone_matches === false && (
+        <p className="warn-note small">Ce profil est connecté avec un autre numéro que celui du fichier de configuration : c'est ce compte-ci qui sera utilisé.</p>
+      )}
+
+      <div className="profile-row">
+        <label className="field">Profil de session
+          <input value={profile} onChange={(e) => setProfile(e.target.value)} list="profiles" spellCheck="false" />
+        </label>
+        <datalist id="profiles">{(account?.profiles || []).map((p) => <option key={p.name} value={p.name} />)}</datalist>
+        {others.length > 0 && (
+          <p className="small muted">Autres sessions : {others.map((p) => (
+            <button key={p.name} className="link" onClick={() => setProfile(p.name)}>
+              {p.name}{p.authorized ? ` (${p.first_name})` : ' (déconnectée)'}
+            </button>
+          ))}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function CaptureCard({ c, busy, onResume, onImport }) {
   const updated = new Date(c.updated).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
   return (
@@ -74,7 +126,7 @@ function CaptureCard({ c, busy, onResume, onImport }) {
       <div className="card-body">
         <div className="card-title">
           <h3>@{c.name}</h3>
-          <time className="muted" dateTime={c.updated}>{updated}</time>
+          <time className="mono muted" dateTime={c.updated}>{updated}</time>
         </div>
         <ul className="stats">
           <li><b>{c.screens}</b> écrans</li>
@@ -84,7 +136,7 @@ function CaptureCard({ c, busy, onResume, onImport }) {
           {c.queued > 0 && <li className="warn"><b>{c.queued}</b> en attente</li>}
         </ul>
         <div className="actions">
-          <a className="btn sm" href={`/captures/${c.name}/report.html`} target="_blank" rel="noreferrer">Rapport ↗</a>
+          <a className="btn sm" href={`/captures/${c.name}/report.html`} target="_blank" rel="noreferrer">Rapport <span className="arrow" aria-hidden="true">↗</span></a>
           {c.queued > 0 && <button className="btn sm" disabled={busy} onClick={() => onResume(c.name)}>Reprendre</button>}
           <span className="spacer" />
           <button className="btn sm" disabled={busy} onClick={() => onImport(c.name, 'style')}>Importer style</button>
@@ -106,7 +158,37 @@ export default function App() {
 
   const refresh = useCallback(() => fetch('/api/captures').then((r) => r.json()).then(setCaptures).catch(() => {}), []);
   useEffect(() => { refresh(); }, [refresh]);
-  useEffect(() => { onDone.current = refresh; }, [onDone, refresh]);
+
+  // ---- account: what login.py / explore.py will really use ----
+  const [account, setAccount] = useState(null);
+  const [checking, setChecking] = useState(false);
+  const profileRef = useRef(opts.profile);
+  profileRef.current = opts.profile;
+  const checkAccount = useCallback(async () => {
+    setChecking(true);
+    try {
+      const a = await fetch(`/api/account?profile=${encodeURIComponent(profileRef.current || 'explorer')}`).then((r) => r.json());
+      setAccount(a);
+      // BOT_USERNAME of the .env prefills the bots field
+      if (a.config?.bot) setBots((b) => b || a.config.bot);
+      return a;
+    } catch { return null; } finally { setChecking(false); }
+  }, []);
+  useEffect(() => { checkAccount(); }, [checkAccount]);
+  useEffect(() => { onDone.current = () => { refresh(); checkAccount(); }; }, [onDone, refresh, checkAccount]);
+
+  // After "Se connecter", watch for the session to appear (the code is typed in the console)
+  const polling = useRef(null);
+  useEffect(() => () => clearInterval(polling.current), []);
+  const watchLogin = () => {
+    clearInterval(polling.current);
+    const until = Date.now() + 5 * 60000;
+    polling.current = setInterval(async () => {
+      const a = await checkAccount();
+      const p = a?.profiles?.find((x) => x.name === profileRef.current);
+      if (p?.authorized || Date.now() > until) clearInterval(polling.current);
+    }, 5000);
+  };
 
   const parsed = useMemo(() => bots.split(/\s+/).filter(Boolean).map((raw) => {
     const name = normalizeBot(raw);
@@ -120,7 +202,13 @@ export default function App() {
   };
   const explore = guard(() => post('/api/explore', { ...opts, bots: parsed.map((b) => b.name) }));
   const resume = guard((name) => post('/api/explore', { ...opts, resume: true, bots: [name] }));
-  const login = guard(() => post('/api/login', { profile: opts.profile }));
+  const login = guard(async () => { await post('/api/login', { profile: opts.profile }); watchLogin(); });
+  const logout = guard(async () => {
+    if (!window.confirm(`Fermer la session « ${opts.profile} » ? Il faudra se reconnecter (code Telegram) pour explorer avec ce profil.`)) return;
+    await post('/api/logout', { profile: opts.profile });
+  });
+  const current = account?.profiles?.find((p) => p.name === opts.profile);
+  const connected = !!current?.authorized;
   const stop = guard(() => post('/api/stop'));
   const importCapture = guard(async (bot, kind) => {
     if (!dry && !window.confirm(`Importer « ${kind === 'style' ? 'style' : 'produits'} » de @${bot} dans la base du backend (écriture réelle) ?`)) return;
@@ -130,14 +218,18 @@ export default function App() {
   const busy = state.running;
   return (
     <div className="app">
-      <header className="top">
-        <div>
-          <h1>Capture de bots Telegram</h1>
-          <p className="muted">Parcourt un bot avec votre compte et enregistre ses écrans, boutons et images.</p>
-        </div>
+      <nav className="topbar">
+        <span className="brand"><span className="brand-mark" aria-hidden="true"><img src="/logo-mko-192.png" alt="" width="39" height="39" /></span>
+          <span>tg-explorer<small>Capture locale · 127.0.0.1</small></span></span>
         <span className={`status ${busy ? 'on' : ''}`} role="status">
-          <span className="dot" aria-hidden="true" />{busy ? `${state.name} en cours…` : 'Inactif'}
+          <span className="pulse" aria-hidden="true" />{busy ? `${state.name} en cours` : 'Inactif'}
         </span>
+      </nav>
+
+      <header className="hero">
+        <p className="mono muted">Outil · Telegram · Captures</p>
+        <h1>Capture de <em className="serif accent">bots</em> Telegram</h1>
+        <p className="lead muted">Parcourt un bot avec votre compte, enregistre ses écrans, ses boutons et ses images, puis les importe dans le backend.</p>
       </header>
 
       {error && (
@@ -149,16 +241,21 @@ export default function App() {
 
       <div className="layout">
         <section className="panel">
-          <h2>Nouvelle capture</h2>
+          <h2><span className="idx">01</span>Nouvelle capture</h2>
 
           <div className="step">
             <span className="num">1</span>
             <div className="step-body">
-              <div className="step-head">
-                <h3>Connexion Telegram</h3>
-                <button className="btn" onClick={login}>Se connecter</button>
-              </div>
-              <p className="muted small">Une fois par profil. Une console Windows s'ouvre pour taper le code reçu : il ne passe pas par cette page.</p>
+              <h3>Compte Telegram</h3>
+              <Account account={account} checking={checking} profile={opts.profile} busy={busy}
+                setProfile={(v) => setOpts((o) => ({ ...o, profile: v }))}
+                onLogin={login} onLogout={logout} onCheck={checkAccount} />
+              {!connected && (
+                <p className="muted small">
+                  Une fois par profil. Une console s'ouvre pour taper le code que Telegram envoie dans votre application
+                  (Telegram Desktop ou téléphone) : il ne passe pas par cette page, qui se met à jour toute seule ensuite.
+                </p>
+              )}
             </div>
           </div>
 
@@ -180,7 +277,6 @@ export default function App() {
               )}
 
               <div className="row3">
-                <label className="field">Profil<input value={opts.profile} onChange={set('profile')} /></label>
                 <label className="field">Attente (s)<input type="number" min="0.5" max="60" step="0.5" value={opts.wait} onChange={set('wait')} /></label>
                 <label className="field">Actions max<input type="number" min="1" max="5000" value={opts.maxActions} onChange={set('maxActions')} /></label>
               </div>
@@ -189,13 +285,15 @@ export default function App() {
                 <Toggle checked={opts.resume} onChange={set('resume')}>Reprendre les captures existantes</Toggle>
                 <Toggle checked={opts.noMedia} onChange={set('noMedia')}>Sans images</Toggle>
                 <Toggle checked={opts.noCommands} onChange={set('noCommands')}>Sans commandes trouvées dans les textes</Toggle>
+                <Toggle checked={opts.strict} onChange={set('strict')}>Mode strict (ignorer achats, paiements, panier, commandes, dépôt…)</Toggle>
               </div>
 
               <details className="advanced">
                 <summary>Options avancées</summary>
                 <p className="muted small">
-                  Par défaut, rien qui ressemble à un achat, un paiement, un panier ou une suppression n'est joué
-                  (buy, pay, order, cart, confirm, delete, cancel, panier, payer…).
+                  Par défaut, seul ce qui supprime, vide ou retire est ignoré (delete, remove, clear, withdraw,
+                  supprimer, retirer, vider, effacer). Achats, panier, paiements et confirmations sont joués :
+                  activez le mode strict si le bot a un vrai solde.
                 </p>
                 <label className="field">Ignorer en plus (regex, une par ligne)
                   <textarea rows="2" value={opts.skip} onChange={set('skip')} spellCheck="false" />
@@ -210,17 +308,20 @@ export default function App() {
           <div className="run">
             {busy
               ? <button className="btn danger wide" onClick={stop}>Arrêter</button>
-              : <button className="btn primary wide" disabled={!parsed.length || invalid > 0} onClick={explore}>
+              : <button className="btn primary wide" disabled={!parsed.length || invalid > 0 || !connected} onClick={explore}>
                   {parsed.length > 1 ? `Explorer ${parsed.length} bots` : 'Explorer'}
+                  {connected && current.first_name ? ` avec ${current.first_name}` : ''}
+                  <span className="arrow" aria-hidden="true">→</span>
                 </button>}
             {invalid > 0 && <p className="hint bad">{invalid} nom{invalid > 1 ? 's' : ''} invalide{invalid > 1 ? 's' : ''}.</p>}
+            {!busy && account && !connected && <p className="hint muted">Connectez d'abord un compte (étape 1).</p>}
           </div>
         </section>
 
-        <section className="panel journal">
+        <section className="panel journal dark">
           <div className="row-head">
-            <h2>Journal</h2>
-            {busy && <span className="muted small">{state.name}</span>}
+            <h2><span className="idx">02</span>Journal</h2>
+            {busy && <span className="mono muted-dark">{state.name}</span>}
           </div>
           <Console lines={lines} />
         </section>
@@ -228,7 +329,7 @@ export default function App() {
 
       <section className="panel">
         <div className="row-head">
-          <h2>Captures <span className="count">{captures.length}</span></h2>
+          <h2><span className="idx">03</span>Captures <span className="count">{captures.length}</span></h2>
           <div className="mode" role="radiogroup" aria-label="Mode des imports">
             <button role="radio" aria-checked={dry} className={dry ? 'sel' : ''} onClick={() => setDry(true)}>Essai</button>
             <button role="radio" aria-checked={!dry} className={!dry ? 'sel real' : ''} onClick={() => setDry(false)}>Écriture réelle</button>
