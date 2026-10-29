@@ -658,6 +658,7 @@ export async function summaryScreen(user, error = null) {
       shownAddress(c),
       '',
       texts.payFromWallet,
+      ...(c.refund ? [`Refund address (${COINS[coinOf(c)]}):`, `<code>${escapeHtml(c.refund)}</code>`] : []),
       ...(c.orderNote ? ['', '📝 <b>Order Notes:</b>', escapeHtml(c.orderNote)] : []),
       '',
       `💰 Wallet  <b>${money(balance)}</b>`,
@@ -667,7 +668,8 @@ export async function summaryScreen(user, error = null) {
       [back('menu'), { text: labels.placeOrder, callback_data: 'cpay' }],
       [{ text: labels.addOrderNotes, callback_data: 'ckon' }, ...(balance < total ? [{ text: labels.addFunds, callback_data: 'w' }] : [])],
       [{ text: labels.emptyCart, callback_data: 'cclr' }, { text: labels.editShipping, callback_data: 'ckedit' }],
-      [{ text: labels.applyVouchers, callback_data: 'ck' }],
+      // Optional: where the shop sends a refund, should one be needed
+      [{ text: labels.applyVouchers, callback_data: 'ck' }, { text: labels.refundOptional, callback_data: 'ckpm' }],
     ],
   };
 }

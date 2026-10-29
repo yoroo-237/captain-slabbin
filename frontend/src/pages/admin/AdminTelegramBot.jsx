@@ -144,7 +144,8 @@ function BotCard({ bot, styles, shelves: allShelves, busy, act, post }) {
         </div>
       )}
 
-      <PgpKeyField label="PGP public key of this bot" value={pgpKey} onChange={setPgpKey}
+      <PgpKeyField label="PGP public key of this bot" value={pgpKey} onChange={setPgpKey} name={bot.name || bot.username} fileName={bot.username || 'bot'}
+        onGenerated={key => act(`pgp${id}`, () => post(`bots/${id}/pgp`, { key }), 'New key saved on the bot. Its private key was downloaded: keep the file and the passphrase safe.')}
         help={bot.pgpFingerprint
           ? `Customers of @${bot.username} can encrypt their shipping address to this key: it shows on the bot's key page and Place Order keeps the PGP message only you can read.`
           : `Without a key, @${bot.username} uses the key page of its style if it holds one, and otherwise hides that page and asks for the address in plain text.`} />
@@ -352,6 +353,7 @@ const CHECKOUT_TEXT_FIELDS = [
   ['ship_apt', 'Shipping: asking for the apartment'], ['ship_city', 'Shipping: asking for the city'], ['ship_state', 'Shipping: asking for the state'],
   ['ship_zip', 'Shipping: asking for the postcode'], ['shipCountry', 'Shipping: country'], ['shipAddressPgp', 'Shipping: asking for the encrypted address ({pgp} = the key page)'],
   ['pgpInvalid', 'Shipping: not a valid PGP message'], ['payFromWallet', 'My Cart: payment line (paid from the wallet)'], ['walletShort', 'My Cart: wallet too low ({missing})'],
+  ['payTitle', 'Refund address (optional): title'], ['refundAsk', 'Refund address (optional): asking for it ({coin})'],
   ['myCartTitle', 'My Cart: title'], ['cartHint', 'My Cart: tip under the title'], ['cartEmpty', 'My Cart: empty'], ['vendor', 'My Cart: vendor name ("by …")'],
   ['vouchersTitle', 'Vouchers: title'], ['noVouchers', 'Vouchers: none applied'], ['voucherAsk', 'Vouchers: asking for a code'], ['orderNotesAsk', 'Order notes: asking for them'],
   ['noteNotInCart', 'Product notes: product not in the cart'], ['ordersTitle', 'My Orders: title'], ['noOrdersYet', 'My Orders: none yet'],

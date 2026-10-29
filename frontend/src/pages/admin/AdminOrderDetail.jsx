@@ -2,11 +2,56 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { adminFetch } from './utils/api.js'
 import StatusBadge from '../../components/admin/StatusBadge.jsx'
+import { decryptWith } from '../../utils/pgp.js'
 
 // Must match VALID_STATUSES in backend/src/controllers/admin/orders.controller.js
 const ORDER_STATUSES = ['processing', 'shipped', 'delivered', 'cancelled', 'refunded']
 
 const money = v => `$${Number(v || 0).toFixed(2)}`
+
+// A PGP-encrypted address, read here with the private key file and its passphrase.
+// Everything happens in this browser: the key and the address are never sent.
+function EncryptedAddress({ message }) {
+  const [open, setOpen] = useState(false)
+  const [keyText, setKeyText] = useState('')
+  const [pass, setPass] = useState('')
+  const [plain, setPlain] = useState('')
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function run() {
+    setBusy(true); setErr('')
+    try { setPlain(await decryptWith(keyText, pass, message)) }
+    catch (e) { setErr(/passphrase|decrypt/i.test(e.message) ? 'Wrong passphrase, or this address was encrypted to another key.' : e.message) }
+    finally { setBusy(false) }
+  }
+  const readFile = file => file && file.text().then(setKeyText)
+
+  if (plain) return <span>{plain}<br /><button type="button" className="admin-btn admin-btn-sm" style={{ marginTop: 6 }} onClick={() => { setPlain(''); setPass('') }}>Hide</button></span>
+  return (
+    <span style={{ display: 'grid', gap: 6 }}>
+      <span>🔒 PGP encrypted address</span>
+      {!open ? (
+        <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <button type="button" className="admin-btn admin-btn-primary admin-btn-sm" onClick={() => setOpen(true)}>Decrypt</button>
+          <button type="button" className="admin-btn admin-btn-sm" onClick={() => navigator.clipboard?.writeText(message)}>Copy the message</button>
+        </span>
+      ) : (
+        <span style={{ display: 'grid', gap: 6, maxWidth: 420 }}>
+          <span className="admin-text-muted">Your private key file (…-pgp-private-key.asc) and its passphrase. Read in this browser only.</span>
+          <input type="file" accept=".asc,.txt,.key,.gpg" onChange={e => readFile(e.target.files?.[0])} />
+          {keyText && <span className="admin-text-muted">Key loaded.</span>}
+          <input className="admin-input" type="password" autoComplete="off" placeholder="Passphrase" value={pass} onChange={e => setPass(e.target.value)} onKeyDown={e => e.key === 'Enter' && keyText && run()} />
+          {err && <span className="admin-alert admin-alert-error" style={{ margin: 0 }}>{err}</span>}
+          <span style={{ display: 'flex', gap: 6 }}>
+            <button type="button" className="admin-btn admin-btn-primary admin-btn-sm" disabled={!keyText || busy} onClick={run}>{busy ? 'Decrypting…' : 'Decrypt'}</button>
+            <button type="button" className="admin-btn admin-btn-sm" onClick={() => { setOpen(false); setKeyText(''); setPass(''); setErr('') }}>Cancel</button>
+          </span>
+        </span>
+      )}
+    </span>
+  )
+}
 
 export default function AdminOrderDetail() {
   const { id } = useParams()
@@ -98,8 +143,9 @@ export default function AdminOrderDetail() {
               </span>
             </div>
             <div className="admin-info-row"><span className="admin-info-label">Payment</span><span className="admin-info-value">{order.paymentMethod || '—'} (wallet balance)</span></div>
-            <div className="admin-info-row"><span className="admin-info-label">Delivery</span><span className="admin-info-value" style={{ whiteSpace: 'pre-wrap' }}>{order.shippingAddress ? `${order.name}
-${order.shippingAddress}` : 'None — arrange on Telegram'}</span></div>
+            <div className="admin-info-row"><span className="admin-info-label">Delivery</span><span className="admin-info-value" style={{ whiteSpace: 'pre-wrap' }}>{
+              /^-----BEGIN PGP MESSAGE/.test(order.shippingAddress || '') ? <EncryptedAddress message={order.shippingAddress} />
+                : order.shippingAddress ? `${order.name}\n${order.shippingAddress}` : 'None — arrange on Telegram'}</span></div>
             <div className="admin-info-row"><span className="admin-info-label">Tracking</span><span className="admin-info-value">{order.trackingNumber ? `${order.trackingNumber}${order.carrier ? ` (${order.carrier})` : ''}` : '—'}</span></div>
             {order.note && <div className="admin-info-row"><span className="admin-info-label">Note</span><span className="admin-info-value">{order.note}</span></div>}
           </div>

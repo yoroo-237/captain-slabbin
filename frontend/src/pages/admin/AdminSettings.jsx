@@ -272,7 +272,8 @@ export default function AdminSettings() {
               </div>
 
               <h2 className="admin-card-title" style={{ marginTop: 24 }}>PGP key for delivery addresses</h2>
-              <PgpKeyField value={settings.pgp_public_key || ''} onChange={v => setS('pgp_public_key', v)}
+              <PgpKeyField value={settings.pgp_public_key || ''} onChange={v => setS('pgp_public_key', v)} name={settings.site_name || 'Shop'} fileName="website"
+                onGenerated={async key => { await adminFetch('/admin/settings', { method: 'PUT', body: JSON.stringify({ pgp_public_key: key }) }); setSaved(s => ({ ...s, pgp_public_key: key })); setSuccess('New key saved for the website. Its private key was downloaded: keep the file and the passphrase safe.') }}
                 help="With a key, customers on the website can encrypt their address on their device before it is sent: the order then holds a PGP message only you can read. The Telegram bots have their own key (Telegram bot tab, on each bot)." />
             </>
           )}

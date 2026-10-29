@@ -359,8 +359,9 @@ export async function notifyWalletOrder(order, user, payments) {
     `👤 ${escapeHtml(user.username)}`,
     telegram ? `✈️ Telegram: ${escapeHtml(telegram)}` : '✈️ Telegram: not on profile',
     via && !via.isPrimary ? `🤖 Customer of @${escapeHtml(via.username)}` : null,
+    // An encrypted address can be longer than a Telegram message: it is read on the order
     order.shippingAddress
-      ? `📦 <b>Ship to:</b> ${escapeHtml(order.name)}\n${escapeHtml(order.shippingAddress)}${Number(order.shippingFee) > 0 ? ` · ${money(order.shippingFee)}` : ' · free shipping'}`
+      ? `📦 <b>Ship to:</b> ${/^-----BEGIN PGP MESSAGE/.test(order.shippingAddress) ? '🔒 PGP encrypted address, decrypt it on the order' : `${escapeHtml(order.name)}\n${escapeHtml(order.shippingAddress)}`}${Number(order.shippingFee) > 0 ? ` · ${money(order.shippingFee)}` : ' · free shipping'}`
       : '📦 No delivery, arrange on Telegram',
     order.note ? `📝 <b>Notes:</b>\n${escapeHtml(order.note)}` : null,
   ].filter(Boolean).join('\n'), link ? [{ text: '📦 Open order', url: link }] : null);

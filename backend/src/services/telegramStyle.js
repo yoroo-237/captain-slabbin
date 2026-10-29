@@ -125,6 +125,7 @@ export const DEFAULT_LOOK = {
     enterShipping: 'Enter Shipping Details >',
     placeOrder: '✅ Place Order >',
     addFunds: '💰 Add Funds',
+    refundOptional: 'Refund Address (optional)',
     addOrderNotes: 'Add Order Notes',
     editPayment: 'Edit Payment Method',
     emptyCart: 'Empty Cart',
