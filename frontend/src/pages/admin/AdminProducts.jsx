@@ -275,7 +275,7 @@ function MediaManager({ productId, images, onUpdated }) {
 
 // ─── Product Modal (create + edit) ───────────────────────────────────────────
 
-function ProductModal({ product, onClose, onSaved, categories }) {
+function ProductModal({ product, onClose, onSaved, categories, source = 'site', shopLabel = 'Website' }) {
   const isEdit = Boolean(product?.id)
 
   const [form, setForm] = useState({
@@ -365,6 +365,7 @@ function ProductModal({ product, onClose, onSaved, categories }) {
         unitLabel:      form.unitLabel,
         badge:          form.badge,
         isFeatured:     form.isFeatured,
+        ...(!isEdit ? { source } : {}),
       }
       if (isEdit) {
         await adminFetch(`/admin/products/${product.id}`, { method: 'PUT', body: JSON.stringify(body) })
@@ -508,6 +509,7 @@ function ProductModal({ product, onClose, onSaved, categories }) {
                 Featured in “Captain’s picks” on the home page
               </label>
 
+              <div className="admin-text-muted" style={{ marginBottom: 10, fontSize: 13 }}>Shop: <b>{shopLabel}</b></div>
               <div className="admin-form-group">
                 <label className="admin-label">Category</label>
                 <select
@@ -575,12 +577,18 @@ export default function AdminProducts() {
   const [deleting, setDeleting]         = useState(false)
   const [showCreate, setShowCreate]   = useState(false)
   const [categories, setCategories]   = useState([])
+  // The website and each bot catalog are separate shops; the one picked is remembered
+  const [shops, setShops]             = useState([])
+  const [shop, setShopState]          = useState(() => { try { return localStorage.getItem('admin_products_shop') || 'all' } catch { return 'all' } })
+  const setShop = v => { setShopState(v); setPage(1); try { localStorage.setItem('admin_products_shop', v) } catch { /* storage blocked */ } }
+  const shopOf = key => shops.find(s => s.key === (key || 'site'))
 
   const fetchProducts = useCallback(async () => {
     setLoading(true)
     try {
       const params = new URLSearchParams({ page, limit: 20 })
       if (search) params.set('search', search)
+      if (shop !== 'all') params.set('shop', shop)
       const data = await adminFetch(`/admin/products?${params}`)
       setProducts(data.products || [])
       setTotalPages(data.pagination?.totalPages || 1)
@@ -589,13 +597,19 @@ export default function AdminProducts() {
     } finally {
       setLoading(false)
     }
-  }, [page, search])
+  }, [page, search, shop])
 
   useEffect(() => { fetchProducts() }, [fetchProducts])
 
+  const loadShops = useCallback(() => adminFetch('/admin/products/shops').then(d => setShops(d || [])).catch(() => {}), [])
   useEffect(() => {
     adminFetch('/admin/categories').then(d => setCategories(d || [])).catch(() => {})
-  }, [])
+    loadShops()
+  }, [loadShops])
+  // A shop that no longer exists falls back to all of them
+  useEffect(() => { if (shops.length && shop !== 'all' && !shopOf(shop)) setShop('all') }, [shops]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Shelves of the shop a product belongs to (the website's have no source)
+  const shelvesOf = key => categories.filter(c => (c.source || 'site') === (key || 'site'))
 
   async function handleDelete() {
     if (!deleteProduct) return
@@ -628,7 +642,19 @@ export default function AdminProducts() {
         </button>
       </div>
 
-      <div className="admin-card" style={{ marginBottom: '12px', padding: '12px 16px' }}>
+      <div className="admin-card" style={{ marginBottom: '12px', padding: '12px 16px', display: 'grid', gap: 10 }}>
+        {shops.length > 1 && (
+          <div className="admin-tabs" style={{ margin: 0, flexWrap: 'wrap' }} role="tablist" aria-label="Shop">
+            {[{ key: 'all', label: 'All shops', count: shops.reduce((n, s) => n + s.count, 0) }, ...shops].map(s => (
+              <button key={s.key} type="button" role="tab" aria-selected={shop === s.key} className={'admin-tab' + (shop === s.key ? ' active' : '')}
+                title={s.bots?.length ? `Sold by ${s.bots.join(', ')}` : s.key === 'site' ? 'The website and the shop’s own bot' : undefined}
+                onClick={() => setShop(s.key)}>
+                {s.label} <span style={{ color: '#888', fontWeight: 400 }}>({s.count})</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {shopOf(shop)?.bots?.length > 0 && <div className="admin-text-muted" style={{ fontSize: 13 }}>Sold by {shopOf(shop).bots.join(', ')}</div>}
         <input
           className="admin-input"
           placeholder="Search by name…"
@@ -645,6 +671,7 @@ export default function AdminProducts() {
               <tr>
                 <th style={{ width: '56px' }}>Media</th>
                 <th>Name</th>
+                {shop === 'all' && <th>Shop</th>}
                 <th>Category</th>
                 <th>Price</th>
                 <th>Stock</th>
@@ -656,13 +683,13 @@ export default function AdminProducts() {
               {loading ? (
                 Array.from({ length: 6 }).map((_, i) => (
                   <tr key={i}>
-                    {Array.from({ length: 7 }).map((_, j) => (
+                    {Array.from({ length: shop === 'all' ? 8 : 7 }).map((_, j) => (
                       <td key={j}><span className="admin-skel" style={{ width: j === 0 ? '48px' : '80px', height: j === 0 ? '48px' : '16px', borderRadius: j === 0 ? '4px' : '3px' }} /></td>
                     ))}
                   </tr>
                 ))
               ) : products.length === 0 ? (
-                <tr><td colSpan={7} className="admin-table-empty">No products found.</td></tr>
+                <tr><td colSpan={shop === 'all' ? 8 : 7} className="admin-table-empty">No products found.</td></tr>
               ) : products.map(p => {
                 const firstMedia   = p.images?.[0]
                 const mediaCount   = p._count?.images ?? p.images?.length ?? 0
@@ -701,6 +728,7 @@ export default function AdminProducts() {
                       )}
                     </td>
 
+                    {shop === 'all' && <td style={{ color: '#555', whiteSpace: 'nowrap' }}>{shopOf(p.source)?.label || p.source || 'Website'}</td>}
                     <td style={{ color: '#555' }}>{p.category?.name || '—'}</td>
 
                     <td style={{ fontWeight: 600 }}>${Number(p.price || 0).toFixed(2)}</td>
@@ -773,7 +801,8 @@ export default function AdminProducts() {
         <ProductModal
           key={editProduct.id}
           product={editProduct}
-          categories={categories}
+          categories={shelvesOf(editProduct.source)}
+          shopLabel={shopOf(editProduct.source)?.label || 'Website'}
           onClose={() => setEditProduct(null)}
           onSaved={fetchProducts}
         />
@@ -783,9 +812,12 @@ export default function AdminProducts() {
         <ProductModal
           key="create"
           product={null}
-          categories={categories}
+          // "All shops" creates on the website; a shop's tab creates in that shop
+          source={shop === 'all' ? 'site' : shop}
+          categories={shelvesOf(shop === 'all' ? 'site' : shop)}
+          shopLabel={shopOf(shop === 'all' ? 'site' : shop)?.label || 'Website'}
           onClose={() => setShowCreate(false)}
-          onSaved={() => { fetchProducts(); setShowCreate(false) }}
+          onSaved={() => { fetchProducts(); loadShops(); setShowCreate(false) }}
         />
       )}
     </div>

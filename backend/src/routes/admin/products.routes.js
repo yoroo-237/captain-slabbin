@@ -6,6 +6,7 @@ const r = Router();
 
 r.get('/',    c.list);
 r.post('/',   c.create);
+r.get('/shops', c.shops);
 
 r.get('/:id', async (req, res) => {
   const { prisma } = await import('../../db.js');

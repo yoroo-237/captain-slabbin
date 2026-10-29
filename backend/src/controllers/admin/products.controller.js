@@ -18,12 +18,42 @@ function merchFields(body) {
   return out;
 }
 
+// Which shop a product belongs to: the website (source null) or a bot catalog
+// (`source`, e.g. 'qt', sold by the bots whose style names it). ?shop=site | <source>
+const shopWhere = shop => (!shop || shop === 'all' ? {} : { source: shop === 'site' ? null : String(shop) });
+
 export const adminProductsController = {
+  // The shops to filter by: the website, then each catalog with the bots selling it
+  async shops(req, res) {
+    const [counts, styles] = await Promise.all([
+      prisma.product.groupBy({ by: ['source'], _count: { _all: true } }),
+      prisma.botStyle.findMany({ select: { name: true, look: true, bots: { select: { username: true } } } }),
+    ]);
+    const catalogs = new Map();
+    for (const s of styles) {
+      const key = s.look?.catalog;
+      if (!key) continue;
+      const c = catalogs.get(key) || { styles: [], bots: [] };
+      c.styles.push(s.name);
+      c.bots.push(...s.bots.map(b => `@${b.username}`));
+      catalogs.set(key, c);
+    }
+    const count = source => counts.find(c => c.source === source)?._count._all || 0;
+    const sources = [...new Set([...counts.map(c => c.source).filter(Boolean), ...catalogs.keys()])];
+    res.json(ok([
+      { key: 'site', label: 'Website', bots: [], count: count(null) },
+      ...sources.map(key => {
+        const c = catalogs.get(key);
+        return { key, label: c ? c.styles.join(' / ') : key, bots: c?.bots || [], count: count(key) };
+      }),
+    ]));
+  },
+
   async list(req, res) {
     const { page, limit, skip } = parsePaginationParams(req.query);
-    const { search, category, isActive } = req.query;
+    const { search, category, isActive, shop } = req.query;
 
-    const where = {};
+    const where = { ...shopWhere(shop) };
     if (search)               where.name     = { contains: search.trim(), mode: 'insensitive' };
     if (category)             where.category = { slug: category };
     if (isActive !== undefined) where.isActive = isActive === 'true';
@@ -55,6 +85,8 @@ export const adminProductsController = {
         stock:       parseInt(stock || 0, 10),
         categoryId:  categoryId ? parseInt(categoryId, 10) : null,
         brandId:     brandId    ? parseInt(brandId, 10)    : null,
+        // Created in the shop being viewed: the website, or a bot catalog
+        source:      req.body.source && req.body.source !== 'site' ? String(req.body.source).toLowerCase().replace(/[^a-z0-9]/g, '') || null : null,
         ...extra,
         images:      images.length ? { create: images.map((img, i) => ({ url: img.url, thumbnail: img.thumbnail || null, position: i, mediaType: img.mediaType || 'image' })) } : undefined,
       },
