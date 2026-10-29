@@ -361,14 +361,12 @@ async function cartLines(user) {
 }
 
 // /cart, like the original: "My Cart" with Enter Shipping Details, then the
-// shipping details one field at a time (or PGP encrypted), then the refund address,
-// then "My Cart" with Place Order. Placing the order pays it from the wallet.
-// Details and refund address stay for next time.
-export async function cartBoard(user, from = null) {
+// shipping details one field at a time (or PGP encrypted), then straight to "My
+// Cart" with Place Order: the order is paid from the wallet, so no payment method
+// or refund address is asked. The details stay for next time.
+export async function cartBoard(user) {
   const lines = await cartLines(user);
   if (!lines.length) return { text: fill(look().texts.cartEmpty, { menu: `/${prefix()}` }), keyboard: [[back('menu')]] };
-  const c = checkoutOf(user);
-  if (from && shippingDone(c) && !c.refundAsked) return paymentScreen(from, user);
   return summaryScreen(user);
 }
 
@@ -439,7 +437,7 @@ export function shipScreen(from, user, field = null, error = null) {
 async function afterShipping(from, user) {
   const c = checkoutOf(user);
   if (!shippingDone(c)) return shipScreen(from, user);
-  return c.refundAsked ? summaryScreen(user) : paymentScreen(from, user);
+  return summaryScreen(user);
 }
 
 export async function saveShipField(from, user, field, text) {
@@ -659,17 +657,15 @@ export async function summaryScreen(user, error = null) {
       '📦 <b>Shipping Details:</b>',
       shownAddress(c),
       '',
-      '💳 <b>Payment Method:</b>',
-      `${coinOf(c)} - ${COINS[coinOf(c)]}`,
-      'Refund address:',
-      c.refund ? `<code>${escapeHtml(c.refund)}</code>` : '…',
+      texts.payFromWallet,
       ...(c.orderNote ? ['', '📝 <b>Order Notes:</b>', escapeHtml(c.orderNote)] : []),
       '',
       `💰 Wallet  <b>${money(balance)}</b>`,
+      ...(balance < total ? [fill(texts.walletShort, { missing: usd(Math.round((total - balance) * 100) / 100) })] : []),
     ].join('\n'),
     keyboard: [
       [back('menu'), { text: labels.placeOrder, callback_data: 'cpay' }],
-      [{ text: labels.addOrderNotes, callback_data: 'ckon' }, { text: labels.editPayment, callback_data: 'ckpm' }],
+      [{ text: labels.addOrderNotes, callback_data: 'ckon' }, ...(balance < total ? [{ text: labels.addFunds, callback_data: 'w' }] : [])],
       [{ text: labels.emptyCart, callback_data: 'cclr' }, { text: labels.editShipping, callback_data: 'ckedit' }],
       [{ text: labels.applyVouchers, callback_data: 'ck' }],
     ],

@@ -351,7 +351,7 @@ const CHECKOUT_TEXT_FIELDS = [
   ['shipTitle', 'Shipping: title'], ['ship_name', 'Shipping: asking for the name'], ['ship_street', 'Shipping: asking for the street'],
   ['ship_apt', 'Shipping: asking for the apartment'], ['ship_city', 'Shipping: asking for the city'], ['ship_state', 'Shipping: asking for the state'],
   ['ship_zip', 'Shipping: asking for the postcode'], ['shipCountry', 'Shipping: country'], ['shipAddressPgp', 'Shipping: asking for the encrypted address ({pgp} = the key page)'],
-  ['pgpInvalid', 'Shipping: not a valid PGP message'], ['payTitle', 'Payment method: title'], ['refundAsk', 'Payment method: asking for the refund address ({coin})'],
+  ['pgpInvalid', 'Shipping: not a valid PGP message'], ['payFromWallet', 'My Cart: payment line (paid from the wallet)'], ['walletShort', 'My Cart: wallet too low ({missing})'],
   ['myCartTitle', 'My Cart: title'], ['cartHint', 'My Cart: tip under the title'], ['cartEmpty', 'My Cart: empty'], ['vendor', 'My Cart: vendor name ("by …")'],
   ['vouchersTitle', 'Vouchers: title'], ['noVouchers', 'Vouchers: none applied'], ['voucherAsk', 'Vouchers: asking for a code'], ['orderNotesAsk', 'Order notes: asking for them'],
   ['noteNotInCart', 'Product notes: product not in the cart'], ['ordersTitle', 'My Orders: title'], ['noOrdersYet', 'My Orders: none yet'],
