@@ -7,8 +7,9 @@ from telethon import TelegramClient
 # Tout reste dans le dossier de l'outil : rien n'est écrit dans le profil Windows,
 # le dossier peut être copié tel quel sur un autre PC.
 TOOL = Path(__file__).resolve().parent
-HOME = TOOL / "sessions"          # sessions Telegram (secrets, ignorées par git)
-CACHE = TOOL / ".cache"           # fichiers temporaires
+# Sur un serveur (dashboard des bots), sessions et caches vont sur le volume persistant
+HOME = Path(os.environ.get("TG_SESSIONS_DIR") or TOOL / "sessions")   # sessions Telegram (secrets, ignorées par git)
+CACHE = Path(os.environ.get("TG_CACHE_DIR") or TOOL / ".cache")      # fichiers temporaires
 
 
 def config_file():

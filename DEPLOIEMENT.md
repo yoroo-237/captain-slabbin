@@ -248,6 +248,50 @@ Ce qui est en place :
 
 ---
 
+## 3 bis. Plateforme des bots (dashboard séparé)
+
+Une plateforme à part qui ne gère que des bots Telegram : bots, styles, captures (le travail de tg-explorer, depuis le navigateur), catalogues, commandes, clients, dépôts et **ses propres retraits**. Même code que Captain Slabbin, mais un **déploiement séparé** avec **sa propre base**, ses propres seeds de wallet et ses propres adresses de retrait : rien n'est partagé avec le site.
+
+Un seul service Railway fait tout : l'API, le dashboard (même adresse) et les captures (Python + Telethon dans l'image).
+
+### 3 bis.1 Créer le service
+1. Dans Railway, dans un **nouveau projet** (pas celui du site) : **New → GitHub repo**, le même dépôt.
+2. **Settings** du service :
+   - **Root Directory** : `/` (la racine du dépôt) ;
+   - variable `RAILWAY_DOCKERFILE_PATH` = `bots.Dockerfile` (Railway construit alors avec ce Dockerfile) ;
+   - **Healthcheck Path** : `/health` (il répond `"platform":"bots"`).
+   - Pas de pre-deploy step : l'image applique les migrations et le seed à chaque démarrage.
+3. **+ New → Database → PostgreSQL** dans ce projet : une base **neuve**, jamais celle du site.
+4. **Volume** : clic droit sur le service → **Attach volume**, point de montage `/data`. Les captures et la session Telegram y sont gardées entre deux déploiements. Sans volume, il faut se reconnecter à Telegram et refaire les captures après chaque déploiement.
+5. **Networking → Custom Domain** : par exemple `bots.<votre-domaine>`, avec un CNAME chez le registrar.
+
+### 3 bis.2 Variables
+| Variable | Valeur |
+|---|---|
+| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` (la base de ce projet) |
+| `JWT_SECRET`, `JWT_REFRESH_SECRET` | deux longues valeurs **différentes de celles du site** |
+| `FRONTEND_URL`, `PUBLIC_URL` | l'adresse de la plateforme, ex. `https://bots.<votre-domaine>` (la même pour les deux) |
+| `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `SUPERADMIN_USERNAME`, `SUPERADMIN_PASSWORD` | les comptes du dashboard, créés au premier démarrage |
+| `BTC_HD_SEED`, `ETH_HD_SEED` | **de nouvelles seeds**, jamais celles du site : sinon les deux plateformes donneraient les mêmes adresses de dépôt |
+| `BLOCKCYPHER_TOKEN`, `XMR_ADDRESS` | comme pour le site (section 3.6) |
+| `ALCHEMY_*` | un **nouveau** webhook Alchemy vers `https://bots.<votre-domaine>/api/webhooks/alchemy` |
+| `CLOUDINARY_*` | pour les images des produits importés (le même compte que le site convient) |
+| `TELEGRAM_WEBHOOK_SECRET` | une valeur au hasard |
+| `API_ID`, `API_HASH` | ceux de https://my.telegram.org (API development tools), pour les captures |
+
+`PLATFORM=bots` et les dossiers des captures sont déjà réglés dans `bots.Dockerfile`.
+
+### 3 bis.3 Premier passage
+1. Ouvrez `https://bots.<votre-domaine>` et connectez-vous avec `ADMIN_*` ou `SUPERADMIN_*`.
+2. **Retraits** : adresses de retrait BTC, LTC, DOGE, ETH et XMR de la plateforme. Le superadmin règle la commission et ses adresses dans **Commission**.
+3. **Bots** : collez le jeton de chaque bot. **Un bot ne peut être branché qu'à un seul serveur** : un bot repris du site doit d'abord être délié dans l'admin du site, sinon les deux se le disputent.
+4. **Captures** : à l'étape 1, entrez le numéro du compte Telegram qui parcourt les bots, puis le code que Telegram envoie dans son application, puis le mot de passe 2FA s'il y en a un. Ensuite, explorez un bot, puis **Importer le style** et **Importer les produits** (essayez d'abord en mode **Essai**). Le style s'applique à un bot dans **Bots**.
+5. Les bots de la plateforme n'affichent aucun lien vers un site web, puisqu'il n'y en a pas.
+
+En local : `cd backend` puis `PLATFORM=bots npm run dev`, et dans un second terminal `cd frontend` puis `npm run dev:bots` (http://localhost:5176). Utilisez une base locale à part.
+
+---
+
 ## 4. Vérifications après mise en ligne (pour les 3 projets)
 
 - [ ] Un client voit son solde en crypto et sa valeur en USD qui évolue.

@@ -1,0 +1,14 @@
+**/node_modules
+**/.env
+**/.env.*
+**/*.local.md
+**/dist
+**/dist-bots
+backend/uploads
+tools/tg-explorer/sessions
+tools/tg-explorer/captures
+tools/tg-explorer/.venv
+tools/tg-explorer/.cache
+tools/tg-explorer/web
+**/__pycache__
+.git

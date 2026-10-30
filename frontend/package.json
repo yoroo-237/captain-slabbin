@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && node scripts/prerender.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "dev:bots": "vite --config vite.bots.config.js",
+    "build:bots": "vite build --config vite.bots.config.js"
   },
   "dependencies": {
     "openpgp": "^6.3.2",

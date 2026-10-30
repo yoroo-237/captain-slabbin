@@ -1,6 +1,8 @@
 // VITE_API_URL is baked in at build time. When the build was made without it,
 // a deployed site talks to api.<its own domain> instead of the visitor's localhost.
 function apiBase() {
+  // The bots dashboard is served by its own API server: same origin
+  if (import.meta.env.VITE_PLATFORM === 'bots') return ''
   const set = import.meta.env.VITE_API_URL
   if (set) return set.replace(/\/+$/, '')
   const { hostname, protocol } = window.location

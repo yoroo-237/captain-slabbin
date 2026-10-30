@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'async_hooks';
 import { prisma } from '../db.js';
+import { env } from '../config/env.js';
 
 // A bot's style: its Telegram profile, the copy of every screen, button labels,
 // images and custom pages. Styles live in BotStyle.look and are edited in
@@ -203,7 +204,8 @@ const store = new AsyncLocalStorage();
 export const look = () => store.getStore()?.look || DEFAULT_LOOK;
 export const activeBot = () => store.getStore()?.bot || null;
 export const catalog = () => look().catalog || null;
-export const siteLinks = () => look().siteLinks !== false;
+// The bots platform has no storefront: its bots never link to a website
+export const siteLinks = () => env.platform !== 'bots' && look().siteLinks !== false;
 // false for any style but the shop's own: it never borrows the shop's pictures
 export const isShop = () => store.getStore()?.shop ?? true;
 

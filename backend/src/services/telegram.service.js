@@ -134,7 +134,7 @@ async function installNavigation(bot) {
   const site = (env.frontendUrl || '').replace(/\/$/, '');
   await tg(bot.token, 'setMyCommands', { commands: profile.commands });
   // The website button only for a style that links to the website; otherwise the plain commands menu
-  const menu_button = site.startsWith('https://') && lookOf(bot.style).siteLinks !== false
+  const menu_button = site.startsWith('https://') && env.platform !== 'bots' && lookOf(bot.style).siteLinks !== false
     ? { type: 'web_app', text: profile.menuButton, web_app: { url: site } }
     : { type: 'commands' };
   await tg(bot.token, 'setChatMenuButton', { menu_button });
@@ -445,7 +445,7 @@ export async function postProduct(productId, { botId } = {}) {
     if (bot.shelves.length && !bot.shelves.includes(shelf)) continue;
     const buttons = [
       { text: '🛒 Buy in the bot', url: `https://t.me/${bot.username}?start=p_${p.id}` },
-      ...(site.startsWith('http') && siteLinks !== false ? [{ text: labels.onSite, url: `${site}/p/${encodeURIComponent((p.sku || p.slug).toLowerCase())}` }] : []),
+      ...(site.startsWith('http') && env.platform !== 'bots' && siteLinks !== false ? [{ text: labels.onSite, url: `${site}/p/${encodeURIComponent((p.sku || p.slug).toLowerCase())}` }] : []),
     ];
     const markup = { inline_keyboard: [buttons] };
     try {

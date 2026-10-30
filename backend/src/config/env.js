@@ -10,6 +10,16 @@ for (const key of required) {
 
 export const env = {
   nodeEnv:          process.env.NODE_ENV || 'development',
+  // 'bots': the separate bots platform (own database, wallet and withdrawals). It
+  // serves the bots dashboard itself and runs the bot captures (tg-explorer).
+  platform:         process.env.PLATFORM === 'bots' ? 'bots' : 'site',
+  capture: {
+    toolDir:     process.env.CAPTURE_TOOL_DIR || '',     // tools/tg-explorer by default
+    capturesDir: process.env.CAPTURES_DIR || '',          // <toolDir>/captures by default
+    sessionsDir: process.env.TG_SESSIONS_DIR || '',       // <toolDir>/sessions by default
+    python:      process.env.PYTHON || '',
+  },
+  botsWebDir:       process.env.BOTS_WEB_DIR || '',        // frontend/dist-bots by default
   port:             parseInt(process.env.PORT || '4000', 10),
   databaseUrl:      process.env.DATABASE_URL,
   frontendUrl:      process.env.FRONTEND_URL || 'http://localhost:5173',

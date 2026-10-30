@@ -35,10 +35,12 @@ function Toggle({ checked, onChange }) {
   )
 }
 
-export default function AdminSettings() {
+// tabs / title / subtitle: the bots platform shows only part of the settings
+// (its Withdrawals page is the Crypto and Deposits tabs)
+export default function AdminSettings({ tabs = TABS, title = 'Settings', subtitle = 'Manage site configuration' }) {
   const { user } = useApp()
   const canEdit = isAdmin(user)
-  const [tab, setTab] = useState('General')
+  const [tab, setTab] = useState(tabs[0])
   const [settings, setSettings] = useState({})
   const [saved, setSaved] = useState({})      // last saved values — what a sweep actually uses
   const [loading, setLoading] = useState(true)
@@ -127,8 +129,8 @@ export default function AdminSettings() {
     <div>
       <div className="admin-page-header">
         <div>
-          <h1 className="admin-page-title">Settings</h1>
-          <p className="admin-page-subtitle">Manage site configuration</p>
+          <h1 className="admin-page-title">{title}</h1>
+          <p className="admin-page-subtitle">{subtitle}</p>
         </div>
       </div>
 
@@ -139,7 +141,7 @@ export default function AdminSettings() {
       {error && <div className="admin-alert admin-alert-error">{error}</div>}
 
       <div className="admin-tabs">
-        {TABS.map(t => (
+        {tabs.map(t => (
           <button key={t} type="button" className={'admin-tab' + (tab === t ? ' active' : '')} onClick={() => setTab(t)}>{t}</button>
         ))}
       </div>

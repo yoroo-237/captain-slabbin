@@ -39,7 +39,18 @@ app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 app.use('/api', router);
 
 // Health check
-app.get('/health', (req, res) => res.json({ status: 'ok', env: env.nodeEnv }));
+app.get('/health', (req, res) => res.json({ status: 'ok', env: env.nodeEnv, platform: env.platform }));
+
+// Bots platform: the server is also the bots dashboard (frontend `npm run build:bots`)
+if (env.platform === 'bots') {
+  const web = path.resolve(env.botsWebDir || path.join(__dirname, '..', '..', 'frontend', 'dist-bots'));
+  app.use(express.static(web, { index: false, maxAge: '1h' }));
+  // The bots' own pictures (welcome, menu) live with the site's brand files
+  app.use('/brand', express.static(path.join(__dirname, '..', '..', 'frontend', 'public', 'brand'), { maxAge: '7d' }));
+  app.get(/^\/(?!api\/|uploads\/|brand\/).*/, (req, res) => res.sendFile(path.join(web, 'index.html'), err => {
+    if (err) res.status(503).type('text').send('The bots dashboard is not built: run "npm run build:bots" in frontend.');
+  }));
+}
 
 // Global error handler
 app.use(errorHandler);

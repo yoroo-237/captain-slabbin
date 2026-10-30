@@ -22,3 +22,6 @@ Thumbs.db
 
 # Per-deployment notes with real secrets — never commit these
 *.local.md
+
+# Bots dashboard build
+frontend/dist-bots/
