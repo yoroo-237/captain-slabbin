@@ -6,6 +6,7 @@ import {
 } from 'recharts'
 import { adminFetch } from './utils/api.js'
 import StatusBadge from '../../components/admin/StatusBadge.jsx'
+import ShopTabs, { useShopFilter } from '../../components/admin/ShopTabs.jsx'
 
 const PIE_COLORS = ['#4361ee', '#f7c59f', '#28a745', '#dc3545', '#6f42c1', '#fd7e14']
 
@@ -45,13 +46,21 @@ export default function AdminDashboard() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  // The figures of one shop: the website's or a bot catalog's
+  const shopFilter = useShopFilter()
+  const { shop, shopOf, query: shopQuery } = shopFilter
+  const one = shop !== 'all'
 
   useEffect(() => {
-    adminFetch('/admin/dashboard')
-      .then(d => setData(d))
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false))
-  }, [])
+    let live = true
+    setLoading(true)
+    setError('')
+    adminFetch(`/admin/dashboard${shopQuery ? `?shop=${encodeURIComponent(shopQuery)}` : ''}`)
+      .then(d => { if (live) setData(d) })
+      .catch(e => { if (live) setError(e.message) })
+      .finally(() => { if (live) setLoading(false) })
+    return () => { live = false }
+  }, [shopQuery])
 
   const stats = data?.stats || {}
   const charts = data?.charts || {}
@@ -64,8 +73,12 @@ export default function AdminDashboard() {
       <div className="admin-page-header">
         <div>
           <h1 className="admin-page-title">Dashboard</h1>
-          <p className="admin-page-subtitle">Welcome back. Here's what's happening today.</p>
+          <p className="admin-page-subtitle">{one ? `${shopOf(shop)?.label || 'This shop'}: its sales, orders, customers and products.` : "Welcome back. Here's what's happening today."}</p>
         </div>
+      </div>
+
+      <div className="admin-card" style={{ marginBottom: 12, padding: '12px 16px' }}>
+        <ShopTabs filter={shopFilter} counts={null} note={one ? 'Customers are the accounts that ordered in this shop. Tickets are shown for every shop.' : undefined} />
       </div>
 
       {error && (
@@ -80,7 +93,7 @@ export default function AdminDashboard() {
         <StatCard label="Total Orders" value={loading ? null : stats.totalOrders ?? 0} loading={loading} />
         <StatCard label="Pending Orders" value={loading ? null : stats.pendingOrders ?? 0} loading={loading} />
         <StatCard label="Shipped Orders" value={loading ? null : stats.shippedOrders ?? 0} loading={loading} />
-        <StatCard label="Total Users" value={loading ? null : stats.totalUsers ?? 0} loading={loading} />
+        <StatCard label={one ? 'Customers' : 'Total Users'} value={loading ? null : stats.totalUsers ?? 0} loading={loading} />
         <StatCard label="Products" value={loading ? null : stats.totalProducts ?? 0} loading={loading} />
         <StatCard label="Open Tickets" value={loading ? null : stats.openTickets ?? 0} loading={loading} />
         <StatCard label="Revenue This Month" value={loading ? null : `$${(stats.revenueThisMonth || 0).toFixed(2)}`} loading={loading} />
@@ -142,7 +155,7 @@ export default function AdminDashboard() {
 
           {/* New Users Last 7 Days */}
           <div className="admin-chart-wrap">
-            <div className="admin-chart-title">New Users — Last 7 Days</div>
+            <div className="admin-chart-title">{one ? 'New Customers' : 'New Users'} — Last 7 Days</div>
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={everyDay(charts.newUsersChart, 7, 'users')}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f2f5" />
@@ -165,19 +178,21 @@ export default function AdminDashboard() {
               <tr>
                 <th>Order #</th>
                 <th>Customer</th>
+                {!one && <th>Shop</th>}
                 <th>Total</th>
                 <th>Status</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={4}><Skel w="100%" h="40px" /></td></tr>
+                <tr><td colSpan={5}><Skel w="100%" h="40px" /></td></tr>
               ) : recentOrders.length === 0 ? (
-                <tr><td colSpan={4} className="admin-table-empty">No data found.</td></tr>
+                <tr><td colSpan={5} className="admin-table-empty">No data found.</td></tr>
               ) : recentOrders.map(o => (
                 <tr key={o.id}>
                   <td><span className="admin-code">#{o.orderNumber || o.id}</span></td>
                   <td>{o.user?.username || o.name || '—'}</td>
+                  {!one && <td style={{ color: '#555', whiteSpace: 'nowrap' }}>{shopOf(o.source)?.label || 'Website'}</td>}
                   <td>${Number(o.total || 0).toFixed(2)}</td>
                   <td><StatusBadge type="status" value={o.status} /></td>
                 </tr>
