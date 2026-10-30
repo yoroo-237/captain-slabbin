@@ -4,6 +4,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
 import { adminFetch } from './utils/api.js'
+import ShopTabs, { useShopFilter } from '../../components/admin/ShopTabs.jsx'
 
 const PERIODS = [
   { label: '7 Days', value: '7d' },
@@ -32,15 +33,23 @@ export default function AdminAnalytics() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  // The figures of one shop: the website's or a bot catalog's
+  const shopFilter = useShopFilter()
+  const { shop, shopOf, query: shopQuery } = shopFilter
+  const one = shop !== 'all'
 
   useEffect(() => {
+    let live = true
     setLoading(true)
     setError('')
-    adminFetch(`/admin/analytics?period=${period}`)
-      .then(d => setData(d))
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false))
-  }, [period])
+    const params = new URLSearchParams({ period })
+    if (shopQuery) params.set('shop', shopQuery)
+    adminFetch(`/admin/analytics?${params}`)
+      .then(d => { if (live) setData(d) })
+      .catch(e => { if (live) setError(e.message) })
+      .finally(() => { if (live) setLoading(false) })
+    return () => { live = false }
+  }, [period, shopQuery])
 
   // Map the /admin/analytics response to what each chart expects
   const summary = data?.summary || {}
@@ -60,7 +69,7 @@ export default function AdminAnalytics() {
       <div className="admin-page-header">
         <div>
           <h1 className="admin-page-title">Analytics</h1>
-          <p className="admin-page-subtitle">Performance metrics and insights</p>
+          <p className="admin-page-subtitle">{one ? `${shopOf(shop)?.label || 'This shop'}: its sales, orders and customers` : 'Performance metrics and insights'}</p>
         </div>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           {PERIODS.map(p => (
@@ -75,13 +84,17 @@ export default function AdminAnalytics() {
         </div>
       </div>
 
+      <div className="admin-card" style={{ marginBottom: 12, padding: '12px 16px' }}>
+        <ShopTabs filter={shopFilter} counts={null} note={one ? 'New customers are the accounts that ordered in this shop. Deposits fill the one wallet every shop is paid from, so they are shown for every shop.' : undefined} />
+      </div>
+
       {error && <div style={{ color: '#dc3545', marginBottom: '16px' }}>{error}</div>}
 
       {/* Summary Cards */}
       <div className="admin-stat-grid">
         <StatCard label="Revenue" value={`$${(summary.revenue || 0).toFixed(2)}`} loading={loading} />
         <StatCard label="Orders" value={summary.orders ?? 0} loading={loading} />
-        <StatCard label="New Users" value={summary.newUsers ?? 0} loading={loading} />
+        <StatCard label={one ? 'New Customers' : 'New Users'} value={summary.newUsers ?? 0} loading={loading} />
         <StatCard label="Avg Order Value" value={`$${(summary.avgOrderValue || 0).toFixed(2)}`} loading={loading} />
         <StatCard label="Deposits Credited" value={`$${(summary.totalDeposits || 0).toFixed(2)}`} loading={loading} />
       </div>
@@ -124,7 +137,7 @@ export default function AdminAnalytics() {
 
           {/* New Users over time */}
           <div className="admin-chart-wrap">
-            <div className="admin-chart-title">New Users Over Time</div>
+            <div className="admin-chart-title">{one ? 'New Customers' : 'New Users'} Over Time</div>
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={charts.users || []}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f2f5" />

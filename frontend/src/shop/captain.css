@@ -1105,7 +1105,9 @@
 
 /* ── Category banners (original shop look) ───────────────────────────────── */
 .cs .banners { padding: 28px 0 0; }
-.cs .banners-in { display: grid; gap: 10px; justify-items: center; }
+/* Phones: stacked, one under the other, shown once */
+.cs .banners-run { display: grid; gap: 10px; justify-items: center; padding: 0 16px; }
+.cs .banners-run[aria-hidden="true"] { display: none; }
 .cs .banner { position: relative; display: grid; place-items: center; width: min(100%, 364px); aspect-ratio: 740 / 225; border-radius: 10px; overflow: hidden; background: var(--surface);
   box-shadow: 0 10px 24px -14px rgb(0 0 0 / .8);
   animation: cs-rise .6s var(--ease) backwards; animation-delay: calc(var(--i) * 60ms);
@@ -1123,10 +1125,21 @@
 .cs .banners-cta .btn { min-width: 140px; text-transform: uppercase; letter-spacing: .08em; }
 .cs .btn-light { background: #cfd6dc; color: #111; }
 .cs .btn-light:hover { background: #e2e7eb; }
-/* Wide screens: two banners per row */
+/* Wide screens: one line scrolling on its own, stopped under the pointer */
 @media (min-width: 900px) {
-  .cs .banners-in { grid-template-columns: repeat(2, minmax(0, 364px)); justify-content: center; gap: 14px; }
-  .cs .banners-cta { grid-column: 1 / -1; }
+  .cs .banners-strip { overflow: hidden; padding: 6px 0 10px;
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+            mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent); }
+  .cs .banners-track { display: flex; width: max-content; animation: ad-scroll calc(var(--n, 8) * 4.5s) linear infinite; }
+  .cs .banners-strip:hover .banners-track, .cs .banners-strip:focus-within .banners-track { animation-play-state: paused; }
+  .cs .banners-run, .cs .banners-run[aria-hidden="true"] { display: flex; flex: none; gap: 14px; padding: 0 14px 0 0; }
+  .cs .banners-run .banner { flex: none; width: 364px; }
+}
+/* Wide screens without motion: a row to scroll by hand, shown once */
+@media (min-width: 900px) and (prefers-reduced-motion: reduce) {
+  .cs .banners-strip { overflow-x: auto; -webkit-mask-image: none; mask-image: none; }
+  .cs .banners-track { animation: none; padding-left: 16px; }
+  .cs .banners-run[aria-hidden="true"] { display: none; }
 }
 
 /* Phones and tablets: the outlined "Captain Slabbin" behind the hero fights the

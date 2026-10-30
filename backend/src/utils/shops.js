@@ -4,6 +4,9 @@
 const sourceOf = shop => (shop === 'site' ? null : String(shop).toLowerCase().replace(/[^a-z0-9]/g, '') || null);
 const all = shop => !shop || shop === 'all';
 
+// The catalog of a picked shop (null = the website), undefined when none is picked
+export const shopSource = shop => (all(shop) ? undefined : sourceOf(shop));
+
 // Products, categories, vouchers: their own `source`
 export const shopWhere = shop => (all(shop) ? {} : { source: sourceOf(shop) });
 

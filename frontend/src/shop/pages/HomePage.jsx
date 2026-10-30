@@ -187,17 +187,26 @@ export default function HomePage() {
 
       {bannerMode && (
         <section className="banners" aria-label="Shop by category">
-          <div className="container banners-in">
-            {banners.map((c, i) => {
-              const art = bannerArt(c)
-              return (
-                <Link key={c.slug} to={`/s/${c.slug}`} className={'banner' + (art ? '' : ' banner-text')} style={{ '--i': i }} aria-label={c.name}>
-                  {art
-                    ? <img src={art} alt={c.name} width="740" height="225" loading={i < 4 ? 'eager' : 'lazy'} decoding="async" />
-                    : <><span className="display">{c.name}</span><small>{c.count ? `${c.count} item${c.count === 1 ? '' : 's'}` : 'Coming soon'}</small></>}
-                </Link>
-              )
-            })}
+          {/* One line that scrolls on its own: two copies end to end loop seamlessly */}
+          <div className="banners-strip">
+            <div className="banners-track" style={{ '--n': banners.length }}>
+              {[0, 1].map(copy => (
+                <div className="banners-run" key={copy} aria-hidden={copy === 1}>
+                  {banners.map((c, i) => {
+                    const art = bannerArt(c)
+                    return (
+                      <Link key={c.slug} to={`/s/${c.slug}`} className={'banner' + (art ? '' : ' banner-text')} style={{ '--i': i }} aria-label={c.name} tabIndex={copy ? -1 : 0}>
+                        {art
+                          ? <img src={art} alt={c.name} width="740" height="225" loading={i < 4 && !copy ? 'eager' : 'lazy'} decoding="async" />
+                          : <><span className="display">{c.name}</span><small>{c.count ? `${c.count} item${c.count === 1 ? '' : 's'}` : 'Coming soon'}</small></>}
+                      </Link>
+                    )
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="container">
             {(phone || settings.signal_url) && (
               <div className="banners-cta">
                 {phone && <a className="btn btn-light" href={`sms:${phone.replace(/[^\d+]/g, '')}`}>Text us</a>}
