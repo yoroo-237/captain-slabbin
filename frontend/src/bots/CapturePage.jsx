@@ -96,7 +96,50 @@ function Toggle({ checked, onChange, children }) {
   )
 }
 
-// The Telegram account of the platform: phone, then the code Telegram sends to
+// The signed-in staff member's own Telegram API keys (my.telegram.org): needed
+// once, before their Telegram account can be connected
+function ApiKeys({ keys, onSaved, setError }) {
+  const [open, setOpen] = useState(false)
+  const [apiId, setApiId] = useState('')
+  const [apiHash, setApiHash] = useState('')
+  const [saving, setSaving] = useState(false)
+  useEffect(() => { setApiId(keys?.apiId || '') }, [keys])
+  if (!keys) return null
+  const editing = open || !keys.configured
+  const save = async e => {
+    e.preventDefault()
+    setError(''); setSaving(true)
+    try {
+      await adminFetch('/admin/capture/api-keys', { method: 'PUT', body: JSON.stringify({ apiId, apiHash }) })
+      setApiHash(''); setOpen(false); onSaved()
+    } catch (err) { setError(err.message) } finally { setSaving(false) }
+  }
+  if (!editing) {
+    return (
+      <p className="small muted">Clés API Telegram : api_id <b style={{ color: 'var(--text)' }}>{keys.apiId}</b>, api_hash enregistré.
+        <button className="link" onClick={() => setOpen(true)}>Changer</button></p>
+    )
+  }
+  return (
+    <form className="signin" onSubmit={save}>
+      <p className="small muted">
+        Vos clés API Telegram, une seule fois : sur <a href="https://my.telegram.org" target="_blank" rel="noreferrer">my.telegram.org</a>,
+        connectez-vous avec votre numéro, ouvrez « API development tools », créez une application (nom libre),
+        puis copiez « App api_id » et « App api_hash ». Elles restent sur votre compte du dashboard.
+      </p>
+      <div className="row3">
+        <label className="field">api_id<input inputMode="numeric" value={apiId} onChange={e => setApiId(e.target.value)} required /></label>
+        <label className="field">api_hash<input autoComplete="off" spellCheck="false" value={apiHash} onChange={e => setApiHash(e.target.value)} required /></label>
+      </div>
+      <div className="actions">
+        <button className="btn primary sm" disabled={saving}>{saving ? '…' : 'Enregistrer les clés'}</button>
+        {keys.configured && <button type="button" className="btn sm" onClick={() => setOpen(false)}>Annuler</button>}
+      </div>
+    </form>
+  )
+}
+
+// The staff member's Telegram account: phone, then the code Telegram sends to
 // the app, then the 2FA password when the account has one
 function Account({ account, checking, profile, setProfile, busy, onCheck, onSignedIn, setError }) {
   const cfg = account?.config
@@ -128,7 +171,6 @@ function Account({ account, checking, profile, setProfile, busy, onCheck, onSign
   return (
     <div className="account">
       {account?.error && <p className="bad small">{account.error}</p>}
-      {cfg && !cfg.api && <p className="bad small">API_ID et API_HASH manquent dans les variables du serveur (https://my.telegram.org, API development tools).</p>}
 
       <div className={`who ${current?.authorized ? 'ok' : ''}`}>
         <span className="avatar" aria-hidden="true">{current?.authorized ? (current.first_name || '?').slice(0, 1) : '–'}</span>
@@ -149,9 +191,9 @@ function Account({ account, checking, profile, setProfile, busy, onCheck, onSign
           {stage === 'phone' && (
             <div className="row">
               <label className="field">Numéro du compte Telegram
-                <input inputMode="tel" placeholder={cfg.phone || '+33600000000'} value={phone} onChange={e => setPhone(e.target.value)} />
+                <input inputMode="tel" placeholder="+33600000000" value={phone} onChange={e => setPhone(e.target.value)} />
               </label>
-              <button className="btn primary" disabled={working || busy || (!phone && !cfg.phone)} onClick={send}>{working ? '…' : 'Recevoir le code'}</button>
+              <button className="btn primary" disabled={working || busy || !phone} onClick={send}>{working ? '…' : 'Recevoir le code'}</button>
             </div>
           )}
           {stage === 'code' && (
@@ -173,7 +215,7 @@ function Account({ account, checking, profile, setProfile, busy, onCheck, onSign
           {stage !== 'phone' && <button className="link small" style={{ justifySelf: 'start' }} onClick={() => setStage('phone')}>Recommencer avec un autre numéro</button>}
           <p className="muted small">
             Telegram envoie le code dans son application (téléphone ou Desktop), pas par SMS. La session reste sur le serveur
-            de la plateforme : seuls les admins y ont accès.
+            de la plateforme, à votre nom : les autres admins ne l'utilisent pas.
           </p>
         </div>
       )}
@@ -249,6 +291,7 @@ export default function CapturePage() {
 
   // ---- account: the session explore.py will use ----
   const [account, setAccount] = useState(null)
+  const [keys, setKeys] = useState(null)
   const [checking, setChecking] = useState(false)
   const profileRef = useRef(opts.profile)
   profileRef.current = opts.profile
@@ -261,7 +304,8 @@ export default function CapturePage() {
       return a
     } catch (e) { setError(e.message); return null } finally { setChecking(false) }
   }, [])
-  useEffect(() => { checkAccount() }, [checkAccount])
+  const loadKeys = useCallback(() => api('/api-keys').then(setKeys).catch(e => setError(e.message)), [])
+  useEffect(() => { checkAccount(); loadKeys() }, [checkAccount, loadKeys])
   useEffect(() => { onDone.current = () => { refresh(); checkAccount(); loadStyles() } }, [onDone, refresh, checkAccount, loadStyles])
 
   const parsed = useMemo(() => bots.split(/\s+/).filter(Boolean).map(raw => {
@@ -321,9 +365,10 @@ export default function CapturePage() {
           <div className="step">
             <span className="num">1</span>
             <div className="step-body">
-              <h3>Compte Telegram</h3>
-              <Account account={account} checking={checking} profile={opts.profile} busy={busy} setError={setError}
-                setProfile={v => setOpts(o => ({ ...o, profile: v }))} onCheck={checkAccount} onSignedIn={checkAccount} />
+              <h3>Votre compte Telegram</h3>
+              <ApiKeys keys={keys} setError={setError} onSaved={() => { loadKeys(); checkAccount() }} />
+              {keys?.configured && <Account account={account} checking={checking} profile={opts.profile} busy={busy} setError={setError}
+                setProfile={v => setOpts(o => ({ ...o, profile: v }))} onCheck={checkAccount} onSignedIn={checkAccount} />}
             </div>
           </div>
 

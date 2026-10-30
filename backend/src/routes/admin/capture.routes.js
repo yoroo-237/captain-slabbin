@@ -15,12 +15,15 @@ r.get('/events', (req, res) => capture.subscribe(req, res));
 r.get('/captures', async (req, res) => res.json(ok({ captures: await capture.listCaptures(), key: capture.filesKey() })));
 r.delete('/captures/:bot', async (req, res) => { await capture.removeCapture(req.params.bot); res.json(ok({ removed: true })); });
 
-r.get('/account', async (req, res) => res.json(ok(await capture.account(req.query.profile))));
-r.post('/account/send-code', async (req, res) => res.json(ok(await capture.sendCode(req.body?.profile, req.body?.phone))));
-r.post('/account/sign-in', async (req, res) => res.json(ok(await capture.signIn(req.body?.profile, req.body || {}))));
-r.post('/account/sign-out', (req, res) => res.json(ok(capture.signOut(req.body?.profile))));
+// Each staff member's own Telegram: API keys, then sessions
+r.get('/api-keys', async (req, res) => res.json(ok(await capture.apiKeys(req.user.sub))));
+r.put('/api-keys', async (req, res) => res.json(ok(await capture.setApiKeys(req.user.sub, req.body || {}))));
+r.get('/account', async (req, res) => res.json(ok(await capture.account(req.user.sub, req.query.profile))));
+r.post('/account/send-code', async (req, res) => res.json(ok(await capture.sendCode(req.user.sub, req.body?.profile, req.body?.phone))));
+r.post('/account/sign-in', async (req, res) => res.json(ok(await capture.signIn(req.user.sub, req.body?.profile, req.body || {}))));
+r.post('/account/sign-out', async (req, res) => res.json(ok(await capture.signOut(req.user.sub, req.body?.profile))));
 
-r.post('/explore', async (req, res) => res.status(202).json(ok(await capture.explore(req.body || {}))));
+r.post('/explore', async (req, res) => res.status(202).json(ok(await capture.explore(req.user.sub, req.body || {}))));
 r.post('/stop', async (req, res) => res.json(ok(await capture.stop())));
 r.post('/import', async (req, res) => res.status(202).json(ok(await capture.importCapture(req.body || {}))));
 

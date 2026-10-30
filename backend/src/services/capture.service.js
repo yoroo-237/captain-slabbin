@@ -1,7 +1,9 @@
 // Bot captures on the bots platform: what tools/tg-explorer does on a PC, run by
 // the server. One task at a time (an exploration, a sign-out or an import) whose
-// output is streamed to the dashboard; the Telegram user session lives on the
-// server's volume (TG_SESSIONS_DIR) and only admins reach any of this.
+// output is streamed to the dashboard. Each staff member browses with their own
+// Telegram account: their API keys (my.telegram.org) are kept on their account,
+// their sessions in their own folder of the server's volume (TG_SESSIONS_DIR).
+// Only admins reach any of this.
 import crypto from 'crypto';
 import fs from 'fs/promises';
 import { createReadStream, existsSync } from 'fs';
@@ -9,6 +11,7 @@ import path from 'path';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { env } from '../config/env.js';
+import { prisma } from '../db.js';
 
 const BACKEND = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const TOOL = path.resolve(env.capture.toolDir || path.join(BACKEND, '..', 'tools', 'tg-explorer'));
@@ -46,10 +49,10 @@ function emit(event, data) {
 }
 export const state = () => ({ running: !!task, name: task?.name || null });
 
-function run(name, cmd, args, cwd) {
+function run(name, cmd, args, cwd, childEnv = CHILD_ENV) {
   if (task) throw Object.assign(new Error('Une tâche est déjà en cours.'), { status: 409 });
   emit('line', `$ ${[path.basename(cmd), ...args].join(' ')}`);
-  const child = spawn(cmd, args, { cwd, env: CHILD_ENV, windowsHide: true });
+  const child = spawn(cmd, args, { cwd, env: childEnv, windowsHide: true });
   task = { name, child };
   // A chunk can end mid-line: keep the tail until the next one
   const feed = stream => {
@@ -84,9 +87,9 @@ export function subscribe(req, res) {
 }
 
 // A short Python helper (status, sign-in): its last line is JSON
-function pyJson(args, input = '', timeoutMs = 60000) {
+function pyJson(args, childEnv, input = '', timeoutMs = 60000) {
   return new Promise(resolve => {
-    const child = spawn(PYTHON, args, { cwd: TOOL, env: CHILD_ENV, windowsHide: true });
+    const child = spawn(PYTHON, args, { cwd: TOOL, env: childEnv, windowsHide: true });
     let out = '', err = '';
     const timer = setTimeout(() => child.kill(), timeoutMs);
     child.stdout.on('data', c => { out += c; });
@@ -97,8 +100,8 @@ function pyJson(args, input = '', timeoutMs = 60000) {
       const last = out.trim().split('\n').pop();
       let result;
       try { result = JSON.parse(last); } catch { result = { error: err.trim().split('\n').pop() || 'Le script a échoué.' }; }
-      // The Telegram API keys are the server's variables here, not a .env to edit
-      if (/^Configuration manquante/.test(result.error || '')) result.error = 'API_ID et API_HASH manquent dans les variables du serveur (https://my.telegram.org, API development tools).';
+      // The Telegram API keys are typed in the page here, not in a .env
+      if (/^Configuration manquante/.test(result.error || '')) result.error = 'Entrez d’abord vos clés API Telegram (api_id et api_hash).';
       if (result.config) delete result.config.file; // the server's own paths are of no use in the page
       resolve(result);
     });
@@ -106,28 +109,79 @@ function pyJson(args, input = '', timeoutMs = 60000) {
   });
 }
 
+// ---- each staff member's Telegram API keys ----------------------------------
+// The api_hash is encrypted with a key derived from JWT_SECRET (a new secret
+// means typing the keys again)
+const cipherKey = () => crypto.createHash('sha256').update(`tg-api:${env.jwtSecret}`).digest();
+function seal(text) {
+  const iv = crypto.randomBytes(12);
+  const c = crypto.createCipheriv('aes-256-gcm', cipherKey(), iv);
+  const data = Buffer.concat([c.update(text, 'utf8'), c.final()]);
+  return [iv, c.getAuthTag(), data].map(b => b.toString('base64url')).join('.');
+}
+function unseal(sealed) {
+  try {
+    const [iv, tag, data] = String(sealed).split('.').map(x => Buffer.from(x, 'base64url'));
+    const d = crypto.createDecipheriv('aes-256-gcm', cipherKey(), iv);
+    d.setAuthTag(tag);
+    return Buffer.concat([d.update(data), d.final()]).toString('utf8');
+  } catch { return ''; }
+}
+
+const keysOf = userId => prisma.user.findUnique({ where: { id: Number(userId) }, select: { tgApiId: true, tgApiHash: true } });
+
+export async function apiKeys(userId) {
+  const u = await keysOf(userId);
+  return { apiId: u?.tgApiId || '', configured: !!(u?.tgApiId && unseal(u.tgApiHash)) };
+}
+
+export async function setApiKeys(userId, { apiId, apiHash } = {}) {
+  const id = String(apiId || '').trim();
+  const hash = String(apiHash || '').trim().toLowerCase();
+  if (!id && !hash) {
+    await prisma.user.update({ where: { id: Number(userId) }, data: { tgApiId: null, tgApiHash: null } });
+    return apiKeys(userId);
+  }
+  if (!/^\d{3,12}$/.test(id)) throw bad('api_id : un nombre (my.telegram.org, API development tools).');
+  if (!/^[0-9a-f]{32}$/.test(hash)) throw bad('api_hash : 32 caractères (chiffres et lettres de a à f).');
+  await prisma.user.update({ where: { id: Number(userId) }, data: { tgApiId: id, tgApiHash: seal(hash) } });
+  return apiKeys(userId);
+}
+
+// What the Python scripts get for one staff member: their keys, their sessions
+async function userEnv(userId) {
+  const u = await keysOf(userId);
+  const sessions = path.join(SESSIONS, `u${Number(userId)}`);
+  await fs.mkdir(sessions, { recursive: true });
+  const out = { ...CHILD_ENV, TG_SESSIONS_DIR: sessions };
+  delete out.API_ID; delete out.API_HASH; delete out.PHONE;
+  const hash = u?.tgApiId ? unseal(u.tgApiHash) : '';
+  if (hash) Object.assign(out, { API_ID: u.tgApiId, API_HASH: hash });
+  return out;
+}
+
 // ---- Telegram account (the user session that browses the bots) -------------
-export async function account(profile) {
-  const a = await pyJson(['status.py', '--profile', profileOf(profile)]);
+export async function account(userId, profile) {
+  const a = await pyJson(['status.py', '--profile', profileOf(profile)], await userEnv(userId));
   delete a.sessions_dir;
   return a;
 }
 
-export async function sendCode(profile, phone) {
+export async function sendCode(userId, profile, phone) {
   const p = String(phone || '').trim();
-  if (p && !PHONE.test(p)) throw bad('Numéro invalide (format international, ex. +33600000000).');
+  if (!PHONE.test(p)) throw bad('Numéro invalide (format international, ex. +33600000000).');
   if (task) throw Object.assign(new Error('Une tâche est en cours : attendez sa fin.'), { status: 409 });
-  return pyJson(['weblogin.py', 'send', '--profile', profileOf(profile), ...(p ? ['--phone', p.replace(/ /g, '')] : [])]);
+  return pyJson(['weblogin.py', 'send', '--profile', profileOf(profile), '--phone', p.replace(/ /g, '')], await userEnv(userId));
 }
 
-export async function signIn(profile, { code, password } = {}) {
+export async function signIn(userId, profile, { code, password } = {}) {
   if (task) throw Object.assign(new Error('Une tâche est en cours : attendez sa fin.'), { status: 409 });
   const secret = { code: String(code || '').replace(/\D/g, '').slice(0, 12), password: password ? String(password).slice(0, 256) : '' };
-  return pyJson(['weblogin.py', 'code', '--profile', profileOf(profile)], JSON.stringify(secret));
+  return pyJson(['weblogin.py', 'code', '--profile', profileOf(profile)], await userEnv(userId), JSON.stringify(secret));
 }
 
-export function signOut(profile) {
-  run('Déconnexion', PYTHON, ['-u', 'login.py', '--profile', profileOf(profile), '--logout'], TOOL);
+export async function signOut(userId, profile) {
+  run('Déconnexion', PYTHON, ['-u', 'login.py', '--profile', profileOf(profile), '--logout'], TOOL, await userEnv(userId));
   return state();
 }
 
@@ -154,11 +208,11 @@ function exploreArgs(b) {
   return args;
 }
 
-export async function explore(body) {
+export async function explore(userId, body) {
   const args = exploreArgs(body);
   await fs.mkdir(CAPTURES, { recursive: true });
   await fs.rm(STOP_FILE, { force: true });
-  run('Exploration', PYTHON, args, TOOL);
+  run('Exploration', PYTHON, args, TOOL, await userEnv(userId));
   return state();
 }
 

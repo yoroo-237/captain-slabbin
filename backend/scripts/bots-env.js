@@ -26,9 +26,6 @@ SUPERADMIN_PASSWORD=${password()}
 # New wallets of the platform, never the site's (12 words each)
 BTC_HD_SEED=${generateMnemonic()}
 ETH_HD_SEED=${generateMnemonic()}
-# Telegram account of the captures: https://my.telegram.org > API development tools
-API_ID=
-API_HASH=
 # Same values as the site's service
 BLOCKCYPHER_TOKEN=
 CLOUDINARY_CLOUD_NAME=

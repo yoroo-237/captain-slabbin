@@ -277,7 +277,6 @@ Un seul service Railway fait tout : l'API, le dashboard (même adresse) et les c
 | `ALCHEMY_*` | un **nouveau** webhook Alchemy vers `https://bots.<votre-domaine>/api/webhooks/alchemy` |
 | `CLOUDINARY_*` | pour les images des produits importés (le même compte que le site convient) |
 | `TELEGRAM_WEBHOOK_SECRET` | une valeur au hasard |
-| `API_ID`, `API_HASH` | ceux de https://my.telegram.org (API development tools), pour les captures |
 
 `PLATFORM=bots` et les dossiers des captures sont déjà réglés dans `bots.Dockerfile`.
 
@@ -285,7 +284,7 @@ Un seul service Railway fait tout : l'API, le dashboard (même adresse) et les c
 1. Ouvrez `https://bots.<votre-domaine>` et connectez-vous avec `ADMIN_*` ou `SUPERADMIN_*`.
 2. **Retraits** : adresses de retrait BTC, LTC, DOGE, ETH et XMR de la plateforme. Le superadmin règle la commission et ses adresses dans **Commission**.
 3. **Bots** : collez le jeton de chaque bot. **Un bot ne peut être branché qu'à un seul serveur** : un bot repris du site doit d'abord être délié dans l'admin du site, sinon les deux se le disputent.
-4. **Captures** : à l'étape 1, entrez le numéro du compte Telegram qui parcourt les bots, puis le code que Telegram envoie dans son application, puis le mot de passe 2FA s'il y en a un. Ensuite, explorez un bot, puis **Importer le style** et **Importer les produits** (essayez d'abord en mode **Essai**). Le style s'applique à un bot dans **Bots**.
+4. **Captures** : chaque admin entre une fois ses propres clés API Telegram (api_id et api_hash, depuis https://my.telegram.org, API development tools), puis à l'étape 1 le numéro du compte Telegram qui parcourt les bots, puis le code que Telegram envoie dans son application, puis le mot de passe 2FA s'il y en a un. Ensuite, explorez un bot, puis **Importer le style** et **Importer les produits** (essayez d'abord en mode **Essai**). Le style s'applique à un bot dans **Bots**.
 5. Les bots de la plateforme n'affichent aucun lien vers un site web, puisqu'il n'y en a pas.
 
 En local : `cd backend` puis `PLATFORM=bots npm run dev`, et dans un second terminal `cd frontend` puis `npm run dev:bots` (http://localhost:5176). Utilisez une base locale à part.
