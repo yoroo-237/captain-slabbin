@@ -1,3 +1,4 @@
+import { env } from '../../config/env.js';
 import bcrypt from 'bcrypt';
 import { prisma } from '../../db.js';
 import { walletService } from '../../services/wallet.service.js';
@@ -13,6 +14,9 @@ const isAdminRole = role => ['admin', 'superadmin'].includes(role);
 // admin can create another super admin (or demote one).
 function assertCanAssignRole(actor, role) {
   if (!VALID_ROLES.includes(role)) throw appError(`Invalid role. Valid values: ${VALID_ROLES.join(', ')}`, 400);
+  // Bots platform: staff accounts are the owners of the platform, made by the
+  // super admin under Users; an owner's own customers stay customers
+  if (env.platform === 'bots' && role !== 'customer' && actor.role !== 'superadmin') throw appError('Only the super admin creates staff accounts (Users)', 403);
   if (role === 'superadmin' && actor.role !== 'superadmin') throw appError('Only a super admin can grant the super admin role', 403);
   if (role !== 'customer' && !isAdminRole(actor.role)) throw appError('Only an admin can grant staff roles', 403);
 }

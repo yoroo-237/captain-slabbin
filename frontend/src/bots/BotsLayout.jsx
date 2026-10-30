@@ -19,6 +19,7 @@ const NAV = [
   { label: 'Transactions', path: '/admin/transactions' },
   { label: 'Retraits', path: '/admin/withdrawals', admin: true },
   { label: 'Commission', path: '/admin/super', superadmin: true },
+  { label: 'Utilisateurs', path: '/admin/staff', superadmin: true },
   { sep: true },
   { label: 'Vue d’ensemble', path: '/admin/overview' },
   { label: 'Statistiques', path: '/admin/analytics' },
@@ -52,7 +53,7 @@ export default function BotsLayout({ fallback }) {
             </Link>
             <span className="spacer" />
             <span className="bp-user">
-              <span className="who-name">{user.username}</span>
+              <Link to="/admin/account" className="who-name" style={{ color: 'inherit', textDecoration: 'none' }} title="Mon compte : identifiant et mot de passe">{user.username}</Link>
               <span className="role">{user.role}</span>
               <button type="button" className="btn sm" onClick={logout}>Déconnexion</button>
             </span>

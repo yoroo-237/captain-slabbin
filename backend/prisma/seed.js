@@ -114,6 +114,10 @@ async function main() {
 
   await ensureStaff(process.env.ADMIN_USERNAME || 'admin', process.env.ADMIN_PASSWORD, 'admin');
   await ensureStaff(process.env.SUPERADMIN_USERNAME || 'superadmin', process.env.SUPERADMIN_PASSWORD, 'superadmin');
+  // Bots platform: every admin owns their own shop, keyed by their own id
+  if (process.env.PLATFORM === 'bots') {
+    await prisma.$executeRaw`UPDATE "User" SET "tenantId" = id WHERE role IN ('admin', 'moderator') AND "tenantId" = 0`;
+  }
 
   for (const [i, [slug, name, children = []]] of CATEGORIES.entries()) {
     const parent = await prisma.category.upsert({ where: { slug }, update: {}, create: { slug, name, position: i } });

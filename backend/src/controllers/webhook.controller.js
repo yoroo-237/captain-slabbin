@@ -1,3 +1,4 @@
+import { withTenant } from '../tenant.js';
 import crypto from 'crypto';
 import { prisma } from '../db.js';
 import { walletService } from '../services/wallet.service.js';
@@ -104,7 +105,8 @@ export const webhookController = {
     if (!bot) return res.json(ok('no bot'));
     if (bot.secret && req.headers['x-telegram-bot-api-secret-token'] !== bot.secret) return res.status(401).end();
     res.json(ok('received')); // answer Telegram at once; the reply goes out below
-    await withBot(bot, () => answerTelegram(bot, req.body || {}));
+    // As the bot's owner (bots platform): its customers, catalog and settings only
+    await withTenant(bot.tenantId, () => withBot(bot, () => answerTelegram(bot, req.body || {})));
   },
 };
 

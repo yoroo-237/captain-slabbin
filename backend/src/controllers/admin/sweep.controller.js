@@ -1,3 +1,5 @@
+import { env } from '../../config/env.js';
+import { withTenant } from '../../tenant.js';
 import { isAddress } from 'ethers';
 import { prisma } from '../../db.js';
 import { cryptoService } from '../../services/crypto.service.js';
@@ -118,7 +120,15 @@ function summarize(kind, currency, results) {
   };
 }
 
+// Bots platform: the super admin's "shop" sweep is their own shop's (owner 0),
+// never the other owners' customers; the reserve sweep stays platform-wide
+const ownShop = (req, kind, fn) => (env.platform === 'bots' && kind === 'shop' && isSuper(req) ? withTenant(0, fn) : fn());
+
 async function sweep(kind, currency, req) {
+  return ownShop(req, kind, () => sweepAs(kind, currency, req));
+}
+
+async function sweepAs(kind, currency, req) {
   const destination = await getDestination(kind, currency);
   const results = await withLock(currency, () => currency === 'ETH'
     ? cryptoService.sweepEthShare(kind, destination)
@@ -196,7 +206,7 @@ export const sweepController = {
   },
 
   async shopPending(req, res) {
-    res.json(ok({ pending: await pendingTotals('shop') }));
+    res.json(ok({ pending: await ownShop(req, 'shop', () => pendingTotals('shop')) }));
   },
 
   // ─── Super admin: deposit commissions ────────────────────────────────────────

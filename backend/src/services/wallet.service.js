@@ -1,3 +1,5 @@
+import { env } from '../config/env.js';
+import { currentTenant, withTenant } from '../tenant.js';
 import { prisma } from '../db.js';
 import { cryptoService } from './crypto.service.js';
 import { notificationService } from './notification.service.js';
@@ -76,6 +78,12 @@ export const walletService = {
   // commission stays on the deposit address for the super admin's reserve sweep.
   // The USD price is informative only, so a missing price never blocks a credit.
   async confirmDeposit(depositId, cryptoAmount, note = null) {
+    // A blockchain webhook has no owner in context: credit as the customer's owner
+    // (bots platform), so their notifications go through that owner's bots
+    if (env.platform === 'bots' && currentTenant() === null) {
+      const owner = await prisma.deposit.findUnique({ where: { id: depositId }, select: { user: { select: { tenantId: true } } } });
+      if (owner) return withTenant(owner.user.tenantId, () => this.confirmDeposit(depositId, cryptoAmount, note));
+    }
     const gross = balanceService.round8(Number(cryptoAmount));
     if (!(gross > 0)) throw appError('Received amount must be positive', 400);
 

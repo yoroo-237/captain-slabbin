@@ -23,7 +23,8 @@ const AdminDeposits = lazy(() => import('../pages/admin/AdminDeposits.jsx'))
 const AdminTransactions = lazy(() => import('../pages/admin/AdminTransactions.jsx'))
 const AdminInbox = lazy(() => import('../pages/admin/AdminInbox.jsx'))
 const AdminAnalytics = lazy(() => import('../pages/admin/AdminAnalytics.jsx'))
-const AdminAccount = lazy(() => import('../pages/admin/AdminAccount.jsx'))
+const MyAccount = lazy(() => import('./MyAccount.jsx'))
+const StaffPage = lazy(() => import('./StaffPage.jsx'))
 const AdminSuperDashboard = lazy(() => import('../pages/admin/AdminSuperDashboard.jsx'))
 
 const Loading = () => <div className="bp-loading">Chargement…</div>
@@ -69,7 +70,8 @@ export default function BotsApp() {
               <Route path="transactions" element={<AdminTransactions />} />
               <Route path="withdrawals" element={<Withdrawals />} />
               <Route path="super" element={<SuperOnly><AdminSuperDashboard /></SuperOnly>} />
-              <Route path="account" element={<AdminAccount />} />
+              <Route path="account" element={<MyAccount />} />
+              <Route path="staff" element={<SuperOnly><StaffPage /></SuperOnly>} />
               <Route path="*" element={<Navigate to="/admin" replace />} />
             </Route>
             <Route path="*" element={<Navigate to="/admin" replace />} />

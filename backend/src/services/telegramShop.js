@@ -1,3 +1,4 @@
+import { unscoped } from '../tenant.js';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../db.js';
@@ -26,7 +27,8 @@ const COINS = ['BTC', 'LTC', 'ETH', 'DOGE', 'XMR'];
 // Accounts opened from the bot have no password until the customer sets one
 export const NO_PASSWORD = '!telegram';
 
-export const findCustomer = from => prisma.user.findUnique({ where: { telegramId: String(from.id) } });
+// One account per Telegram user and per owner of the bot (bots platform)
+export const findCustomer = from => prisma.user.findFirst({ where: { telegramId: String(from.id) } });
 
 // ─── Accounts ────────────────────────────────────────────────────────────────
 
@@ -35,7 +37,8 @@ async function freeUsername(from) {
   const base = String(from.username || '').replace(/[^\w.-]/g, '').slice(0, 24) || `captain${String(from.id).slice(-6)}`;
   for (let i = 0; i < 20; i++) {
     const name = i ? `${base}${Math.floor(Math.random() * 900 + 100)}` : base;
-    if (base.length >= 3 && !(await prisma.user.findUnique({ where: { username: name } }))) return name;
+    // Usernames are unique across every owner of the bots platform
+    if (base.length >= 3 && !(await unscoped(() => prisma.user.findUnique({ where: { username: name } })))) return name;
   }
   return `captain${crypto.randomBytes(4).toString('hex')}`;
 }
@@ -77,7 +80,7 @@ export async function connectAccount(from, token) {
   try { userId = jwt.verify(token, env.jwtSecret).tgLink; } catch { /* expired */ }
   if (!userId) return { error: 'This link has expired. Tap "Connect Telegram" on the site again.' };
   const tid = String(from.id);
-  const other = await prisma.user.findUnique({ where: { telegramId: tid }, include: { _count: { select: { orders: true, deposits: true } } } });
+  const other = await prisma.user.findFirst({ where: { telegramId: tid }, include: { _count: { select: { orders: true, deposits: true } } } });
   if (other && other.id !== userId) {
     if (other._count.orders || other._count.deposits) {
       return { error: `This Telegram is already tied to the account ${other.username}, which has orders or deposits. Message the shop to merge them.` };

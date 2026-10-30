@@ -1,3 +1,4 @@
+import { env } from '../../config/env.js';
 import { prisma } from '../../db.js';
 import { ok } from '../../utils/response.js';
 import { appError } from '../../utils/formatters.js';
@@ -22,6 +23,9 @@ const ALLOWED_KEYS = new Set([
 ]);
 
 const ADMIN_ROLES = ['admin', 'superadmin'];
+// The HD seed signs for every deposit address: on the bots platform only the
+// super admin sees or sets it, an owner never touches the platform's wallet
+const seesSeed = req => (env.platform === 'bots' ? req.user.role === 'superadmin' : ADMIN_ROLES.includes(req.user.role));
 
 export const adminSettingsController = {
   async get(req, res) {
@@ -30,14 +34,14 @@ export const adminSettingsController = {
     // move every BTC/LTC/DOGE deposit, so moderators never receive it.
     const visible = rows.filter(r =>
       !r.key.startsWith('super_') && !r.key.startsWith('push_') && !TELEGRAM_PRIVATE_KEYS.includes(r.key) &&
-      (r.key !== 'btc_hd_seed' || ADMIN_ROLES.includes(req.user.role))
+      (r.key !== 'btc_hd_seed' || seesSeed(req))
     );
     const settings = Object.fromEntries(visible.map(r => [r.key, r.value]));
     res.json(ok({ settings }));
   },
 
   async update(req, res) {
-    const entries = Object.entries(req.body).filter(([k]) => ALLOWED_KEYS.has(k));
+    const entries = Object.entries(req.body).filter(([k]) => ALLOWED_KEYS.has(k) && (k !== 'btc_hd_seed' || seesSeed(req)));
     if (entries.length === 0) throw appError('No valid keys to update', 400);
     // A public key only, checked (a private key is refused, never stored)
     for (const e of entries) if (e[0] === 'pgp_public_key') e[1] = (await readPublicKey(e[1])).armored;

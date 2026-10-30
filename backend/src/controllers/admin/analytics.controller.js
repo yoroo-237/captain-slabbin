@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../db.js';
+import { currentTenant } from '../../tenant.js';
 import { ok } from '../../utils/response.js';
 import { orderShopWhere, itemShopWhere, customerShopWhere, shopSource } from '../../utils/shops.js';
 
@@ -37,6 +38,9 @@ export const analyticsController = {
     const sales     = { type: 'purchase', createdAt: { gte: since }, ...ofShop };
     const newUsers  = { ...customerShopWhere(shop), createdAt: { gte: since } };
     const source    = shopSource(shop);
+    // Raw queries are not scoped by db.js: the owner's customers only (bots platform)
+    const tenant    = currentTenant();
+    const ownerOf   = col => (tenant === null ? Prisma.empty : Prisma.sql`AND ${Prisma.raw(col)} IN (SELECT id FROM "User" WHERE "tenantId" = ${tenant})`);
     const inShop    = source === undefined ? Prisma.empty
       : source === null ? Prisma.sql`AND p.source IS NULL` : Prisma.sql`AND p.source = ${source}`;
 
@@ -65,7 +69,7 @@ export const analyticsController = {
         SELECT TO_CHAR("createdAt", 'YYYY-MM-DD') as date,
                SUM(CASE WHEN type='deposit' THEN amount ELSE 0 END)::float as deposits,
                ABS(SUM(CASE WHEN type='purchase' THEN amount ELSE 0 END))::float as purchases
-        FROM "Transaction" WHERE "createdAt" >= ${since}
+        FROM "Transaction" WHERE "createdAt" >= ${since} ${ownerOf('"userId"')}
         GROUP BY TO_CHAR("createdAt", 'YYYY-MM-DD') ORDER BY date`,
 
       prisma.$queryRaw`
@@ -75,7 +79,7 @@ export const analyticsController = {
         JOIN "OrderItem" oi ON oi."orderId" = o.id
         JOIN "Product" p ON oi."productId" = p.id
         JOIN "Category" c ON p."categoryId" = c.id
-        WHERE t.type = 'purchase' AND t."createdAt" >= ${since} ${inShop}
+        WHERE t.type = 'purchase' AND t."createdAt" >= ${since} ${inShop} ${ownerOf('o."userId"')}
         GROUP BY c.name ORDER BY revenue DESC LIMIT 10`,
     ]);
 

@@ -286,6 +286,7 @@ Un seul service Railway fait tout : l'API, le dashboard (même adresse) et les c
 3. **Bots** : collez le jeton de chaque bot. **Un bot ne peut être branché qu'à un seul serveur** : un bot repris du site doit d'abord être délié dans l'admin du site, sinon les deux se le disputent.
 4. **Captures** : chaque admin entre une fois ses propres clés API Telegram (api_id et api_hash, depuis https://my.telegram.org, API development tools), puis à l'étape 1 le numéro du compte Telegram qui parcourt les bots, puis le code que Telegram envoie dans son application, puis le mot de passe 2FA s'il y en a un. Ensuite, explorez un bot, puis **Importer le style** et **Importer les produits** (essayez d'abord en mode **Essai**). Le style s'applique à un bot dans **Bots**.
 5. Les bots de la plateforme n'affichent aucun lien vers un site web, puisqu'il n'y en a pas.
+6. **Utilisateurs** (superadmin) : chaque compte créé est un **propriétaire** avec sa propre boutique. Il a ses bots, ses styles, ses captures, ses produits, ses clients, ses commandes et ses retraits vers ses propres adresses. Le superadmin voit tout, gère les comptes (ajouter, modifier, bannir) et garde la commission de toute la plateforme. Chacun change son identifiant et son mot de passe dans **Mon compte**.
 
 En local : `cd backend` puis `PLATFORM=bots npm run dev`, et dans un second terminal `cd frontend` puis `npm run dev:bots` (http://localhost:5176). Utilisez une base locale à part.
 

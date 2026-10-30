@@ -10,22 +10,22 @@ datasource db {
 // ─── USERS ────────────────────────────────────────────────────────────────────
 
 model User {
-  id               Int       @id @default(autoincrement())
-  username         String    @unique
+  id               Int          @id @default(autoincrement())
+  username         String       @unique
   passwordHash     String
-  role             String    @default("customer")  // customer | moderator | admin | superadmin
-  isActive         Boolean   @default(true)
+  role             String       @default("customer") // customer | moderator | admin | superadmin
+  isActive         Boolean      @default(true)
   // Legacy USD balance, only read by scripts/convert-balances-to-crypto.js.
   // The live balance is WalletHolding (crypto) valued at market price.
-  balance          Decimal   @default(0) @db.Decimal(12, 2)
-  points           Int       @default(0)
-  totalSpent       Decimal   @default(0) @db.Decimal(12, 2)
-  markupPct        Decimal   @default(0) @db.Decimal(5, 2)
+  balance          Decimal      @default(0) @db.Decimal(12, 2)
+  points           Int          @default(0)
+  totalSpent       Decimal      @default(0) @db.Decimal(12, 2)
+  markupPct        Decimal      @default(0) @db.Decimal(5, 2)
   bio              String?
   telegramHandle   String?
   // Telegram user id, set when the account is opened or connected from the shop's bot
-  telegramId       String?   @unique
-  staffTelegramId  String?   @unique  // staff: Telegram account that signs in from notification buttons
+  telegramId       String?
+  staffTelegramId  String?      @unique // staff: Telegram account that signs in from notification buttons
   // Bots platform: this staff member's Telegram API keys for the captures (hash encrypted)
   tgApiId          String?
   tgApiHash        String?
@@ -33,7 +33,7 @@ model User {
   telegramBotId    Int?
   telegramBot      TelegramBot? @relation(fields: [telegramBotId], references: [id], onDelete: SetNull)
   // Cart of the "commands" bots: [{ productId, option, qty, note }], paid from the wallet at /cart
-  telegramCart     Json      @default("[]")
+  telegramCart     Json         @default("[]")
   // Checkout of a "commands" bot in progress: { voucher, name, street, address, last: { name, street, address } }
   telegramCheckout Json?
   signalDetails    String?
@@ -41,31 +41,36 @@ model User {
   btcRefundAddress String?
   xmrRefundAddress String?
   avatarUrl        String?
-  hidePrices       Boolean   @default(false)
-  notifOrders      Boolean   @default(true)
-  notifDeposits    Boolean   @default(true)
-  notifTickets     Boolean   @default(true)
-  notifNewProducts Boolean   @default(true)
-  notifLogins      Boolean   @default(true)
-  tourCompleted    Boolean   @default(false)
+  hidePrices       Boolean      @default(false)
+  notifOrders      Boolean      @default(true)
+  notifDeposits    Boolean      @default(true)
+  notifTickets     Boolean      @default(true)
+  notifNewProducts Boolean      @default(true)
+  notifLogins      Boolean      @default(true)
+  tourCompleted    Boolean      @default(false)
   lastLoginAt      DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
 
-  orders         Order[]
-  transactions   Transaction[]
-  deposits       Deposit[]
-  tickets        SupportTicket[]
-  ticketMessages TicketMessage[]
-  apiKeys        ApiKey[]
-  notifications  Notification[]
-  reviews        Review[]
-  sweepLogs      SweepLog[]
-  holdings       WalletHolding[]
-  messages       Message[]          @relation("MessageThread")
-  sentMessages   Message[]          @relation("MessageSender")
-  invoices       TelegramInvoice[]
+  orders            Order[]
+  transactions      Transaction[]
+  deposits          Deposit[]
+  tickets           SupportTicket[]
+  ticketMessages    TicketMessage[]
+  apiKeys           ApiKey[]
+  notifications     Notification[]
+  reviews           Review[]
+  sweepLogs         SweepLog[]
+  holdings          WalletHolding[]
+  messages          Message[]          @relation("MessageThread")
+  sentMessages      Message[]          @relation("MessageSender")
+  invoices          TelegramInvoice[]
   pushSubscriptions PushSubscription[]
+  // Bots platform: the owner (staff user) this belongs to; 0 = the platform itself (see src/tenant.js)
+  tenantId          Int                @default(0)
+
+  @@unique([telegramId, tenantId])
+  @@index([tenantId])
 }
 
 // A staff browser that enabled notifications in the admin (one row per browser)
@@ -105,12 +110,15 @@ model Category {
   parent    Category?  @relation("CategoryTree", fields: [parentId], references: [id])
   children  Category[] @relation("CategoryTree")
   products  Product[]
-  imageUrl  String?    // wide banner shown on the home shelf grid
+  imageUrl  String? // wide banner shown on the home shelf grid
   position  Int        @default(0)
   // null = the shop's own shelf; otherwise the catalog it belongs to (e.g. "qt"),
   // shown only by the bots whose style names that catalog, never on the site
   source    String?
   createdAt DateTime   @default(now())
+  tenantId  Int        @default(0) // bots platform: owner (src/tenant.js)
+
+  @@index([tenantId])
 }
 
 model Brand {
@@ -123,33 +131,36 @@ model Brand {
 }
 
 model Product {
-  id          Int            @id @default(autoincrement())
-  name        String
-  slug        String         @unique
-  sku         String?        @unique
+  id             Int            @id @default(autoincrement())
+  name           String
+  slug           String         @unique
+  sku            String?        @unique
   // Strike-through price: a product with compareAtPrice > price is on the Fire Sale shelf
-  compareAtPrice Decimal?    @db.Decimal(10, 2)
-  unitLabel   String?        // e.g. "per lb", "per unit", "per 10 pack"
+  compareAtPrice Decimal?       @db.Decimal(10, 2)
+  unitLabel      String? // e.g. "per lb", "per unit", "per 10 pack"
   // Priced packs a customer picks from: [{ label, price }], e.g. "1x" $8.50, "25x" $200.
   // Empty = the product has one price. When set, `price` is the first option's.
-  options     Json           @default("[]")
+  options        Json           @default("[]")
   // null = the shop's own product; otherwise the catalog it belongs to (see Category.source)
-  source      String?
-  badge       String?        // short card tag, e.g. "New", "Top Shelf"
-  isFeatured  Boolean        @default(false)
-  description String?
-  price       Decimal        @db.Decimal(10, 2)
-  stock       Int            @default(0)
-  isActive    Boolean        @default(true)
-  categoryId  Int?
-  category    Category?      @relation(fields: [categoryId], references: [id])
-  brandId     Int?
-  brand       Brand?         @relation(fields: [brandId], references: [id])
-  images      ProductImage[]
-  orderItems  OrderItem[]
-  reviews     Review[]
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  source         String?
+  badge          String? // short card tag, e.g. "New", "Top Shelf"
+  isFeatured     Boolean        @default(false)
+  description    String?
+  price          Decimal        @db.Decimal(10, 2)
+  stock          Int            @default(0)
+  isActive       Boolean        @default(true)
+  categoryId     Int?
+  category       Category?      @relation(fields: [categoryId], references: [id])
+  brandId        Int?
+  brand          Brand?         @relation(fields: [brandId], references: [id])
+  images         ProductImage[]
+  orderItems     OrderItem[]
+  reviews        Review[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  tenantId       Int            @default(0) // bots platform: owner (src/tenant.js)
+
+  @@index([tenantId])
 }
 
 model ProductImage {
@@ -159,20 +170,20 @@ model ProductImage {
   url       String
   thumbnail String?
   position  Int     @default(0)
-  mediaType String  @default("image")  // image | video
+  mediaType String  @default("image") // image | video
 }
 
 // ─── ORDERS ───────────────────────────────────────────────────────────────────
 
 model Order {
-  id              Int         @id @default(autoincrement())
-  orderNumber     String      @unique
+  id              Int          @id @default(autoincrement())
+  orderNumber     String       @unique
   userId          Int
-  user            User        @relation(fields: [userId], references: [id])
-  status          String      @default("processing")  // processing | shipped | delivered | cancelled | refunded
+  user            User         @relation(fields: [userId], references: [id])
+  status          String       @default("processing") // processing | shipped | delivered | cancelled | refunded
   paymentMethod   String
-  totalAmount     Decimal     @db.Decimal(10, 2)
-  shippingFee     Decimal     @default(0) @db.Decimal(10, 2)
+  totalAmount     Decimal      @db.Decimal(10, 2)
+  shippingFee     Decimal      @default(0) @db.Decimal(10, 2)
   shippingAddress String
   name            String
   email           String?
@@ -181,11 +192,11 @@ model Order {
   note            String?
   // Voucher used at checkout and what it took off the products
   voucherCode     String?
-  discount        Decimal     @default(0) @db.Decimal(10, 2)
+  discount        Decimal      @default(0) @db.Decimal(10, 2)
   // Crypto debited at checkout, frozen: [{ currency, amount, rate, usd }]
-  payments        Json        @default("[]")
-  placedAt        DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  payments        Json         @default("[]")
+  placedAt        DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
   items           OrderItem[]
   transaction     Transaction?
 }
@@ -193,17 +204,20 @@ model Order {
 // Voucher codes typed at checkout: an amount or a percentage off the products
 model Voucher {
   id        Int       @id @default(autoincrement())
-  code      String    @unique              // stored in capitals
-  kind      String    @default("percent")  // percent | amount
+  code      String    @unique // stored in capitals
+  kind      String    @default("percent") // percent | amount
   value     Decimal   @db.Decimal(10, 2)
   minOrder  Decimal   @default(0) @db.Decimal(10, 2)
-  maxUses   Int?                           // null = unlimited
+  maxUses   Int? // null = unlimited
   uses      Int       @default(0)
   expiresAt DateTime?
   isActive  Boolean   @default(true)
   // Catalog it applies to: null = the shop's own, or a Product `source` (e.g. 'qt')
   source    String?
   createdAt DateTime  @default(now())
+  tenantId  Int       @default(0) // bots platform: owner (src/tenant.js)
+
+  @@index([tenantId])
 }
 
 model OrderItem {
@@ -220,51 +234,51 @@ model OrderItem {
 // ─── WALLET ───────────────────────────────────────────────────────────────────
 
 model Deposit {
-  id              Int          @id @default(autoincrement())
-  userId          Int
-  user            User         @relation(fields: [userId], references: [id])
-  currency        String       // BTC | LTC | DOGE | ETH | XMR
-  address         String       @default("pending")
-  status          String       @default("awaiting")  // awaiting | partial | confirmed | expired
-  amountExpected  Decimal?     @db.Decimal(18, 8)
-  amountReceived  Decimal      @default(0) @db.Decimal(18, 8)
-  usdCredited     Decimal      @default(0) @db.Decimal(10, 2)
+  id               Int          @id @default(autoincrement())
+  userId           Int
+  user             User         @relation(fields: [userId], references: [id])
+  currency         String // BTC | LTC | DOGE | ETH | XMR
+  address          String       @default("pending")
+  status           String       @default("awaiting") // awaiting | partial | confirmed | expired
+  amountExpected   Decimal?     @db.Decimal(18, 8)
+  amountReceived   Decimal      @default(0) @db.Decimal(18, 8)
+  usdCredited      Decimal      @default(0) @db.Decimal(10, 2)
   // Commission is taken when the deposit is credited: the customer gets netAmount,
   // the super admin's reserve gets commissionAmount. Each share is swept separately.
-  commissionPct    Decimal     @default(0) @db.Decimal(5, 2)
-  commissionAmount Decimal     @default(0) @db.Decimal(18, 8)
-  netAmount        Decimal     @default(0) @db.Decimal(18, 8)
+  commissionPct    Decimal      @default(0) @db.Decimal(5, 2)
+  commissionAmount Decimal      @default(0) @db.Decimal(18, 8)
+  netAmount        Decimal      @default(0) @db.Decimal(18, 8)
   shopSweptAt      DateTime?
   shopSweepTx      String?
   reserveSweptAt   DateTime?
   reserveSweepTx   String?
-  expiresAt       DateTime
-  confirmedAt     DateTime?
-  hookId          String?
-  ethIndex        Int?
-  transactionId   Int?         @unique
-  transaction     Transaction? @relation(fields: [transactionId], references: [id])
-  createdAt       DateTime     @default(now())
+  expiresAt        DateTime
+  confirmedAt      DateTime?
+  hookId           String?
+  ethIndex         Int?
+  transactionId    Int?         @unique
+  transaction      Transaction? @relation(fields: [transactionId], references: [id])
+  createdAt        DateTime     @default(now())
 }
 
 model Transaction {
-  id         Int      @id @default(autoincrement())
-  frontendId String   @unique
-  userId     Int
-  user       User     @relation(fields: [userId], references: [id])
-  type       String   // deposit | purchase | refund | adjustment | bonus
-  amount     Decimal  @db.Decimal(10, 2)
-  currency   String   @default("USD")
-  status     String   @default("confirmed")  // pending | confirmed | failed
-  note       String?
-  txHash     String?
+  id           Int      @id @default(autoincrement())
+  frontendId   String   @unique
+  userId       Int
+  user         User     @relation(fields: [userId], references: [id])
+  type         String // deposit | purchase | refund | adjustment | bonus
+  amount       Decimal  @db.Decimal(10, 2)
+  currency     String   @default("USD")
+  status       String   @default("confirmed") // pending | confirmed | failed
+  note         String?
+  txHash       String?
   // Crypto side of the movement (signed like `amount`) and the USD price used
   cryptoAmount Decimal? @db.Decimal(18, 8)
   rate         Decimal? @db.Decimal(18, 8)
-  orderId    Int?     @unique
-  order      Order?   @relation(fields: [orderId], references: [id])
-  deposit    Deposit?
-  createdAt  DateTime @default(now())
+  orderId      Int?     @unique
+  order        Order?   @relation(fields: [orderId], references: [id])
+  deposit      Deposit?
+  createdAt    DateTime @default(now())
 }
 
 // One row per swept deposit address. kind: 'shop' (admin sweep of the
@@ -287,9 +301,11 @@ model SweepLog {
   createdAt         DateTime @default(now())
 
   triggeredByUser User? @relation(fields: [triggeredBy], references: [id], onDelete: SetNull)
+  tenantId        Int   @default(0) // bots platform: owner (src/tenant.js)
 
   @@index([currency])
   @@index([createdAt])
+  @@index([tenantId])
 }
 
 // ─── SUPPORT ──────────────────────────────────────────────────────────────────
@@ -300,9 +316,9 @@ model SupportTicket {
   userId     Int
   user       User            @relation(fields: [userId], references: [id])
   subject    String
-  category   String          @default("other")  // deposit | order | account | other
+  category   String          @default("other") // deposit | order | account | other
   priority   String          @default("normal") // low | normal | high | urgent
-  status     String          @default("open")   // open | in_progress | resolved | closed
+  status     String          @default("open") // open | in_progress | resolved | closed
   assignedTo String?
   messages   TicketMessage[]
   createdAt  DateTime        @default(now())
@@ -326,7 +342,7 @@ model Notification {
   id        Int      @id @default(autoincrement())
   userId    Int
   user      User     @relation(fields: [userId], references: [id])
-  type      String   // welcome | order | deposit | ticket | system
+  type      String // welcome | order | deposit | ticket | system
   title     String
   message   String
   isRead    Boolean  @default(false)
@@ -364,7 +380,7 @@ model Giveaway {
   description String
   prize       String
   imageUrl    String?
-  status      String    @default("draft")  // draft | active | ended
+  status      String    @default("draft") // draft | active | ended
   endsAt      DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -433,13 +449,13 @@ model TelegramInvoice {
   telegramHandle String?
   contact        String?
   note           String?
-  items          Json     // [{ productId, sku, name, price, quantity }]
+  items          Json // [{ productId, sku, name, price, quantity }]
   subtotal       Decimal  @db.Decimal(10, 2)
   shippingFee    Decimal  @default(0) @db.Decimal(10, 2)
   total          Decimal  @db.Decimal(10, 2)
   text           String
-  delivered      Boolean  @default(false)  // posted to the shop's Telegram chat
-  status         String   @default("new")  // new | contacted | completed | cancelled
+  delivered      Boolean  @default(false) // posted to the shop's Telegram chat
+  status         String   @default("new") // new | contacted | completed | cancelled
   createdAt      DateTime @default(now())
 }
 
@@ -455,15 +471,18 @@ model TelegramBot {
   name       String
   secret     String
   isPrimary  Boolean   @default(false)
-  chatId     String    @default("")   // staff chat (primary bot only)
-  postChatId String    @default("")   // where new products are announced
+  chatId     String    @default("") // staff chat (primary bot only)
+  postChatId String    @default("") // where new products are announced
   seenChats  Json      @default("[]") // [{ id, type, title }], newest first
   shelves    Json      @default("[]") // top-level category slugs shown; [] = all
-  pgpKey     String    @default("")   // this bot's PGP public key (overrides the style's key page)
+  pgpKey     String    @default("") // this bot's PGP public key (overrides the style's key page)
   styleId    Int?
   style      BotStyle? @relation(fields: [styleId], references: [id], onDelete: SetNull)
   createdAt  DateTime  @default(now())
   users      User[]
+  tenantId   Int       @default(0) // bots platform: owner (src/tenant.js)
+
+  @@index([tenantId])
 }
 
 // A bot's look and copy (see services/telegramStyle.js for the shape of `look`).
@@ -472,9 +491,12 @@ model BotStyle {
   id        Int           @id @default(autoincrement())
   name      String
   look      Json          @default("{}")
-  source    String?       // @username of the bot it was copied from
+  source    String? // @username of the bot it was copied from
   capture   Json?
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
   bots      TelegramBot[]
+  tenantId  Int           @default(0) // bots platform: owner (src/tenant.js)
+
+  @@index([tenantId])
 }

@@ -18,12 +18,24 @@ import pushRoutes         from './push.routes.js';
 import vouchersRoutes     from './vouchers.routes.js';
 import captureRoutes      from './capture.routes.js';
 import { prisma }         from '../../db.js';
-import { ok }             from '../../utils/response.js';
+import { ok, fail }       from '../../utils/response.js';
+import { env }            from '../../config/env.js';
+import { withTenant, unscoped, tenantOfStaff } from '../../tenant.js';
+import staffRoutes        from './staff.routes.js';
 
 const r = Router();
 
 // All admin routes require auth + moderator/admin role
 r.use(requireAuth, requireModerator);
+
+// Bots platform: a staff member works as their own owner (src/tenant.js); a
+// disabled account is shut out at once, without waiting for its token to expire
+r.use(async (req, res, next) => {
+  if (env.platform !== 'bots') return next();
+  const me = await unscoped(() => prisma.user.findUnique({ where: { id: Number(req.user.sub) }, select: { isActive: true } }));
+  if (!me?.isActive) return res.status(401).json(fail('Account disabled'));
+  withTenant(tenantOfStaff(req.user), next);
+});
 
 r.use('/dashboard',    dashboardRoutes);
 r.use('/users',        usersRoutes);
@@ -38,6 +50,7 @@ r.use('/telegram',     telegramRoutes);
 r.use('/push',         pushRoutes);
 r.use('/vouchers',     vouchersRoutes);
 r.use('/capture',      captureRoutes);
+r.use('/staff',        staffRoutes);
 
 // Counters for the admin menu: what is waiting for staff
 r.get('/badges', async (req, res) => {
