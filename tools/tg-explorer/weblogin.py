@@ -41,7 +41,7 @@ async def sign_in(client, profile, secret):
         try:
             pending = json.loads(pending_file(profile).read_text(encoding="utf-8"))
         except (OSError, ValueError):
-            return done(error="Demandez d'abord un code.")
+            return done(error="Ask for a code first.")
         code = str(secret.get("code") or "").strip()
         try:
             if code:
@@ -51,7 +51,7 @@ async def sign_in(client, profile, secret):
                 return done(need_password=True)
         if me is None:
             if not secret.get("password"):
-                return done(error="Tapez le code reçu dans Telegram.")
+                return done(error="Type the code Telegram sent you.")
             me = await client.sign_in(password=secret["password"])
     me = await client.get_me()
     pending_file(profile).unlink(missing_ok=True)
@@ -71,20 +71,20 @@ async def main():
         if args.step == "send":
             phone = args.phone or cfg["PHONE"]
             if not phone:
-                return done(error="Numéro de téléphone manquant.")
+                return done(error="Phone number missing.")
             await send(client, args.profile, phone)
         else:
             await sign_in(client, args.profile, json.loads(sys.stdin.read() or "{}"))
     except PhoneNumberInvalidError:
-        done(error="Numéro invalide (format international, ex. +33600000000).")
+        done(error="Invalid number (international format, e.g. +33600000000).")
     except PhoneCodeInvalidError:
-        done(error="Code incorrect.")
+        done(error="Wrong code.")
     except PhoneCodeExpiredError:
-        done(error="Code expiré : demandez-en un nouveau.")
+        done(error="Code expired: ask for a new one.")
     except PasswordHashInvalidError:
-        done(error="Mot de passe 2FA incorrect.", need_password=True)
+        done(error="Wrong 2FA password.", need_password=True)
     except FloodWaitError as e:
-        done(error=f"Telegram demande d'attendre {e.seconds} s avant de réessayer.")
+        done(error=f"Telegram asks to wait {e.seconds} s before trying again.")
     finally:
         await client.disconnect()
 

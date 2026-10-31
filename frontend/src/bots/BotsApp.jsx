@@ -4,6 +4,7 @@ import { AppProvider, useApp } from '../context/AppContext.jsx'
 import { STAFF_ROLES } from '../utils/roles.js'
 import BotsLayout from './BotsLayout.jsx'
 import { LoginScreen, StaffTelegram } from './Auth.jsx'
+import { L } from './i18n.js'
 
 // The bots platform's dashboard: bots only. Its own database, wallet and
 // withdrawals; the pages are the site admin's, under /admin like on the site so
@@ -27,7 +28,7 @@ const MyAccount = lazy(() => import('./MyAccount.jsx'))
 const StaffPage = lazy(() => import('./StaffPage.jsx'))
 const AdminSuperDashboard = lazy(() => import('../pages/admin/AdminSuperDashboard.jsx'))
 
-const Loading = () => <div className="bp-loading">Chargement…</div>
+const Loading = () => <div className="bp-loading">{L('Chargement…', 'Loading…')}</div>
 
 function Guard() {
   const { user, loadingAuth } = useApp()
@@ -39,7 +40,7 @@ function Guard() {
 
 function SuperOnly({ children }) {
   const { user } = useApp()
-  if (user?.role !== 'superadmin') return <div className="empty-state">Réservé au super admin.</div>
+  if (user?.role !== 'superadmin') return <div className="empty-state">{L('Réservé au super admin.', 'Super admin only.')}</div>
   return children
 }
 

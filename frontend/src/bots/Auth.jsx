@@ -3,6 +3,8 @@ import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../utils/api.js'
 import { useApp } from '../context/AppContext.jsx'
 import { STAFF_ROLES } from '../utils/roles.js'
+import { L } from './i18n.js'
+import { LangSwitch } from './BotsLayout.jsx'
 
 // Staff only: a customer account is turned away
 export function LoginScreen() {
@@ -21,7 +23,7 @@ export function LoginScreen() {
     setError('')
     try {
       const data = await apiFetch('/auth/login', { method: 'POST', body: JSON.stringify(form) })
-      if (!STAFF_ROLES.includes(data.user?.role)) throw new Error('Ce compte n’a pas accès au dashboard.')
+      if (!STAFF_ROLES.includes(data.user?.role)) throw new Error(L('Ce compte n’a pas accès au dashboard.', 'This account has no access to the dashboard.'))
       login(data.accessToken, data.refreshToken, data.user)
       navigate(to, { replace: true })
     } catch (err) { setError(err.message) } finally { setBusy(false) }
@@ -31,16 +33,17 @@ export function LoginScreen() {
     <div className="bp bp-login">
       <form className="panel" onSubmit={submit}>
         <span className="brand"><span className="brand-mark" aria-hidden="true"><img src="/logo-mko-192.png" alt="" width="39" height="39" /></span>
-          <span>Bots<small>Plateforme des bots Telegram</small></span></span>
-        <h1>Connexion</h1>
+          <span>Bots<small>{L('Plateforme des bots Telegram', 'Telegram bots platform')}</small></span></span>
+        <LangSwitch />
+        <h1>{L('Connexion', 'Sign in')}</h1>
         {error && <div className="alert" role="alert"><span>{error}</span></div>}
-        <label className="field">Identifiant
+        <label className="field">{L('Identifiant', 'Username')}
           <input autoComplete="username" value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value }))} required />
         </label>
-        <label className="field">Mot de passe
+        <label className="field">{L('Mot de passe', 'Password')}
           <input type="password" autoComplete="current-password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} required />
         </label>
-        <button className="btn primary wide" disabled={busy}>{busy ? 'Connexion…' : 'Se connecter'} <span className="arrow" aria-hidden="true">→</span></button>
+        <button className="btn primary wide" disabled={busy}>{busy ? L('Connexion…', 'Signing in…') : L('Se connecter', 'Sign in')} <span className="arrow" aria-hidden="true">→</span></button>
       </form>
     </div>
   )
@@ -66,13 +69,13 @@ export function StaffTelegram() {
       if (r.ok) { const s = d.data || d; login(s.accessToken, s.refreshToken, s.user); await loadUserData(); return navigate(to, { replace: true }) }
       // Not linked yet: sign in once, then come back here to link this Telegram account
       if (d.needLogin) return navigate('/login', { replace: true, state: { from: { pathname: location.pathname, search: location.search } } })
-      setError(d.message || d.error || 'Cette connexion n’a pas marché.')
-    }).catch(() => setError('Le serveur ne répond pas. Réessayez.'))
+      setError(d.message || d.error || L('Cette connexion n’a pas marché.', 'This sign-in did not work.'))
+    }).catch(() => setError(L('Le serveur ne répond pas. Réessayez.', 'The server is not answering. Try again.')))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className="bp bp-login">
       <div className="panel">
-        {error ? <><div className="alert" role="alert"><span>{error}</span></div><a className="btn" href="/login">Se connecter</a></> : <p className="muted">Ouverture du dashboard…</p>}
+        {error ? <><div className="alert" role="alert"><span>{error}</span></div><a className="btn" href="/login">{L('Se connecter', 'Sign in')}</a></> : <p className="muted">{L('Ouverture du dashboard…', 'Opening the dashboard…')}</p>}
       </div>
     </div>
   )

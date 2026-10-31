@@ -77,6 +77,11 @@ class Explorer:
         self.media_cache = {}
         self.last_id = 0
         self.profile = {}
+        # Retour sur un écran : le chemin qui y mène depuis le départ, et l'écran
+        # d'où vient chaque bouton (un bot qui modifie son message efface les autres)
+        self.paths = {}       # clé d'écran -> [["cmd"|"text"|"cb", valeur], ...]
+        self.origin = {}      # données du bouton (base64) -> clé de l'écran qui le porte
+        self.templates = set()  # écrans au chiffre près (quantité, prix, page…)
 
     # ---- file d'actions -------------------------------------------------
 
@@ -144,7 +149,15 @@ class Explorer:
         cell["kind"] = name
         return cell, None
 
-    async def capture(self, msg, source):
+    @staticmethod
+    def template(text_html, rows):
+        """L'écran sans ses nombres : « 5.00 pcs [£35.00] » et « 6.00 pcs [£42.00] »
+        sont le même écran, dont les boutons ne sont donc joués qu'une fois."""
+        labels = [[c.get("text", "") for c in row] for row in rows]
+        raw = json.dumps([text_html, labels], ensure_ascii=False)
+        return hashlib.sha1(re.sub(r"\d+(?:[.,]\d+)?", "#", raw).encode()).hexdigest()[:12]
+
+    async def capture(self, msg, source, path=None):
         rows = []
         markup = msg.reply_markup
         children = []
@@ -164,6 +177,11 @@ class Explorer:
         media = await self.save_media(msg)
         key = hashlib.sha1(json.dumps([text_html, rows, media], ensure_ascii=False).encode()).hexdigest()[:12]
         if key not in self.screens:
+            tkey = self.template(text_html, rows)
+            repeat = tkey in self.templates
+            self.templates.add(tkey)
+            if path is not None and key not in self.paths:
+                self.paths[key] = path
             self.screens[key] = {
                 "key": key,
                 "order": len(self.screens) + 1,
@@ -175,10 +193,14 @@ class Explorer:
                 "buttons": rows,
                 "sources": [source],
             }
-            for child in children:
-                self.enqueue(child)
-            for cmd in COMMAND.findall(msg.raw_text or ""):
-                self.enqueue(("cmd", cmd))
+            # Le même écran à un nombre près : ses boutons sont déjà en file ou joués
+            if not repeat:
+                for child in children:
+                    if child[0] == "cb":
+                        self.origin[base64.b64encode(child[2]).decode()] = key
+                    self.enqueue(child)
+                for cmd in COMMAND.findall(msg.raw_text or ""):
+                    self.enqueue(("cmd", cmd))
         elif source not in self.screens[key]["sources"]:
             self.screens[key]["sources"].append(source)
         return key
@@ -204,6 +226,44 @@ class Explorer:
                 return recent.id
         return msg_id
 
+    async def find_button(self, label, data=None, limit=10):
+        """Le message récent du bot qui montre ce bouton : par ses données, sinon par son libellé."""
+        async for recent in self.client.iter_messages(self.bot, limit=limit):
+            markup = recent.reply_markup
+            if recent.out or not isinstance(markup, types.ReplyInlineMarkup):
+                continue
+            for row in markup.rows:
+                for b in row.buttons:
+                    bdata = getattr(getattr(b, "type", b), "data", None)
+                    if bdata is not None and (bdata == data or (label and b.text == label)):
+                        return recent.id, bdata
+        return None
+
+    async def go_back_to(self, data, label):
+        """Le bot a remplacé l'écran qui portait ce bouton : on refait le chemin qui y
+        mène (/start, puis les boutons), sans enregistrer ces écrans de passage."""
+        screen = self.origin.get(base64.b64encode(data).decode())
+        path = self.paths.get(screen)
+        if not path:
+            return None
+        print(f"  retour sur l'écran du bouton [{label}] ({len(path)} étape(s))")
+        for kind, value in path:
+            if kind in ("cmd", "text"):
+                await self.client.send_message(self.bot, value)
+            else:
+                found = await self.find_button(value)
+                if not found:
+                    return None
+                try:
+                    await self.client(functions.messages.GetBotCallbackAnswerRequest(peer=self.bot, msg_id=found[0], data=found[1]))
+                except errors.BotResponseTimeoutError:
+                    pass
+            await asyncio.sleep(self.args.wait)
+        latest = await self.client.get_messages(self.bot, limit=1)
+        if latest:
+            self.last_id = max(self.last_id, latest[0].id)
+        return await self.find_button(label, data)
+
     async def perform(self, action):
         alert = None
         if action[0] in ("cmd", "text"):
@@ -211,6 +271,11 @@ class Explorer:
         else:
             _, msg_id, data, _label = action
             msg_id = await self.button_message(msg_id, data)
+            current = await self.client.get_messages(self.bot, ids=msg_id)
+            if not self.has_callback(current, data):
+                found = await self.go_back_to(data, _label)
+                if found:
+                    msg_id, data = found
             try:
                 answer = await self.client(functions.messages.GetBotCallbackAnswerRequest(
                     peer=self.bot, msg_id=msg_id, data=data))
@@ -239,16 +304,22 @@ class Explorer:
                 break
         await asyncio.sleep(self.args.wait)
 
+        # Le chemin des écrans obtenus : celui de l'écran du bouton, plus ce bouton
+        if action[0] == "cb":
+            base = self.paths.get(self.origin.get(base64.b64encode(action[2]).decode()))
+            path = base + [["cb", action[3]]] if base is not None else None
+        else:
+            path = [[action[0] if action[0] == "text" else "cmd", action[1]]]
         keys = []
         fresh = await self.client.get_messages(self.bot, min_id=self.last_id, limit=50)
         for msg in reversed(fresh):
             self.last_id = max(self.last_id, msg.id)
             if not msg.out:
-                keys.append(await self.capture(msg, label))
+                keys.append(await self.capture(msg, label, path))
         if pressed:
             edited = await self.client.get_messages(self.bot, ids=pressed)
             if edited:
-                keys.append(await self.capture(edited, label))
+                keys.append(await self.capture(edited, label, path))
         self.steps.append({"action": label, "alert": alert, "error": error, "screens": keys})
         print(f"{len(self.steps):>4}  {label[:60]:<60} -> {len(keys)} écran(s){'  ' + error if error else ''}")
 
@@ -309,6 +380,7 @@ class Explorer:
             "seen": [[k, base64.b64encode(v).decode() if isinstance(v, bytes) else v] for k, v in self.seen],
             "per_prefix": self.per_prefix, "media_cache": self.media_cache,
             "last_id": self.last_id, "ignored": self.ignored,
+            "paths": self.paths, "origin": self.origin,
         }
         (self.out / "state.json").write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
         self.write_data()
@@ -325,6 +397,8 @@ class Explorer:
         self.screens = {s["key"]: s for s in data["screens"]}
         self.per_prefix, self.media_cache = state["per_prefix"], state["media_cache"]
         self.last_id, self.ignored = state["last_id"], state["ignored"]
+        self.paths, self.origin = state.get("paths", {}), state.get("origin", {})
+        self.templates = {self.template(s.get("html", ""), s.get("buttons", [])) for s in self.screens.values()}
         # Les données de callback sont des octets, encodés en base64 dans le JSON
         for action in state["queue"]:
             if action[0] == "cb":

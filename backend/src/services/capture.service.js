@@ -35,7 +35,7 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.json': 'application/json'
   '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif', '.mp4': 'video/mp4' };
 
 const bad = msg => Object.assign(new Error(msg), { status: 400 });
-const profileOf = p => { const v = String(p || 'explorer'); if (!PROFILE.test(v)) throw bad('Profil invalide.'); return v; };
+const profileOf = p => { const v = String(p || 'explorer'); if (!PROFILE.test(v)) throw bad('Invalid profile.'); return v; };
 export const normalizeBot = x => String(x).trim().replace(/^(https?:\/\/)?(t|telegram)\.me\//, '').split('?')[0].replace(/\/+$/, '').replace(/^@/, '');
 
 // ---- each member's workspace: task, journal, captures -------------------------
@@ -47,7 +47,7 @@ function ws(userId) {
 }
 const capturesOf = userId => path.join(CAPTURES, `u${Number(userId)}`);
 const stopFile = userId => path.join(capturesOf(userId), '.stop');
-const busy = userId => { if (ws(userId).task) throw Object.assign(new Error('Une de vos tâches est en cours : attendez sa fin.'), { status: 409 }); };
+const busy = userId => { if (ws(userId).task) throw Object.assign(new Error('One of your tasks is running: wait for it to end.'), { status: 409 }); };
 
 function emit(userId, event, data) {
   const w = ws(userId);
@@ -111,7 +111,7 @@ function pyJson(args, childEnv, input = '', timeoutMs = 60000) {
       let result;
       try { result = JSON.parse(last); } catch { result = { error: err.trim().split('\n').pop() || 'Le script a échoué.' }; }
       // The Telegram API keys are typed in the page here, not in a .env
-      if (/^Configuration manquante/.test(result.error || '')) result.error = 'Entrez d’abord vos clés API Telegram (api_id et api_hash).';
+      if (/^Configuration manquante/.test(result.error || '')) result.error = 'Enter your Telegram API keys first (api_id and api_hash).';
       if (result.config) delete result.config.file; // the server's own paths are of no use in the page
       resolve(result);
     });
@@ -152,8 +152,8 @@ export async function setApiKeys(userId, { apiId, apiHash } = {}) {
     await prisma.user.update({ where: { id: Number(userId) }, data: { tgApiId: null, tgApiHash: null } });
     return apiKeys(userId);
   }
-  if (!/^\d{3,12}$/.test(id)) throw bad('api_id : un nombre (my.telegram.org, API development tools).');
-  if (!/^[0-9a-f]{32}$/.test(hash)) throw bad('api_hash : 32 caractères (chiffres et lettres de a à f).');
+  if (!/^\d{3,12}$/.test(id)) throw bad('api_id: a number (my.telegram.org, API development tools).');
+  if (!/^[0-9a-f]{32}$/.test(hash)) throw bad('api_hash: 32 characters (digits and letters a to f).');
   await prisma.user.update({ where: { id: Number(userId) }, data: { tgApiId: id, tgApiHash: seal(hash) } });
   return apiKeys(userId);
 }
@@ -179,7 +179,7 @@ export async function account(userId, profile) {
 
 export async function sendCode(userId, profile, phone) {
   const p = String(phone || '').trim();
-  if (!PHONE.test(p)) throw bad('Numéro invalide (format international, ex. +33600000000).');
+  if (!PHONE.test(p)) throw bad('Invalid number (international format, e.g. +33600000000).');
   busy(userId);
   return pyJson(['weblogin.py', 'send', '--profile', profileOf(profile), '--phone', p.replace(/ /g, '')], await userEnv(userId));
 }
@@ -198,7 +198,7 @@ export async function signOut(userId, profile) {
 // ---- explorations -----------------------------------------------------------
 function exploreArgs(userId, b) {
   const bots = (Array.isArray(b.bots) ? b.bots : []).map(normalizeBot);
-  if (!bots.length || !bots.every(x => BOT.test(x))) throw bad('Noms de bots invalides.');
+  if (!bots.length || !bots.every(x => BOT.test(x))) throw bad('Invalid bot names.');
   const args = ['-u', 'explore.py', ...bots, '--captures-dir', capturesOf(userId), '--stop-file', stopFile(userId), '--profile', profileOf(b.profile)];
   const num = (key, flag, min, max, label) => {
     if (b[key] === undefined || b[key] === '') return;
@@ -244,7 +244,7 @@ export async function stop(userId) {
 
 // ---- captures ---------------------------------------------------------------
 const captureDir = (userId, bot) => {
-  if (!BOT.test(String(bot))) throw bad('Capture invalide.');
+  if (!BOT.test(String(bot))) throw bad('Invalid capture.');
   return path.join(capturesOf(userId), String(bot).toLowerCase());
 };
 
@@ -277,22 +277,22 @@ export async function removeCapture(userId, bot) {
 // Products: into a catalog (`source`), matched by name, images uploaded once.
 // Everything goes into the member's own shop (TENANT_ID, see src/tenant.js).
 export async function importCapture(user, { bot, kind, dry, name, applyTo, catalog }) {
-  if (!IMPORTS[kind]) throw bad('Import invalide.');
+  if (!IMPORTS[kind]) throw bad('Invalid import.');
   const userId = Number(user.sub);
   const dir = captureDir(userId, bot);
-  await fs.access(path.join(dir, 'data.json')).catch(() => { throw bad('Capture introuvable.'); });
+  await fs.access(path.join(dir, 'data.json')).catch(() => { throw bad('Capture not found.'); });
   const extra = [];
   if (kind === 'style') {
     const s = String(name || '').trim();
-    if (s && !STYLE.test(s)) throw bad('Nom de style invalide (lettres, chiffres, espaces, @ . _ et -).');
+    if (s && !STYLE.test(s)) throw bad('Invalid style name (letters, numbers, spaces, @ . _ and -).');
     if (s) extra.push('--name', s);
     if (applyTo) {
-      if (!Number.isInteger(Number(applyTo))) throw bad('Bot invalide.');
+      if (!Number.isInteger(Number(applyTo))) throw bad('Invalid bot.');
       extra.push('--apply-to', String(Number(applyTo)));
     }
   } else {
     const source = String(catalog || bot).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
-    if (!source) throw bad('Catalogue invalide.');
+    if (!source) throw bad('Invalid catalog.');
     extra.push('--source', source);
   }
   const tenant = tenantOfStaff(user);

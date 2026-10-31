@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { L } from './i18n.js'
 
 // In-page notifications and confirmations of the bots dashboard (instead of the
 // browser's own alert / confirm boxes)
@@ -18,7 +19,7 @@ export function Modal({ title, children, onClose, wide }) {
       <div className={`panel bp-modal${wide ? ' wide' : ''}`} role="dialog" aria-modal="true" aria-label={title} ref={box}>
         <div className="row-head">
           <h2>{title}</h2>
-          <button type="button" className="btn sm" onClick={onClose} aria-label="Fermer">×</button>
+          <button type="button" className="btn sm" onClick={onClose} aria-label={L('Fermer', 'Close')}>×</button>
         </div>
         {children}
       </div>
@@ -37,7 +38,7 @@ export function UiProvider({ children }) {
     setToasts(t => [...t.slice(-3), { id, text, kind }])
     setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), ms)
   }, [])
-  const confirm = useCallback((text, { ok = 'Confirmer', danger = false } = {}) =>
+  const confirm = useCallback((text, { ok = L('Confirmer', 'Confirm'), danger = false } = {}) =>
     new Promise(resolve => setAsk({ text, ok, danger, resolve })), [])
   const answer = v => { ask?.resolve(v); setAsk(null) }
 
@@ -45,10 +46,10 @@ export function UiProvider({ children }) {
     <Ui.Provider value={{ notify, confirm }}>
       {children}
       {ask && (
-        <Modal title="Confirmation" onClose={() => answer(false)}>
+        <Modal title={L('Confirmation', 'Please confirm')} onClose={() => answer(false)}>
           <p style={{ margin: '0 0 18px' }}>{ask.text}</p>
           <div className="actions" style={{ justifyContent: 'flex-end' }}>
-            <button type="button" className="btn" onClick={() => answer(false)}>Annuler</button>
+            <button type="button" className="btn" onClick={() => answer(false)}>{L('Annuler', 'Cancel')}</button>
             <button type="button" className={`btn ${ask.danger ? 'danger' : 'primary'}`} onClick={() => answer(true)}>{ask.ok}</button>
           </div>
         </Modal>
@@ -57,7 +58,7 @@ export function UiProvider({ children }) {
         {toasts.map(t => (
           <div key={t.id} className={`bp-toast ${t.kind}`}>
             <span>{t.text}</span>
-            <button type="button" aria-label="Fermer" onClick={() => setToasts(x => x.filter(y => y.id !== t.id))}>×</button>
+            <button type="button" aria-label={L('Fermer', 'Close')} onClick={() => setToasts(x => x.filter(y => y.id !== t.id))}>×</button>
           </div>
         ))}
       </div>

@@ -18,17 +18,17 @@ const SELECT = { id: true, username: true, role: true, isActive: true, lastLogin
 
 function checkName(v) {
   const username = String(v || '').trim();
-  if (username.length < 3) throw appError('Identifiant trop court (3 caractères au moins).', 400);
-  if (!/^[A-Za-z0-9_.-]+$/.test(username)) throw appError('Identifiant : lettres, chiffres, . _ - seulement.', 400);
+  if (username.length < 3) throw appError('Username too short (at least 3 characters).', 400);
+  if (!/^[A-Za-z0-9_.-]+$/.test(username)) throw appError('Username: letters, numbers, . _ - only.', 400);
   return username;
 }
 function checkPassword(v) {
-  if (String(v || '').length < 8) throw appError('Mot de passe : 8 caractères au moins.', 400);
+  if (String(v || '').length < 8) throw appError('Password: at least 8 characters.', 400);
   return String(v);
 }
 const taken = async (username, id) => {
   const other = await prisma.user.findUnique({ where: { username } });
-  if (other && other.id !== id) throw appError('Cet identifiant est déjà pris.', 409);
+  if (other && other.id !== id) throw appError('This username is taken.', 409);
 };
 
 r.get('/', async (req, res) => {
@@ -60,18 +60,18 @@ r.post('/', async (req, res) => {
 r.put('/:id', async (req, res) => {
   const id = Number(req.params.id);
   const user = await prisma.user.findUnique({ where: { id } });
-  if (!user || !ROLES.includes(user.role)) throw appError('Compte introuvable.', 404);
+  if (!user || !ROLES.includes(user.role)) throw appError('Account not found.', 404);
   const me = id === Number(req.user.sub);
   const data = {};
   if (req.body?.username !== undefined) { data.username = checkName(req.body.username); await taken(data.username, id); }
   if (req.body?.password) data.passwordHash = await bcrypt.hash(checkPassword(req.body.password), 12);
   if (req.body?.isActive !== undefined) {
-    if (me && !req.body.isActive) throw appError('Vous ne pouvez pas désactiver votre propre compte.', 400);
+    if (me && !req.body.isActive) throw appError('You cannot disable your own account.', 400);
     data.isActive = !!req.body.isActive;
   }
   if (req.body?.role !== undefined) {
-    if (!ROLES.includes(req.body.role)) throw appError('Rôle invalide.', 400);
-    if (me && req.body.role !== user.role) throw appError('Vous ne pouvez pas changer votre propre rôle.', 400);
+    if (!ROLES.includes(req.body.role)) throw appError('Invalid role.', 400);
+    if (me && req.body.role !== user.role) throw appError('You cannot change your own role.', 400);
     // The shop follows the role: an owner keeps their own, a super admin has the platform's
     if (req.body.role !== user.role) { data.role = req.body.role; data.tenantId = req.body.role === 'superadmin' ? 0 : id; }
   }
