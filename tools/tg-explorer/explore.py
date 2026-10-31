@@ -76,6 +76,7 @@ class Explorer:
         self.per_prefix = {}
         self.media_cache = {}
         self.last_id = 0
+        self.profile = {}
 
     # ---- file d'actions -------------------------------------------------
 
@@ -320,6 +321,7 @@ class Explorer:
         state = json.loads(state_file.read_text(encoding="utf-8"))
         data = json.loads(data_file.read_text(encoding="utf-8"))
         self.steps = data["steps"]
+        self.profile = data.get("profile") or {}
         self.screens = {s["key"]: s for s in data["screens"]}
         self.per_prefix, self.media_cache = state["per_prefix"], state["media_cache"]
         self.last_id, self.ignored = state["last_id"], state["ignored"]
@@ -344,12 +346,44 @@ class Explorer:
         print(f"Reprise : {len(self.steps)} actions déjà jouées, {len(self.queue)} en attente"
               f"{f' ({dropped} retours en double retirés)' if dropped else ''}.")
 
+    async def read_profile(self):
+        """Ce que le bot montre de lui-même : nom, description, commandes du menu, photo.
+        Sert à la réplique du bot (même profil, même menu de commandes)."""
+        try:
+            full = await self.client(functions.users.GetFullUserRequest(self.bot))
+            user = full.users[0] if full.users else self.bot
+            info = full.full_user.bot_info
+            photo = intro_photo = None
+            if not self.args.no_media:
+                path = await self.client.download_profile_photo(self.bot, file=str(self.media_dir / "profile"))
+                photo = Path(path).name if path else None
+                # L'image montrée au-dessus de la description, avant /start
+                if info and getattr(info, "description_photo", None):
+                    path = await self.client.download_media(info.description_photo, file=str(self.media_dir / "intro"))
+                    intro_photo = Path(path).name if path else None
+            menu = getattr(info, "menu_button", None) if info else None
+            self.profile = {
+                "name": " ".join(x for x in (user.first_name, user.last_name) if x),
+                "username": user.username or "",
+                "about": full.full_user.about or "",
+                "description": (info.description if info else "") or "",
+                "commands": [{"command": c.command, "description": c.description} for c in (info.commands if info else []) or []],
+                "photo": photo,
+                "intro_photo": intro_photo,
+                # Bouton à gauche du champ de saisie : la liste des commandes ou une web app
+                "menu_button": {"text": getattr(menu, "text", ""), "url": getattr(menu, "url", "")} if menu and hasattr(menu, "url") else None,
+            }
+            print(f"Profil : {self.profile['name']} · {len(self.profile['commands'])} commande(s)"
+                  f"{' · photo' if photo else ''}{' · image d’accueil' if intro_photo else ''}")
+        except errors.RPCError as e:
+            print(f"Profil du bot illisible ({type(e).__name__}) : la capture continue sans.")
+
     # ---- sorties --------------------------------------------------------
 
     def write_data(self):
         screens = sorted(self.screens.values(), key=lambda s: s["order"])
         (self.out / "data.json").write_text(json.dumps(
-            {"bot": self.args.bot, "steps": self.steps, "ignored": sorted(set(self.ignored)),
+            {"bot": self.args.bot, "profile": self.profile, "steps": self.steps, "ignored": sorted(set(self.ignored)),
              "screens": screens}, ensure_ascii=False, indent=2), encoding="utf-8")
         return screens
 
@@ -441,6 +475,7 @@ async def explore_bot(client, name, args):
     # Une capture existante est reprise : rien de ce qui a déjà été joué ne l'est à nouveau
     if not args.fresh:
         explorer.load_state()
+    await explorer.read_profile()
     try:
         await explorer.run()
     finally:

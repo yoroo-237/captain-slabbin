@@ -29,7 +29,7 @@ const IMPORTS = { style: 'import-bot-capture.js', products: 'import-products-fro
 const BOT = /^[A-Za-z][A-Za-z0-9_]{2,63}$/;
 const REGEX = /^[^\r\n]{0,200}$/;
 const PROFILE = /^[\w-]{1,40}$/;
-const STYLE = /^[\w .'-]{1,60}$/;
+const STYLE = /^[\p{L}\p{N} @._'’-]{1,60}$/u;
 const PHONE = /^\+?[0-9 ]{6,20}$/;
 const TYPES = { '.html': 'text/html; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif', '.mp4': 'video/mp4' };
@@ -272,20 +272,24 @@ export async function removeCapture(userId, bot) {
   await fs.rm(captureDir(userId, bot), { recursive: true, force: true });
 }
 
-// Style: the information pages and pictures go into an existing style (its shelves,
-// texts and checkout are kept); no style name = a new "Imported bot" style.
+// Style: a replica of the captured bot (its screens, profile, commands and photo)
+// under `name`, given to the member's bot `applyTo` when one is picked.
 // Products: into a catalog (`source`), matched by name, images uploaded once.
 // Everything goes into the member's own shop (TENANT_ID, see src/tenant.js).
-export async function importCapture(user, { bot, kind, dry, style, catalog }) {
+export async function importCapture(user, { bot, kind, dry, name, applyTo, catalog }) {
   if (!IMPORTS[kind]) throw bad('Import invalide.');
   const userId = Number(user.sub);
   const dir = captureDir(userId, bot);
   await fs.access(path.join(dir, 'data.json')).catch(() => { throw bad('Capture introuvable.'); });
   const extra = [];
   if (kind === 'style') {
-    const s = String(style || '').trim();
-    if (s && !STYLE.test(s)) throw bad('Nom de style invalide.');
-    if (s) extra.push('--merge-into', s);
+    const s = String(name || '').trim();
+    if (s && !STYLE.test(s)) throw bad('Nom de style invalide (lettres, chiffres, espaces, @ . _ et -).');
+    if (s) extra.push('--name', s);
+    if (applyTo) {
+      if (!Number.isInteger(Number(applyTo))) throw bad('Bot invalide.');
+      extra.push('--apply-to', String(Number(applyTo)));
+    }
   } else {
     const source = String(catalog || bot).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
     if (!source) throw bad('Catalogue invalide.');

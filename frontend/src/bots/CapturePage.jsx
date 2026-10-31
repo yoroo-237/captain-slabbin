@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { adminFetch } from '../pages/admin/utils/api.js'
+import { useUi, Modal } from './ui.jsx'
 
 // Captures: what tg-explorer does on a PC, run by the bots platform's server.
 // The platform's Telegram account browses a bot and records its screens, buttons
@@ -142,6 +143,7 @@ function ApiKeys({ keys, onSaved, setError }) {
 // The staff member's Telegram account: phone, then the code Telegram sends to
 // the app, then the 2FA password when the account has one
 function Account({ account, checking, profile, setProfile, busy, onCheck, onSignedIn, setError }) {
+  const { confirm } = useUi()
   const cfg = account?.config
   const current = account?.profiles?.find(p => p.name === profile)
   const others = (account?.profiles || []).filter(p => p.name !== profile)
@@ -164,7 +166,7 @@ function Account({ account, checking, profile, setProfile, busy, onCheck, onSign
     if (r.ok) { setStage('phone'); setCode(''); setPassword(''); onSignedIn() }
   })
   const signOut = () => step(async () => {
-    if (!window.confirm(`Fermer la session « ${profile} » ? Il faudra se reconnecter (code Telegram) pour capturer avec ce profil.`)) return
+    if (!(await confirm(`Fermer la session « ${profile} » ? Il faudra se reconnecter (code Telegram) pour capturer avec ce profil.`, { ok: 'Fermer la session', danger: true }))) return
     await api('/account/sign-out', { profile })
   })
 
@@ -264,11 +266,64 @@ function CaptureCard({ c, files, busy, onResume, onImport, onRemove }) {
           <button className="btn sm" disabled={busy} onClick={() => onRemove(c.name)} title="Supprimer la capture">×</button>
         </div>
         <div className="actions">
-          <button className="btn sm" disabled={busy} onClick={() => onImport(c.name, 'style')}>Importer le style</button>
+          <button className="btn sm primary" disabled={busy} onClick={() => onImport(c.name, 'style')}>Répliquer le bot</button>
           <button className="btn sm" disabled={busy} onClick={() => onImport(c.name, 'products')}>Importer les produits</button>
         </div>
       </div>
     </article>
+  )
+}
+
+// Replica: the captured bot's screens, buttons, commands, profile and photo become
+// a style, given right away to one of your bots. Products: into a catalog.
+function ImportDialog({ bot, kind, bots, onClose, onStart }) {
+  const [name, setName] = useState(`Réplique @${bot}`)
+  const [applyTo, setApplyTo] = useState(bots.length === 1 ? String(bots[0].id) : '')
+  const [catalog, setCatalog] = useState(bot.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20))
+  const [busy, setBusy] = useState(false)
+  const go = async e => {
+    e.preventDefault()
+    setBusy(true)
+    try { await onStart(kind === 'style' ? { name, applyTo: applyTo || null } : { catalog }) } finally { setBusy(false) }
+  }
+  return (
+    <Modal title={kind === 'style' ? `Répliquer @${bot}` : `Produits de @${bot}`} onClose={onClose} wide>
+      <form className="signin" onSubmit={go}>
+        {kind === 'style' ? (
+          <>
+            <p className="small muted" style={{ margin: 0 }}>
+              Crée un style qui reproduit le bot capturé : ses écrans et leurs images, ses boutons, ses commandes,
+              son nom, sa description et sa photo de profil. Il se consulte sans compte, comme l'original.
+              Un style qui porte déjà ce nom est remplacé.
+            </p>
+            <label className="field">Nom du style<input value={name} onChange={e => setName(e.target.value)} required maxLength={60} /></label>
+            <label className="field">L'appliquer tout de suite au bot
+              <select value={applyTo} onChange={e => setApplyTo(e.target.value)}>
+                <option value="">Aucun pour l'instant (à faire dans Bots)</option>
+                {bots.map(b => <option key={b.id} value={b.id}>@{b.username}{b.style ? ` (style actuel : ${b.style})` : ''}</option>)}
+              </select>
+            </label>
+            {applyTo && <p className="small bad" style={{ margin: 0 }}>Le profil du bot (nom, description, commandes, photo) est remplacé sur Telegram par celui de @{bot}.</p>}
+          </>
+        ) : (
+          <>
+            <p className="small muted" style={{ margin: 0 }}>
+              Les produits trouvés dans la capture (nom, prix, options, images) vont dans ce catalogue, rangés dans ses rayons.
+              Un produit déjà importé est mis à jour, pas doublé.
+            </p>
+            <label className="field">Catalogue
+              <input value={catalog} onChange={e => setCatalog(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20))} required spellCheck="false" />
+            </label>
+            <p className="small muted" style={{ margin: 0 }}>Lettres et chiffres. Un bot vend ce catalogue quand son style le nomme (Bots, onglet Styles).</p>
+          </>
+        )}
+        <div className="actions" style={{ justifyContent: 'flex-end' }}>
+          <button type="button" className="btn" onClick={onClose}>Annuler</button>
+          <button className="btn primary" disabled={busy}>{kind === 'style' ? 'Créer la réplique' : 'Importer les produits'}</button>
+        </div>
+        <p className="small muted" style={{ margin: 0 }}>L'avancement s'affiche dans le Journal ; une notification dit quand c'est fini.</p>
+      </form>
+    </Modal>
   )
 }
 
@@ -278,15 +333,15 @@ export default function CapturePage() {
   const [opts, setOpts] = useState(DEFAULTS)
   const [captures, setCaptures] = useState([])
   const [filesKey, setFilesKey] = useState('')
-  const [styles, setStyles] = useState([])
-  const [dry, setDry] = useState(true)
-  const [style, setStyle] = useState('')
-  const [catalog, setCatalog] = useState('')
+  const [myBots, setMyBots] = useState([])
+  const [importing, setImporting] = useState(null) // { bot, kind }
+  const { notify, confirm } = useUi()
   const [error, setError] = useState('')
   const set = key => e => setOpts(o => ({ ...o, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
 
   const refresh = useCallback(() => api('/captures').then(d => { setCaptures(d.captures); setFilesKey(d.key) }).catch(e => setError(e.message)), [])
-  const loadStyles = useCallback(() => adminFetch('/admin/telegram').then(d => setStyles(d.styles || [])).catch(() => {}), [])
+  // Your bots, to apply a replica to
+  const loadStyles = useCallback(() => adminFetch('/admin/telegram').then(d => setMyBots((d.bots || []).map(b => ({ id: b.id, username: b.username, style: (d.styles || []).find(st => st.id === b.styleId)?.name || '' })))).catch(() => {}), [])
   useEffect(() => { refresh(); loadStyles() }, [refresh, loadStyles])
 
   // ---- account: the session explore.py will use ----
@@ -306,7 +361,19 @@ export default function CapturePage() {
   }, [])
   const loadKeys = useCallback(() => api('/api-keys').then(setKeys).catch(e => setError(e.message)), [])
   useEffect(() => { checkAccount(); loadKeys() }, [checkAccount, loadKeys])
-  useEffect(() => { onDone.current = () => { refresh(); checkAccount(); loadStyles() } }, [onDone, refresh, checkAccount, loadStyles])
+  // When a task ends: a notification with what it says last (or its error)
+  const linesRef = useRef(lines)
+  linesRef.current = lines
+  useEffect(() => {
+    onDone.current = () => {
+      refresh(); checkAccount(); loadStyles()
+      const tail = linesRef.current.slice(-12)
+      const end = tail.filter(l => l.startsWith('-- terminé')).pop() || ''
+      const failed = !/code 0\)/.test(end)
+      const said = [...tail].reverse().find(l => !l.startsWith('-- terminé') && !l.startsWith('$ ')) || ''
+      notify(failed ? `Échec : ${said || end}` : `Terminé. ${said}`, failed ? 'err' : 'ok', 10000)
+    }
+  }, [onDone, refresh, checkAccount, loadStyles, notify])
 
   const parsed = useMemo(() => bots.split(/\s+/).filter(Boolean).map(raw => {
     const name = normalizeBot(raw)
@@ -320,23 +387,25 @@ export default function CapturePage() {
   }
   const resume = guard(name => api('/explore', { ...opts, fresh: false, bots: [name] }))
   const explore = guard(async () => {
-    if (opts.fresh && !window.confirm('Tout recommencer efface les captures existantes de ces bots et rejoue toutes les actions. Continuer ?')) return
+    if (opts.fresh && !(await confirm('Tout recommencer efface les captures existantes de ces bots et rejoue toutes les actions. Continuer ?', { ok: 'Tout recommencer', danger: true }))) return
     await api('/explore', { ...opts, bots: parsed.map(b => b.name) })
   })
   const current = account?.profiles?.find(p => p.name === opts.profile)
   const connected = !!current?.authorized
   const stop = guard(() => api('/stop', {}))
   const remove = guard(async name => {
-    if (!window.confirm(`Supprimer la capture de @${name} (écrans, images, file d'attente) ? Ce qui a déjà été importé reste.`)) return
+    if (!(await confirm(`Supprimer la capture de @${name} (écrans, images, file d'attente) ? Ce qui a déjà été importé reste.`, { ok: 'Supprimer', danger: true }))) return
     await adminFetch(`/admin/capture/captures/${encodeURIComponent(name)}`, { method: 'DELETE' })
     refresh()
   })
-  const importCapture = guard(async (bot, kind) => {
-    const source = (catalog || bot).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20)
-    const target = kind === 'style' ? (style ? `les pages du style « ${style} »` : 'un nouveau style « Imported bot »') : `les produits dans le catalogue « ${source} »`
-    if (!dry && !window.confirm(`Importer ${target} depuis @${bot} (écriture réelle) ?`)) return
-    await api('/import', { bot, kind, dry, style: kind === 'style' ? style : '', catalog: source })
-  })
+  const startImport = async options => {
+    setError('')
+    try {
+      await api('/import', { bot: importing.bot, kind: importing.kind, dry: false, ...options })
+      notify(importing.kind === 'style' ? `Réplique de @${importing.bot} en cours…` : `Import des produits de @${importing.bot} en cours…`, 'info')
+      setImporting(null)
+    } catch (e) { notify(e.message, 'err') }
+  }
 
   const busy = state.running
   const files = `/api/capture-files/${filesKey}`
@@ -443,38 +512,20 @@ export default function CapturePage() {
       <section className="panel">
         <div className="row-head">
           <h2><span className="idx">03</span>Captures <span className="count">{captures.length}</span></h2>
-          <div className="mode" role="radiogroup" aria-label="Mode des imports">
-            <button role="radio" aria-checked={dry} className={dry ? 'sel' : ''} onClick={() => setDry(true)}>Essai</button>
-            <button role="radio" aria-checked={!dry} className={!dry ? 'sel real' : ''} onClick={() => setDry(false)}>Écriture réelle</button>
-          </div>
           <button className="btn" onClick={refresh}>Actualiser</button>
         </div>
-        <p className={`small mode-note ${dry ? 'muted' : 'bad'}`}>
-          {dry ? 'Imports en essai : le journal montre ce qui serait fait, rien n’est écrit.'
-            : 'Les imports écrivent dans la base de la plateforme. Une confirmation est demandée.'}
-        </p>
-        <div className="import-opts">
-          <label className="field">« Importer le style » met à jour
-            <select value={style} onChange={e => setStyle(e.target.value)}>
-              <option value="">Un nouveau style « Imported bot »</option>
-              {styles.map(s => <option key={s.id} value={s.name}>Le style « {s.name} »</option>)}
-            </select>
-          </label>
-          <label className="field">« Importer les produits » dans le catalogue
-            <input value={catalog} onChange={e => setCatalog(e.target.value)} placeholder="vide = le nom du bot capturé" spellCheck="false" />
-          </label>
-        </div>
-        <p className="small muted">
-          {style ? `Seules les pages d'information et les images d'accueil et de menu de « ${style} » sont remplacées ; rayons, textes et panier restent. Une clé PGP de la capture n'est jamais copiée.`
-            : 'Crée ou remplace entièrement le style « Imported bot ».'}
-          {' '}Le style s'applique ensuite à un bot dans l'onglet Bots ; un catalogue se donne à un bot par son style.
+        <p className="small muted" style={{ marginTop: -8 }}>
+          « Répliquer le bot » en fait un style (écrans, boutons, commandes, profil et photo) et peut l'appliquer tout de suite à un de vos bots.
+          « Importer les produits » range ses produits dans un catalogue. Une capture faite avant cette version ne contient pas le profil :
+          explorez le bot à nouveau (sans « Tout recommencer », rien n'est rejoué) pour le lire.
         </p>
         {captures.length === 0
           ? <div className="empty-state" style={{ marginTop: 18 }}>Aucune capture pour l'instant. Lancez une exploration ci-dessus.</div>
           : <div className="cards">{captures.map(c => (
-            <CaptureCard key={c.name} c={c} files={files} busy={busy} onResume={resume} onImport={importCapture} onRemove={remove} />
+            <CaptureCard key={c.name} c={c} files={files} busy={busy} onResume={resume} onImport={(bot, kind) => setImporting({ bot, kind })} onRemove={remove} />
           ))}</div>}
       </section>
+      {importing && <ImportDialog {...importing} bots={myBots} onClose={() => setImporting(null)} onStart={startImport} />}
     </>
   )
 }

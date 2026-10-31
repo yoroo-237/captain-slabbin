@@ -2,6 +2,7 @@ import { Suspense, useCallback, useEffect, useState } from 'react'
 import { NavLink, Outlet, Link } from 'react-router-dom'
 import { useApp } from '../context/AppContext.jsx'
 import { adminFetch } from '../pages/admin/utils/api.js'
+import { UiProvider } from './ui.jsx'
 
 // Bots first, then what they sell, what they earn and where it goes
 const NAV = [
@@ -43,6 +44,7 @@ export default function BotsLayout({ fallback }) {
   const admin = ['admin', 'superadmin'].includes(user.role)
   const items = NAV.filter(i => (!i.admin || admin) && (!i.superadmin || user.role === 'superadmin'))
   return (
+    <UiProvider>
     <div className="bp">
       <header className="bp-top">
         <div className="bp-wrap">
@@ -73,5 +75,6 @@ export default function BotsLayout({ fallback }) {
         <Suspense fallback={fallback}><Outlet /></Suspense>
       </main>
     </div>
+    </UiProvider>
   )
 }

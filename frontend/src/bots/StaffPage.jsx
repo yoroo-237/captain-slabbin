@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { adminFetch } from '../pages/admin/utils/api.js'
+import { useUi } from './ui.jsx'
 
 // Utilisateurs (super admin): the owners of the platform. Each owner runs their
 // own shop: their bots, styles, captures, catalog, customers, orders and
@@ -55,6 +56,7 @@ function Editor({ initial, onClose, onSaved }) {
 }
 
 export default function StaffPage() {
+  const { confirm, notify } = useUi()
   const [staff, setStaff] = useState(null)
   const [editing, setEditing] = useState(null) // null | 'new' | user
   const [error, setError] = useState('')
@@ -63,9 +65,13 @@ export default function StaffPage() {
 
   async function toggle(u) {
     const ban = u.isActive
-    if (ban && !window.confirm(`Bannir ${u.username} ? Il ne pourra plus se connecter. Ses bots, clients et commandes restent en place.`)) return
+    if (ban && !(await confirm(`Bannir ${u.username} ? Il ne pourra plus se connecter. Ses bots, clients et commandes restent en place.`, { ok: 'Bannir', danger: true }))) return
     setError('')
-    try { await adminFetch(`/admin/staff/${u.id}`, { method: 'PUT', body: JSON.stringify({ isActive: !ban }) }); load() } catch (e) { setError(e.message) }
+    try {
+      await adminFetch(`/admin/staff/${u.id}`, { method: 'PUT', body: JSON.stringify({ isActive: !ban }) })
+      notify(ban ? `${u.username} est banni.` : `${u.username} est réactivé.`, 'ok')
+      load()
+    } catch (e) { setError(e.message) }
   }
 
   return (

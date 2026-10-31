@@ -1,11 +1,15 @@
 // Turns a capture of a bot (data.json + media/) into a style made of pages.
 //
-//   node scripts/import-bot-capture.js <capture folder> [--name "QT Market"] [--dry]
-//   node scripts/import-bot-capture.js <capture folder> --merge-into "QT Market" [--pages a,b,c] [--dry]
+//   node scripts/import-bot-capture.js <capture folder> [--name "Réplique @bot"] [--apply-to <bot id>] [--dry]
+//   node scripts/import-bot-capture.js <capture folder> --merge-into "QT Market" [--pages a,b,c] [--apply-to <bot id>] [--dry]
 //
+// The first form is a replica of the captured bot: its screens as pages, browsed
+// without an account like the original, its profile (name, about, description,
+// command menu, photo), its /start screen as home. --apply-to then gives the
+// style to one of the owner's bots and pushes the profile to Telegram.
 // The second form keeps the shop's catalog and payments: it only copies the
-// information pages (--pages, command names) and the welcome/menu pictures into
-// an existing style, whose shelves, products and checkout stay the shop's own.
+// information pages (--pages, command names) and the welcome/menu pictures into an existing style, whose shelves,
+// products and checkout stay the shop's own.
 
 // Each captured screen becomes a page of the style: its text, its image and its
 // buttons. A screen opened by a typed command is keyed by that command, so the
@@ -19,17 +23,19 @@ import path from 'path';
 import { prisma } from '../src/db.js';
 import { cmdName } from '../src/services/telegramCommands.js';
 import { captureMedia } from './capture-media.js';
+import { applyStyle } from '../src/services/telegram.service.js';
+import { currentTenant } from '../src/tenant.js';
 
 const args = process.argv.slice(2);
 const dir = args.find(a => !a.startsWith('--') && !args[args.indexOf(a) - 1]?.startsWith('--'));
 const dry = args.includes('--dry');
 const opt = flag => (args.includes(flag) ? args[args.indexOf(flag) + 1] : null);
 const mergeInto = opt('--merge-into');
-const only = new Set((opt('--pages') || 'about_qtetra,v_qtetra_refunds,v_qtetra_shipping,pgp_qtetra').split(',').map(cmdName));
-const name = opt('--name') || 'Imported bot';
-if (!dir) { console.error('Usage: node scripts/import-bot-capture.js <capture folder> [--name "Style name"] [--dry]'); process.exit(1); }
+const applyTo = Number(opt('--apply-to')) || null;
+if (!dir) { console.error('Usage: node scripts/import-bot-capture.js <capture folder> [--name "Style name"] [--apply-to <bot id>] [--dry]'); process.exit(1); }
 
-const { bot, screens } = JSON.parse(await fs.readFile(path.join(dir, 'data.json'), 'utf8'));
+const { bot, screens, profile = {} } = JSON.parse(await fs.readFile(path.join(dir, 'data.json'), 'utf8'));
+const name = (opt('--name') || `Réplique @${bot}`).slice(0, 60);
 const byKey = new Map(screens.map(s => [s.key, s]));
 const isBack = b => /⇇|⇆|^\W*back\b/i.test(b.text) || /^\/back_/.test(b.data || '');
 const commandOf = s => (s.sources || []).find(x => x.startsWith('/'));
@@ -46,8 +52,16 @@ for (const s of [...screens].sort((a, b) => a.order - b.order)) {
   keyOf.set(s.key, key);
 }
 const startScreen = screens.find(s => (s.sources || []).includes('/start'));
-const menuScreen = screens.find(s => (s.sources || []).some(x => x === '/v_qtetra')) || startScreen;
+// The menu: what /menu opens, else the first screen of a short /v_… command (QT-like
+// bots), else the /start screen
+const menuScreen = screens.find(s => (s.sources || []).includes('/menu'))
+  || screens.find(s => (s.sources || []).some(x => /^\/v_[a-z0-9]+$/i.test(x)))
+  || startScreen;
 const menuKey = menuScreen && keyOf.get(menuScreen.key);
+// --merge-into copies these information pages (default: QT Market's)
+const only = new Set((opt('--pages') || 'about_qtetra,v_qtetra_refunds,v_qtetra_shipping,pgp_qtetra').split(',').map(cmdName));
+// Text a customer types (a reply-keyboard button) that opens a screen
+const typedOf = s => (s.sources || []).filter(x => !x.startsWith('/') && !x.startsWith('['));
 
 // Telethon's HTML → what the Bot API accepts: no custom emoji links, real newlines
 const clean = html => String(html || '')
@@ -55,10 +69,10 @@ const clean = html => String(html || '')
   .replace(/<br\s*\/?>/gi, '\n')
   .slice(0, 4000);
 
-// The screen a callback button opens: the nearest later screen that was reached
-// by clicking a button with that label
+// The screen a button opens: the nearest later screen that was reached by clicking
+// a button with that label ([label]), or by sending its text (reply keyboard)
 function targetOf(screen, button) {
-  const label = `[${button.text}]`;
+  const label = button.kind === 'keyboard' ? button.text : `[${button.text}]`;
   const later = screens.filter(s => s.order > screen.order && (s.sources || []).includes(label));
   return later.sort((a, b) => a.order - b.order)[0] || null;
 }
@@ -84,7 +98,9 @@ for (const s of [...screens].sort((a, b) => a.order - b.order)) {
   for (const row of s.buttons || []) {
     const out = [];
     for (const b of row) {
-      if (b.kind !== 'callback' && b.kind !== 'url') { stats.dropped++; continue; }
+      // A link stays a link
+      if (b.kind === 'url' && /^https?:\/\//.test(b.url || '')) { out.push({ text: b.text, action: `url:${b.url}` }); stats.linked++; continue; }
+      if (b.kind !== 'callback' && b.kind !== 'keyboard') { stats.dropped++; continue; }
       if (isBack(b)) { if (mergeInto) { out.push({ text: b.text, action: 'menu' }); stats.back++; } else if (menuKey) { out.push({ text: b.text, action: `page:${menuKey}` }); stats.back++; } else stats.dropped++; continue; }
       const target = targetOf(s, b);
       if (target && keyOf.get(target.key) !== keyOf.get(s.key) && (!mergeInto || only.has(keyOf.get(target.key)))) { out.push({ text: b.text, action: `page:${keyOf.get(target.key)}` }); stats.linked++; }
@@ -101,7 +117,8 @@ for (const s of [...screens].sort((a, b) => a.order - b.order)) {
     html = blank(rest) ? NO_KEY : rest.trim();
     stats.keys = (stats.keys || 0) + 1;
   }
-  pages.push({ key: keyOf.get(s.key), html, media: s.media, buttons: rows });
+  const triggers = typedOf(s);
+  pages.push({ key: keyOf.get(s.key), html, media: s.media, buttons: rows, ...(triggers.length ? { triggers } : {}) });
   stats.pages++;
 }
 // The image of each page kept: all of them for a new style, the chosen ones when merging
@@ -112,11 +129,23 @@ async function withImages(list) {
 }
 
 console.log(`@${bot}: ${stats.pages} pages, ${stats.images} with an image, ${stats.back} back buttons, ${stats.linked} linked buttons, ${stats.dropped} dropped${stats.keys ? `, PGP key left out of ${stats.keys}` : ''}`);
-if (dry && !mergeInto) { console.log('Dry run: nothing written.'); process.exit(0); }
+console.log(`Profile: ${profile.name || '(not captured: explore the bot again to read it)'}${profile.commands?.length ? `, ${profile.commands.length} commands` : ''}${profile.photo ? ', photo' : ''}`);
+
+// The bot the style goes to, checked before anything is written (an owner's own bots only)
+const target = applyTo ? await prisma.telegramBot.findUnique({ where: { id: applyTo } }) : null;
+if (applyTo && !target) { console.error(`Bot #${applyTo} not found among your bots.`); process.exit(1); }
+async function applied(style) {
+  if (!target) return;
+  if (dry) { console.log(`Would apply the style to @${target.username}.`); return; }
+  await applyStyle(target.id, style.id);
+  console.log(`Style applied to @${target.username}: profile, commands and photo sent to Telegram.`);
+}
 
 if (mergeInto) {
-  const style = await prisma.botStyle.findFirst({ where: { name: mergeInto } });
+  // Your own style first; a shared preset of the platform is read-only for an owner
+  const style = await prisma.botStyle.findFirst({ where: { name: mergeInto }, orderBy: { tenantId: 'desc' } });
   if (!style) { console.error(`No style called "${mergeInto}".`); process.exit(1); }
+  if (currentTenant() && style.tenantId !== currentTenant()) { console.error(`"${mergeInto}" is a shared style of the platform: pick one of your own styles, or make a replica.`); process.exit(1); }
   const old = style.look || {};
   const before = new Map((old.pages || []).map(pg => [pg.key, pg]));
   const picked = pages.filter(pg => only.has(pg.key));
@@ -144,22 +173,50 @@ if (mergeInto) {
     const url = await imageUrl(screen.media);
     if (url && url !== current) { images[slot] = url; pictures.push(`${slot} updated`); }
   }
-  if (dry) { console.log(`Dry run: nothing written. Images to upload: ${media.stats.uploaded}${pictures.length ? `; ${pictures.join(', ')}` : ''}.`); process.exit(0); }
-  await prisma.botStyle.update({
+  if (dry) { await applied(style); console.log(`Dry run: nothing written. Images to upload: ${media.stats.uploaded}${pictures.length ? `; ${pictures.join(', ')}` : ''}.`); process.exit(0); }
+  const updated = await prisma.botStyle.update({
     where: { id: style.id },
     data: { look: { ...old, images, pages: [...kept, ...chosen.map(pg => ({ ...pg, title: titles[pg.key] || pg.key, buttons: pg.buttons.length ? pg.buttons : [[{ text: '⇆ Back', action: 'menu' }]] }))] } },
   });
   console.log(`Style "${mergeInto}": ${chosen.length} information pages copied, pictures: ${pictures.join(', ') || 'unchanged'}. Images: ${media.stats.uploaded} uploaded, ${media.stats.reused} already online. Catalog and payments stay the shop's.`);
+  await applied(updated);
   await prisma.$disconnect();
   process.exit(0);
 }
 
+// The replica: browsed without an account like the original (commands layout),
+// /start opens its first screen, typed commands open their pages, its profile
+// and command menu are the original's
 const home = startScreen ? keyOf.get(startScreen.key) : '';
-const look = { pages: await withImages(pages), home, upperTitles: false };
-const existing = await prisma.botStyle.findFirst({ where: { name } });
-const data = { name, look, source: `@${bot}` };
-const style = existing
-  ? await prisma.botStyle.update({ where: { id: existing.id }, data })
+// Without the captured profile: the commands the start and menu screens offer
+// (not the hundreds of product commands), else the first few commands seen
+const offered = [startScreen, menuScreen].filter(Boolean).flatMap(sc => String(sc.raw || sc.html || '').match(/(?<![\w/])\/[A-Za-z][A-Za-z0-9_]{0,31}/g) || []);
+const product = c => /^\/p\d*_/.test(c);
+const pageCommands = [...new Set((offered.length ? offered : screens.map(commandOf)).filter(c => c && c !== '/start' && !product(c)))].slice(0, 15)
+  .map(c => ({ command: cmdName(c), description: cmdName(c) }));
+const commands = (profile.commands?.length ? profile.commands : pageCommands)
+  .map(c => ({ command: cmdName(c.command).slice(0, 32), description: String(c.description || c.command).slice(0, 256) }))
+  .filter(c => /^[a-z0-9_]{1,32}$/.test(c.command));
+const photo = profile.photo ? await imageUrl(profile.photo) : null;
+const look = {
+  layout: 'commands', siteLinks: false, upperTitles: false, home,
+  pages: await withImages(pages),
+  profile: {
+    name: (profile.name || `@${bot}`).slice(0, 64),
+    shortDescription: (profile.about || '').slice(0, 120),
+    description: (profile.description || '').slice(0, 512),
+    ...(commands.length ? { commands } : {}),
+    ...(photo ? { photo } : {}),
+  },
+};
+console.log(`Replica "${name}": ${look.pages.length} pages, home ${home || '(none)'}, ${commands.length} commands${photo ? ', photo' : profile.photo ? ', photo (uploaded on the real import)' : ''}.`);
+if (dry) { await applied({ id: 0 }); console.log('Dry run: nothing written.'); process.exit(0); }
+const existing = await prisma.botStyle.findFirst({ where: { name }, orderBy: { tenantId: 'desc' } });
+const mine = existing && (!currentTenant() || existing.tenantId === currentTenant()) ? existing : null;
+const data = { name, look, source: `@${bot}`, capture: { bot, profile } };
+const style = mine
+  ? await prisma.botStyle.update({ where: { id: mine.id }, data })
   : await prisma.botStyle.create({ data });
-console.log(`Style "${name}" ${existing ? 'updated' : 'created'} (id ${style.id}). Open it in Admin → Telegram bots → Styles.`);
+console.log(`Style "${name}" ${mine ? 'updated' : 'created'} (id ${style.id}).`);
+await applied(style);
 await prisma.$disconnect();

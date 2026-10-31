@@ -241,6 +241,8 @@ ${body}` } });
     }
     // The style's own commands: menu, shelves, /p<id>, pages, custom order
     const typed = cmd && cmd !== '/start' ? await resolveCommand(cmd) : null;
+    // A replica's reply-keyboard button, or text the original answered: its page
+    const trigger = priv && !cmd ? (look().pages || []).find(p => (p.triggers || []).includes(text)) : null;
 
     if (cmd === '/start') {
       await show(msg.chat.id, priv ? await screenFor(msg.from, 'home') : await homeScreen());
@@ -248,6 +250,8 @@ ${body}` } });
       const [kind, a, b] = typed.split(':');
       await show(msg.chat.id, priv ? await screenFor(msg.from, typed)
         : kind === 'cat' ? await shelfScreen(a, b) : kind === 'pg' ? pageScreen(a) || await menuScreen() : await menuScreen());
+    } else if (trigger) {
+      await show(msg.chat.id, await screenFor(msg.from, `pg:${trigger.key}`));
     } else if (cmd === '/menu' || cmd === '/categories') {
       await show(msg.chat.id, priv ? await screenFor(msg.from, 'menu') : await menuScreen());
     } else if (cmd === '/deals' || cmd === '/firesale') {
