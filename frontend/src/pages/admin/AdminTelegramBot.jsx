@@ -137,6 +137,8 @@ function BotCard({ bot, styles, shelves: allShelves, busy, act, post, defaultOpe
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         {bot.isPrimary && <button type="button" className="admin-btn admin-btn-primary" disabled={!!busy} onClick={() => act('test', () => post('test'), 'Test message sent.')}>{busy === 'test' ? 'Sending…' : 'Send a test message'}</button>}
         {!bot.isPrimary && <button type="button" className="admin-btn admin-btn-secondary" disabled={!!busy} onClick={() => act(`primary${id}`, () => post(`bots/${id}/primary`), `@${bot.username} now posts the shop's notifications. Pick its chat under Chats.`)}>Make primary</button>}
+        <button type="button" className="admin-btn admin-btn-danger" disabled={!!busy} style={{ marginLeft: 'auto' }}
+          onClick={async () => await askConfirm(`Unlink @${bot.username}? It stops answering customers here.`, { okLabel: 'Unlink', danger: true }) && act(`unlink${id}`, () => post(`bots/${id}/unlink`), 'Bot unlinked.')}>Unlink this bot</button>
       </div>
       </>)}
 
@@ -202,8 +204,6 @@ function BotCard({ bot, styles, shelves: allShelves, busy, act, post, defaultOpe
           Upload a photo (JPG)
           <input type="file" accept="image/jpeg" hidden onChange={e => uploadPhoto(e.target.files?.[0], e.target)} />
         </label>
-        <button type="button" className="admin-btn admin-btn-danger" disabled={!!busy}
-          onClick={async () => await askConfirm(`Unlink @${bot.username}? It stops answering customers here.`, { okLabel: 'Unlink', danger: true }) && act(`unlink${id}`, () => post(`bots/${id}/unlink`), 'Bot unlinked.')}>Unlink</button>
       </div>
       </>)}
       </div>

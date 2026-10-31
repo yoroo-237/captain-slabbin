@@ -212,8 +212,10 @@ export async function linkBot(token, chatId, { styleId = null, primary = false, 
   const me = await tg(token, 'getMe');
   if (await prisma.telegramBot.findUnique({ where: { token } })) throw fail(`@${me.username} is already linked.`);
   // Bots platform: linked in another member's shop (looked up beyond this owner's own)
-  if (await unscoped(() => prisma.telegramBot.findUnique({ where: { token } }))) {
-    throw fail(`@${me.username} is already linked by another account of the platform. Unlink it there first.`, 409);
+  const elsewhere = await unscoped(() => prisma.telegramBot.findUnique({ where: { token }, select: { tenantId: true } }));
+  if (elsewhere) {
+    const owner = elsewhere.tenantId ? await unscoped(() => prisma.user.findUnique({ where: { id: elsewhere.tenantId }, select: { username: true } })) : null;
+    throw fail(`@${me.username} is already linked by the account ${owner?.username || 'of the super admin'}. Sign in with it and unlink the bot there (Bots, open the bot, Unlink this bot), then link it here.`, 409);
   }
   const first = !(await prisma.telegramBot.count());
   const isPrimary = first || primary;
