@@ -2,6 +2,7 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { readFile, readdir } from 'fs/promises';
 import { prisma } from '../db.js';
+import { unscoped } from '../tenant.js';
 import { env } from '../config/env.js';
 import { lookOf, isShopStyle } from './telegramStyle.js';
 import { pushStaff } from './push.service.js';
@@ -210,6 +211,10 @@ export async function inspectBot(token, { publicBase, takeOver = false } = {}) {
 export async function linkBot(token, chatId, { styleId = null, primary = false, publicBase }) {
   const me = await tg(token, 'getMe');
   if (await prisma.telegramBot.findUnique({ where: { token } })) throw fail(`@${me.username} is already linked.`);
+  // Bots platform: linked in another member's shop (looked up beyond this owner's own)
+  if (await unscoped(() => prisma.telegramBot.findUnique({ where: { token } }))) {
+    throw fail(`@${me.username} is already linked by another account of the platform. Unlink it there first.`, 409);
+  }
   const first = !(await prisma.telegramBot.count());
   const isPrimary = first || primary;
   const secret = crypto.randomBytes(24).toString('hex');

@@ -89,10 +89,12 @@ function run(userId, name, cmd, args, cwd, childEnv = CHILD_ENV) {
 // The member's live output: what ran so far, then each new line (Server-Sent Events)
 export function subscribe(userId, req, res) {
   const w = ws(userId);
-  res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive', 'x-accel-buffering': 'no' });
+  // No Connection header: HTTP/2 (Railway's edge) refuses it and drops the stream
+  req.socket.setTimeout(0);
+  res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache, no-transform', 'x-accel-buffering': 'no' });
   res.write(`event: init\ndata: ${JSON.stringify({ state: state(userId), log: w.log })}\n\n`);
   w.clients.add(res);
-  const beat = setInterval(() => res.write(': beat\n\n'), 25000); // keeps proxies from closing it
+  const beat = setInterval(() => res.write(': beat\n\n'), 15000); // keeps proxies from closing an idle stream
   req.on('close', () => { clearInterval(beat); w.clients.delete(res); });
 }
 

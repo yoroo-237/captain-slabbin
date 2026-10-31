@@ -37,6 +37,8 @@ const PATTERNS = [
   [/^([\d.,]+)% off$/, (_, n) => `${n} % de remise`],
   [/^Delete "(.+)"\?$/, (_, n) => `Supprimer « ${n} » ?`],
   [/^Telegram asks to wait (\d+) s before trying again\.$/, (_, n) => `Telegram demande d’attendre ${n} s avant de réessayer.`],
+  [/^@(\w+) is already linked by another account of the platform\. Unlink it there first\.$/, (_, b) => `@${b} est déjà lié par un autre compte de la plateforme. Déliez-le d’abord là-bas.`],
+  [/^@(\w+) is already linked\.$/, (_, b) => `@${b} est déjà lié.`],
   [/^Edit (.+)$/, (_, n) => (FR[n] ? `Modifier ${FR[n].toLowerCase()}` : `Modifier ${n}`)],
 ]
 
