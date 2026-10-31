@@ -182,6 +182,29 @@ ${menu.text}` };
     }
   };
 
+  // A replica of a captured bot answers with its own screens only: no account,
+  // no shop screens (wallet, cart, orders), unknown input brings back its home
+  if (look().replica) {
+    const cbq = upd.callback_query;
+    const m = upd.message;
+    const chatId = cbq?.message?.chat?.id || m?.chat?.id;
+    if (!chatId) return;
+    const home = () => homeScreen(null);
+    if (cbq) {
+      await tg(bot.token, 'answerCallbackQuery', { callback_query_id: cbq.id }).catch(() => {});
+      const [kind, key] = String(cbq.data || '').split(':');
+      return show(chatId, (kind === 'pg' && pageScreen(key)) || home(), cbq.message.message_id);
+    }
+    const text = m?.text?.trim();
+    if (!text) return;
+    const word = text.split(/\s+/)[0];
+    const cmd = word.startsWith('/') ? word.split('@')[0].toLowerCase() : null;
+    const typed = cmd && cmd !== '/start' ? await resolveCommand(cmd) : null;
+    const page = typed?.startsWith('pg:') ? typed.slice(3)
+      : !cmd ? (look().pages || []).find(p => (p.triggers || []).includes(text))?.key : null;
+    return show(chatId, (page && pageScreen(page)) || home());
+  }
+
   try {
     const cb = upd.callback_query;
     if (cb) {

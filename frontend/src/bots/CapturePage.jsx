@@ -297,8 +297,8 @@ function ImportDialog({ bot, kind, bots, onClose, onStart }) {
         {kind === 'style' ? (
           <>
             <p className="small muted" style={{ margin: 0 }}>
-              {L('Crée un style qui reproduit le bot capturé : ses écrans et leurs images, ses boutons, ses commandes, son nom, sa description et sa photo de profil. Il se consulte sans compte, comme l’original. Un style qui porte déjà ce nom est remplacé.',
-                'Makes a style that reproduces the captured bot: its screens and their pictures, its buttons, its commands, its name, description and profile photo. It is browsed without an account, like the original. A style with the same name is replaced.')}
+              {L('Crée un style avec les écrans du bot capturé, leurs images, leurs boutons et ses commandes. Il se consulte sans compte, comme l’original. Votre bot garde son propre nom, sa description et sa photo : une réplique ne se fait jamais passer pour l’autre vendeur. Les écrans anti-phishing (« secret phrase ») ne sont pas copiés. Un style qui porte déjà ce nom est remplacé.',
+                'Makes a style with the captured bot’s screens, their pictures, their buttons and its commands. It is browsed without an account, like the original. Your bot keeps its own name, description and photo: a replica never passes for the other seller. Anti-phishing screens (“secret phrase”) are not copied. A style with the same name is replaced.')}
             </p>
             <label className="field">{L('Nom du style', 'Style name')}<input value={name} onChange={e => setName(e.target.value)} required maxLength={60} /></label>
             <label className="field">{L('L’appliquer tout de suite au bot', 'Apply it right away to the bot')}
@@ -307,7 +307,7 @@ function ImportDialog({ bot, kind, bots, onClose, onStart }) {
                 {bots.map(b => <option key={b.id} value={b.id}>@{b.username}{b.style ? L(` (style actuel : ${b.style})`, ` (current style: ${b.style})`) : ''}</option>)}
               </select>
             </label>
-            {applyTo && <p className="small bad" style={{ margin: 0 }}>{L(`Le profil du bot (nom, description, commandes, photo) est remplacé sur Telegram par celui de @${bot}.`, `The bot’s profile (name, description, commands, photo) is replaced on Telegram by @${bot}’s.`)}</p>}
+            {applyTo && <p className="small bad" style={{ margin: 0 }}>{L('Le bot répond aussitôt avec les écrans de la réplique, et son menu de commandes change. Son nom et sa photo ne changent pas.', 'The bot answers at once with the replica’s screens, and its command menu changes. Its name and photo stay the same.')}</p>}
           </>
         ) : (
           <>
@@ -518,8 +518,8 @@ export default function CapturePage() {
           <button className="btn" onClick={refresh}>{L('Actualiser', 'Refresh')}</button>
         </div>
         <p className="small muted" style={{ marginTop: -8 }}>
-          {L('« Répliquer le bot » en fait un style (écrans, boutons, commandes, profil et photo) et peut l’appliquer tout de suite à un de vos bots. « Importer les produits » range ses produits dans un catalogue. Une capture faite avant cette version ne contient pas le profil : explorez le bot à nouveau (sans « Tout recommencer », rien n’est rejoué) pour le lire.',
-            '“Replicate the bot” makes it a style (screens, buttons, commands, profile and photo) and can apply it right away to one of your bots. “Import the products” puts its products in a catalog. A capture made before this version has no profile: explore the bot again (without “Start over”, nothing is played again) to read it.')}
+          {L('« Répliquer le bot » en fait un style (écrans, boutons, commandes) et peut l’appliquer tout de suite à un de vos bots, qui garde son nom et sa photo. « Importer les produits » range ses produits dans un catalogue. Une capture faite avant cette version ne contient pas le profil : explorez le bot à nouveau (sans « Tout recommencer », rien n’est rejoué) pour le lire.',
+            '“Replicate the bot” makes it a style (screens, buttons, commands) and can apply it right away to one of your bots, which keeps its name and photo. “Import the products” puts its products in a catalog. A capture made before this version has no profile: explore the bot again (without “Start over”, nothing is played again) to read it.')}
         </p>
         {captures.length === 0
           ? <div className="empty-state" style={{ marginTop: 18 }}>{L('Aucune capture pour l’instant. Lancez une exploration ci-dessus.', 'No capture yet. Start an exploration above.')}</div>

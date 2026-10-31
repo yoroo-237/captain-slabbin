@@ -254,7 +254,13 @@ export async function applyStyle(botId, styleId) {
   if (styleId && !style) throw fail('This style no longer exists.', 404);
   const bot = await prisma.telegramBot.update({ where: { id: Number(botId) }, data: { styleId: style?.id || null }, include: { style: true } });
   if (!style) return bot;
-  const { profile } = lookOf(style);
+  const { profile, replica } = lookOf(style);
+  // A replica of a captured bot gives its screens and commands, never its identity:
+  // the bot keeps its own name, descriptions and photo
+  if (replica) {
+    await installNavigation(bot);
+    return Object.assign(bot, { photo: 'none', photoError: null });
+  }
   // Telegram rate-limits renames hard (one per several minutes): only rename when it changes
   const name = profile.name.slice(0, 64);
   if ((await tg(bot.token, 'getMyName').catch(() => null))?.name !== name) await tg(bot.token, 'setMyName', { name });

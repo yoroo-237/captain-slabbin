@@ -4,9 +4,9 @@
 //   node scripts/import-bot-capture.js <capture folder> --merge-into "QT Market" [--pages a,b,c] [--apply-to <bot id>] [--dry]
 //
 // The first form is a replica of the captured bot: its screens as pages, browsed
-// without an account like the original, its profile (name, about, description,
-// command menu, photo), its /start screen as home. --apply-to then gives the
-// style to one of the owner's bots and pushes the profile to Telegram.
+// without an account like the original, its command menu, its /start screen as
+// home. Never its identity: the bot it is applied to (--apply-to) keeps its own
+// name, descriptions and photo, and anti-phishing screens are left out.
 // The second form keeps the shop's catalog and payments: it only copies the
 // information pages (--pages, command names) and the welcome/menu pictures into an existing style, whose shelves,
 // products and checkout stay the shop's own.
@@ -34,7 +34,12 @@ const mergeInto = opt('--merge-into');
 const applyTo = Number(opt('--apply-to')) || null;
 if (!dir) { console.error('Usage: node scripts/import-bot-capture.js <capture folder> [--name "Style name"] [--apply-to <bot id>] [--dry]'); process.exit(1); }
 
-const { bot, screens, profile = {} } = JSON.parse(await fs.readFile(path.join(dir, 'data.json'), 'utf8'));
+const { bot, screens: captured, profile = {} } = JSON.parse(await fs.readFile(path.join(dir, 'data.json'), 'utf8'));
+// Anti-phishing screens ("your secret phrase…") hold the capturing account's own
+// secret: never copied, every customer of the replica would see it
+const PERSONAL = /secret phrase|phrase secr[eè]te|scam ?bot|phishing/i;
+const screens = captured.filter(s => !PERSONAL.test(s.raw || s.html || ''));
+const personal = captured.length - screens.length;
 const name = (opt('--name') || `Réplique @${bot}`).slice(0, 60);
 const byKey = new Map(screens.map(s => [s.key, s]));
 const isBack = b => /⇇|⇆|^\W*back\b/i.test(b.text) || /^\/back_/.test(b.data || '');
@@ -51,7 +56,9 @@ for (const s of [...screens].sort((a, b) => a.order - b.order)) {
   used.add(key);
   keyOf.set(s.key, key);
 }
-const startScreen = screens.find(s => (s.sources || []).includes('/start'));
+// /start can send several messages: home is the one that carries the menu (most buttons)
+const startScreen = screens.filter(s => (s.sources || []).includes('/start'))
+  .sort((a, b) => (b.buttons || []).flat().length - (a.buttons || []).flat().length || a.order - b.order)[0];
 // The menu: what /menu opens, else the first screen of a short /v_… command (QT-like
 // bots), else the /start screen
 const menuScreen = screens.find(s => (s.sources || []).includes('/menu'))
@@ -138,7 +145,7 @@ async function applied(style) {
   if (!target) return;
   if (dry) { console.log(`Would apply the style to @${target.username}.`); return; }
   await applyStyle(target.id, style.id);
-  console.log(`Style applied to @${target.username}: profile, commands and photo sent to Telegram.`);
+  console.log(`Style applied to @${target.username}: screens and commands (the bot keeps its own name and photo).`);
 }
 
 if (mergeInto) {
@@ -197,19 +204,15 @@ const pageCommands = [...new Set((offered.length ? offered : screens.map(command
 const commands = (profile.commands?.length ? profile.commands : pageCommands)
   .map(c => ({ command: cmdName(c.command).slice(0, 32), description: String(c.description || c.command).slice(0, 256) }))
   .filter(c => /^[a-z0-9_]{1,32}$/.test(c.command));
-const photo = profile.photo ? await imageUrl(profile.photo) : null;
 const look = {
   layout: 'commands', siteLinks: false, upperTitles: false, home,
   pages: await withImages(pages),
-  profile: {
-    name: (profile.name || `@${bot}`).slice(0, 64),
-    shortDescription: (profile.about || '').slice(0, 120),
-    description: (profile.description || '').slice(0, 512),
-    ...(commands.length ? { commands } : {}),
-    ...(photo ? { photo } : {}),
-  },
+  // Screens and commands only: the bot it is applied to keeps its own name,
+  // descriptions and photo (a copied identity would pass for the other seller)
+  replica: true,
+  ...(commands.length ? { profile: { commands } } : {}),
 };
-console.log(`Replica "${name}": ${look.pages.length} pages, home ${home || '(none)'}, ${commands.length} commands${photo ? ', photo' : profile.photo ? ', photo (uploaded on the real import)' : ''}.`);
+console.log(`Replica "${name}": ${look.pages.length} pages, home ${home || '(none)'}, ${commands.length} commands${personal ? `, ${personal} anti-phishing screen(s) left out` : ''}. The bot keeps its own name and photo.`);
 if (dry) { await applied({ id: 0 }); console.log('Dry run: nothing written.'); process.exit(0); }
 const existing = await prisma.botStyle.findFirst({ where: { name }, orderBy: { tenantId: 'desc' } });
 const mine = existing && (!currentTenant() || existing.tenantId === currentTenant()) ? existing : null;
