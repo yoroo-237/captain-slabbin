@@ -371,7 +371,7 @@ function StylesTab({ bots, styles, captures, shelves, busy, act, post, reload })
   // stopped, finished), then this same style is rebuilt and its bots updated.
   // The progress is in Captures (bots platform).
   const refresh = s => act(`refresh${s.id}`, () => adminFetch(`/admin/capture/styles/${s.id}/refresh`, { method: 'POST', body: '{}' }),
-    `Capture of @${s.replicaOf} resumed. When it ends, the style "${s.name}" and its bots are updated. Follow it in Captures.`)
+    `Capture of @${s.sourceBot} resumed. When it ends, the style "${s.name}" and its bots are updated. Follow it in Captures.`)
   const recreate = body => act('import', async () => {
     const { style } = await post('styles/import', body)
     setToken('')
@@ -393,10 +393,10 @@ function StylesTab({ bots, styles, captures, shelves, busy, act, post, reload })
             <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid #eee' }}>
               <span><b>{s.name}</b>{s.replicaOf ? <span style={{ color: '#999' }}> · replica of @{s.replicaOf}</span> : s.source ? <span style={{ color: '#999' }}> · recreated from {s.source}</span> : ''}</span>
               <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                {captures && s.replicaOf && (
+                {captures && s.sourceBot && (
                   <button type="button" className="admin-btn admin-btn-primary admin-btn-sm" disabled={!!busy}
-                    title={`Capture @${s.replicaOf} again (resumed, then finished) and rebuild this style from it`}
-                    onClick={async () => await askConfirm(`Update "${s.name}" from @${s.replicaOf}? The capture resumes where it stopped and runs to the end, then this style is rebuilt and the bots using it get its new screens and commands.`, { okLabel: 'Update' }) && refresh(s)}>
+                    title={`Capture @${s.sourceBot} again (resumed, then finished) and update this style from it`}
+                    onClick={async () => await askConfirm(`Update "${s.name}" from @${s.sourceBot}? The capture resumes where it stopped and runs to the end, then ${s.replica ? 'this style is rebuilt and the bots using it get its new screens and commands' : 'its information pages and its welcome and menu pictures are updated (its catalog, cart and checkout stay as they are)'}.`, { okLabel: 'Update' }) && refresh(s)}>
                     {busy === `refresh${s.id}` ? 'Starting…' : 'Update from the bot'}
                   </button>
                 )}

@@ -205,7 +205,11 @@ export async function telegramStatus() {
   }));
   // (a style's look can be large: only the catalog it sells goes to the admin)
   return {
-    bots: rows, styles: styles.map(({ look, capture, ...s }) => ({ ...s, catalog: look?.catalog || null, replicaOf: look?.replica ? capture?.bot || null : null })),
+    bots: rows, styles: styles.map(({ look, capture, ...s }) => {
+      const from = String(capture?.bot || String(s.source || '').replace(/^@/, '')).replace(/^@/, '');
+      return { ...s, catalog: look?.catalog || null, replicaOf: look?.replica ? capture?.bot || null : null,
+        sourceBot: /^[A-Za-z][A-Za-z0-9_]{2,63}$/.test(from) ? from : null, replica: !!look?.replica };
+    }),
     captures: env.capture.enabled,
     staffLogin: { enabled: await staffLoginEnabled(), domain: siteDomain() },
   };

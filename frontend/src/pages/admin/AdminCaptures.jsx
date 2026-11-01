@@ -32,10 +32,22 @@ function TelegramAccount() {
     try { await fn() } catch (err) { setError(err.message) } finally { setBusy('') }
   }
   const me = account?.profiles?.find(p => p.name === 'explorer')
+  const [changingKeys, setChangingKeys] = useState(false)
+  // Signing out closes the session on Telegram (the device disappears from it); the
+  // next sign-in can use any number
+  const switchAccount = step('out', async () => {
+    if (!(await askConfirm('Sign this account out? Captures then need a sign-in again, with this or another number.', { okLabel: 'Sign out', danger: true }))) return
+    await cap('/account/sign-out', { profile: 'explorer' })
+    for (let i = 0; i < 15; i++) {
+      await new Promise(r => setTimeout(r, 2000))
+      const a = await cap('/account?profile=explorer').catch(() => null)
+      if (!a?.profiles?.find(p => p.name === 'explorer')?.authorized) { setAccount(a); setStage('phone'); return }
+    }
+  })
 
   const saveKeys = step('keys', async () => {
     await adminFetch('/admin/capture/api-keys', { method: 'PUT', body: JSON.stringify({ apiId: form.apiId, apiHash: form.apiHash }) })
-    setForm(f => ({ ...f, apiHash: '' })); await load()
+    setForm(f => ({ ...f, apiHash: '' })); setChangingKeys(false); await load()
   })
   const sendCode = step('code', async () => {
     const r = await cap('/account/send-code', { profile: 'explorer', phone: form.phone })
@@ -62,8 +74,26 @@ function TelegramAccount() {
           </div>
           <button className="admin-btn admin-btn-primary" disabled={!!busy}>{busy === 'keys' ? 'Saving…' : 'Save the keys'}</button>
         </form>
+      ) : changingKeys ? (
+        <form onSubmit={saveKeys}>
+          <p style={{ ...muted, marginTop: 0 }}>New API keys from <a href="https://my.telegram.org" target="_blank" rel="noreferrer">my.telegram.org</a> (API development tools). The account signed in now stays signed in.</p>
+          <div className="admin-grid-2">
+            <div className="admin-form-group"><label className="admin-label">api_id</label><input className="admin-input" inputMode="numeric" value={form.apiId} onChange={set('apiId')} required /></div>
+            <div className="admin-form-group"><label className="admin-label">api_hash</label><input className="admin-input" autoComplete="off" value={form.apiHash} onChange={set('apiHash')} required /></div>
+          </div>
+          <div className="admin-gap-actions">
+            <button className="admin-btn admin-btn-primary" disabled={!!busy}>{busy === 'keys' ? 'Saving…' : 'Save the keys'}</button>
+            <button type="button" className="admin-btn admin-btn-secondary" onClick={() => setChangingKeys(false)}>Cancel</button>
+          </div>
+        </form>
       ) : me?.authorized ? (
-        <p style={{ margin: 0 }}>Signed in as <b>{me.first_name}</b>{me.username ? ` (@${me.username})` : ''} · {me.phone}. Captures use this account.</p>
+        <>
+          <p style={{ marginTop: 0 }}>Signed in as <b>{me.first_name}</b>{me.username ? ` (@${me.username})` : ''} · {me.phone}. Captures use this account.</p>
+          <div className="admin-gap-actions">
+            <button type="button" className="admin-btn admin-btn-secondary" disabled={!!busy} onClick={switchAccount}>{busy === 'out' ? 'Signing out…' : 'Use another account'}</button>
+            <button type="button" className="admin-btn admin-btn-secondary" disabled={!!busy} onClick={() => { setChangingKeys(true); setForm(f => ({ ...f, apiId: keys.apiId, apiHash: '' })) }}>Change the API keys</button>
+          </div>
+        </>
       ) : (
         <form onSubmit={stage === 'phone' ? sendCode : signIn}>
           <p style={{ ...muted, marginTop: 0 }}>Sign in the account that browses the bots. Telegram sends the code in its app, not by SMS.</p>
@@ -103,7 +133,7 @@ export default function AdminCaptures() {
   const load = useCallback(async () => {
     try {
       const [t, c] = await Promise.all([adminFetch('/admin/telegram'), cap('/captures')])
-      setStyles((t.styles || []).filter(s => s.replicaOf).map(s => ({ ...s, bots: (t.bots || []).filter(b => b.styleId === s.id).map(b => b.username) })))
+      setStyles((t.styles || []).filter(s => s.sourceBot).map(s => ({ ...s, bots: (t.bots || []).filter(b => b.styleId === s.id).map(b => b.username) })))
       setCaptures(c.captures || [])
     } catch (e) { setError(e.message) }
   }, [])
@@ -120,7 +150,9 @@ export default function AdminCaptures() {
   const busy = state.running
   const captureOf = bot => captures.find(c => c.name === String(bot).toLowerCase())
   const update = async s => {
-    if (!(await askConfirm(`Update "${s.name}" from @${s.replicaOf}? The capture resumes where it stopped and runs to the end, then this style is rebuilt and the bots using it get its new screens and commands.`, { okLabel: 'Update' }))) return
+    const what = s.replica ? 'this style is rebuilt and the bots using it get its new screens and commands'
+      : 'its information pages and its welcome and menu pictures are updated (its catalog, cart and checkout stay as they are)'
+    if (!(await askConfirm(`Update "${s.name}" from @${s.sourceBot}? The capture resumes where it stopped and runs to the end, then ${what}.`, { okLabel: 'Update' }))) return
     setError('')
     try { await cap(`/styles/${s.id}/refresh`, {}) } catch (e) { setError(e.message) }
   }
@@ -138,25 +170,25 @@ export default function AdminCaptures() {
       <TelegramAccount />
 
       <div className="admin-card">
-        <h2 className="admin-card-title">Replica styles</h2>
+        <h2 className="admin-card-title">Styles</h2>
         {!styles ? <p style={muted}>Loading…</p> : styles.length === 0 ? (
-          <p style={{ ...muted, marginTop: 0 }}>No replica style yet. A style made by replicating a bot shows here, ready to be updated from that bot.</p>
+          <p style={{ ...muted, marginTop: 0 }}>No style made from a bot yet. A style copied or replicated from a bot shows here, ready to be updated from that bot.</p>
         ) : (() => {
           const s = styles.find(x => String(x.id) === String(picked)) || styles[0]
-          const c = captureOf(s.replicaOf)
+          const c = captureOf(s.sourceBot)
           return (
             <>
               <div className="admin-form-group">
                 <label className="admin-label">Style to update</label>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <select className="admin-input" style={{ maxWidth: 420 }} value={s.id} onChange={e => setPicked(e.target.value)} disabled={busy}>
-                    {styles.map(x => <option key={x.id} value={x.id}>{x.name} (from @{x.replicaOf})</option>)}
+                    {styles.map(x => <option key={x.id} value={x.id}>{x.name} (from @{x.sourceBot})</option>)}
                   </select>
                   <button type="button" className="admin-btn admin-btn-primary" disabled={busy} onClick={() => update(s)}>{busy ? 'Updating…' : 'Update'}</button>
                 </div>
               </div>
               <div style={muted}>
-                From <b>@{s.replicaOf}</b> · capture: {c ? `${c.screens} screens, ${c.queued ? `${c.queued} actions left` : 'complete'}, ${new Date(c.updated).toLocaleDateString()}` : 'not on this server yet (the update starts it)'}
+                From <b>@{s.sourceBot}</b> · {s.replica ? 'replica: rebuilt from the bot' : 'shop style: information pages and pictures only'} · capture: {c ? `${c.screens} screens, ${c.queued ? `${c.queued} actions left` : 'complete'}, ${new Date(c.updated).toLocaleDateString()}` : 'not on this server yet (the update starts it)'}
                 {' · '}used by {s.bots.length ? s.bots.map(b => `@${b}`).join(', ') : 'no bot yet'}
               </div>
             </>

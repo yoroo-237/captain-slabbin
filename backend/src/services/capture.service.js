@@ -225,11 +225,16 @@ function exploreArgs(userId, b) {
   return args;
 }
 
-// The bots a style was replicated from: on the site, the only bots that may be
-// captured (to update their style), never any other
+// The bot a style comes from: the capture of a replica, else the bot it was
+// made or copied from (QT Market ← @QTMARKETBOT)
+export const sourceBotOf = style => {
+  const b = normalizeBot(style?.capture?.bot || String(style?.source || '').replace(/^@/, ''));
+  return BOT.test(b) ? b : null;
+};
+// On the site, the only bots that may be captured: those a style comes from
 export async function replicaBots() {
-  const styles = await prisma.botStyle.findMany({ select: { capture: true, look: true } });
-  return new Set(styles.filter(s => s.look?.replica && s.capture?.bot).map(s => normalizeBot(s.capture.bot).toLowerCase()));
+  const styles = await prisma.botStyle.findMany({ select: { capture: true, source: true } });
+  return new Set(styles.map(sourceBotOf).filter(Boolean).map(b => b.toLowerCase()));
 }
 const freeCaptures = () => env.platform === 'bots';
 
@@ -304,8 +309,11 @@ export async function refreshStyle(user, styleId) {
   const userId = Number(user.sub);
   const style = await prisma.botStyle.findUnique({ where: { id: Number(styleId) } });
   if (!style) throw Object.assign(new Error('Style not found.'), { status: 404 });
-  const bot = normalizeBot(style.capture?.bot || '');
-  if (!style.look?.replica || !BOT.test(bot)) throw bad('This style was not made from a capture: it has no bot to capture again.');
+  const bot = sourceBotOf(style);
+  if (!bot) throw bad('This style was not made from a capture: it has no bot to capture again.');
+  // A replica is rebuilt; a shop style (its own catalog and checkout) only gets
+  // the information pages and the welcome and menu pictures
+  const replica = !!style.look?.replica;
   const tenant = tenantOfStaff(user);
   if (tenant && style.tenantId !== tenant) throw bad('A shared style of the platform cannot be updated: make your own replica.');
   busy(userId);
@@ -315,12 +323,12 @@ export async function refreshStyle(user, styleId) {
   emit(userId, 'line', `== Mise à jour du style « ${style.name} » depuis @${bot}`);
   run(userId, 'Exploration', PYTHON, args, TOOL, await userEnv(userId), async code => {
     if (code !== 0) { emit(userId, 'line', `-- Capture inachevée : le style « ${style.name} » n'a pas été modifié.`); return; }
-    await importCapture(user, { bot, kind: 'style', dry: false, name: style.name, refresh: true });
+    await importCapture(user, { bot, kind: 'style', dry: false, name: style.name, refresh: true, merge: !replica });
   });
   return { ...state(userId), bot, style: style.name };
 }
 
-export async function importCapture(user, { bot, kind, dry, name, applyTo, catalog, refresh = false }) {
+export async function importCapture(user, { bot, kind, dry, name, applyTo, catalog, refresh = false, merge = false }) {
   // On the site a capture only ever updates the style it came from (refreshStyle)
   if (!freeCaptures() && !refresh) throw Object.assign(new Error('On this dashboard a capture only updates its own style: use "Update from the bot".'), { status: 403 });
   if (!IMPORTS[kind]) throw bad('Invalid import.');
@@ -331,7 +339,7 @@ export async function importCapture(user, { bot, kind, dry, name, applyTo, catal
   if (kind === 'style') {
     const s = String(name || '').trim();
     if (s && !STYLE.test(s)) throw bad('Invalid style name (letters, numbers, spaces, @ . _ and -).');
-    if (s) extra.push('--name', s);
+    if (s) extra.push(merge ? '--merge-into' : '--name', s);
     if (applyTo) {
       if (!Number.isInteger(Number(applyTo))) throw bad('Invalid bot.');
       extra.push('--apply-to', String(Number(applyTo)));
