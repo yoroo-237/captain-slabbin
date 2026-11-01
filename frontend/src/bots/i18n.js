@@ -49,6 +49,7 @@ const PATTERNS = [
   [/^ · replica of @(\w+)$/, (_, b) => ` · réplique de @${b}`],
   [/^This style was not made from a capture: it has no bot to capture again\.$/, () => 'Ce style ne vient pas d’une capture : il n’a pas de bot à capturer à nouveau.'],
   [/^A shared style of the platform cannot be updated: make your own replica\.$/, () => 'Un style partagé de la plateforme ne peut pas être mis à jour : faites votre propre réplique.'],
+  [/^Orders and messages of @(\w+) go to$/, (_, b) => `Les commandes et messages de @${b} vont à`],
   [/^Edit (.+)$/, (_, n) => (FR[n] ? `Modifier ${FR[n].toLowerCase()}` : `Modifier ${n}`)],
 ]
 

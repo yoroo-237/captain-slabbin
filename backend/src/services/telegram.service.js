@@ -1,4 +1,5 @@
 import axios from 'axios';
+import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { readFile, readdir } from 'fs/promises';
 import { prisma } from '../db.js';
@@ -118,6 +119,34 @@ const TAG = /#c(\d+)\b/;
 export async function sendTelegram(html, buttons, chatOverride) {
   const bot = await primaryBot();
   return sendAs(bot, chatOverride || bot?.chatId, html, buttons);
+}
+
+// Each bot can have its own staff chat (a person's Telegram linked to it, or a
+// group): a customer's orders and messages go there, from that bot, so the staff
+// sees them sorted by bot and answers each customer from it. A bot without one
+// falls back on the primary bot's chat.
+export async function staffBotFor(user) {
+  const own = user?.telegramBotId ? await findBot(user.telegramBotId) : null;
+  return own?.chatId ? own : primaryBot();
+}
+async function toStaff(user, html, buttons) {
+  const bot = await staffBotFor(user);
+  return sendAs(bot, bot?.chatId, html, buttons);
+}
+
+// "Receive them in my Telegram": a one-time link that makes the private chat of
+// whoever opens it (t.me/<bot>?start=inbox_…) this bot's staff chat
+export async function inboxLink(botId) {
+  const bot = await botOrFail(botId);
+  const t = jwt.sign({ inbox: bot.id }, env.jwtSecret, { expiresIn: '30m' });
+  return { url: `https://t.me/${bot.username}?start=inbox_${t}`, bot: bot.username };
+}
+export async function claimInbox(bot, chat, token) {
+  let id;
+  try { id = jwt.verify(token, env.jwtSecret).inbox; } catch { /* expired */ }
+  if (id !== bot.id) return { error: 'This link has expired or belongs to another bot. Make a new one in the admin (Bots, open the bot, Chats).' };
+  await prisma.telegramBot.update({ where: { id: bot.id }, data: { chatId: String(chat.id) } });
+  return { ok: true };
 }
 
 // Chats a bot was seen in through its webhook, newest first (max 10). A primary
@@ -303,7 +332,7 @@ export async function setPrimary(botId) {
   ]);
 }
 
-// Staff chat of the primary bot, picked among the chats it has been seen in
+// Staff chat of a bot (its orders and customer messages), picked among the chats it has been seen in
 export async function changeChat(botId, chatId) {
   const bot = await botOrFail(botId);
   await prisma.telegramBot.update({ where: { id: bot.id }, data: { chatId } });
@@ -374,7 +403,7 @@ export async function notifyWalletOrder(order, user, payments, { channel = 'site
   const link = adminLink(`/orders/${order.id}`);
   pushStaff({ title: `Paid order ${order.orderNumber}`, body: `${money(order.totalAmount)} · ${user.username}`, url: `/admin/orders/${order.id}`, tag: `order-${order.id}` });
   const via = user.telegramBotId ? await findBot(user.telegramBotId) : null;
-  const sent = await sendTelegram([
+  const sent = await toStaff(user, [
     `✅ <b>Paid order ${escapeHtml(order.orderNumber)}</b> (wallet)`,
     ...lines.map(escapeHtml),
     order.voucherCode ? `🎟 Voucher ${escapeHtml(order.voucherCode)}: −${money(order.discount)}` : null,
@@ -409,7 +438,7 @@ export async function notifyNewMessage(user, body) {
   const link = adminLink(`/messages/${user.id}`);
   pushStaff({ title: `Message from ${user.username}`, body: preview.slice(0, 140), url: `/admin/messages/${user.id}`, tag: `message-${user.id}` });
   const last = await prisma.order.findFirst({ where: { userId: user.id }, orderBy: { placedAt: 'desc' }, select: { orderNumber: true, status: true } });
-  return sendTelegram([
+  return toStaff(user, [
     `💬 <b>New message from ${escapeHtml(user.username)}</b>`,
     telegram ? `✈️ ${escapeHtml(telegram)}` : null,
     last ? `📦 Last order ${escapeHtml(last.orderNumber)} (${escapeHtml(last.status)})` : null,
@@ -418,12 +447,13 @@ export async function notifyNewMessage(user, body) {
   ].filter(v => v !== null).join('\n') + customerTag(user.id), link ? [await staffButton('💬 Reply in admin', link)] : null);
 }
 
-// A message the staff typed in the shop's group as a reply to a notification
-// (new message, paid order): it goes to that customer through their bot and
-// joins the conversation in the admin. Only in the primary bot's staff chat.
+// A message the staff typed in a bot's staff chat (their private chat with the
+// bot, or the shop's group) as a reply to a notification (new message, paid
+// order): it goes to that customer through their bot and joins the conversation
+// in the admin.
 export async function replyFromStaffChat(bot, msg) {
   const quoted = msg.reply_to_message;
-  if (!bot.isPrimary || !quoted || String(msg.chat.id) !== String(bot.chatId)) return false;
+  if (!bot.chatId || !quoted || String(msg.chat.id) !== String(bot.chatId)) return false;
   if (!quoted.from?.is_bot) return false;
   const userId = Number((String(quoted.text || quoted.caption || '').match(TAG) || [])[1]);
   const body = String(msg.text || '').trim();

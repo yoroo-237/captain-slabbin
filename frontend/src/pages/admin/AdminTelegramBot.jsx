@@ -143,16 +143,28 @@ function BotCard({ bot, styles, shelves: allShelves, busy, act, post, defaultOpe
       </>)}
 
       {section === 'chats' && (<>
-      {!bot.isPrimary && groups.length === 0 && <p style={muted}>Only the primary bot posts orders and messages. Add this bot to a group or channel to have it announce new products there.</p>}
-      {bot.isPrimary && bot.seenChats.length > 0 && (
-        <div className="admin-form-group">
-          <label className="admin-label">Orders and messages go to</label>
-          <select className="admin-input" value={bot.chatId || ''} disabled={!!busy} onChange={e => act(`chat${id}`, () => post(`bots/${id}/chat`, { chatId: e.target.value }), 'Chat changed. A message was posted there.')}>
-            {!bot.chatId && <option value="">Choose a chat</option>}
-            {bot.seenChats.map(c => <option key={c.id} value={c.id}>{c.title} ({c.type})</option>)}
-          </select>
+      {/* This bot's staff chat: its customers' orders and messages arrive there, and a
+          reply to one of them goes to that customer's own Telegram */}
+      <div className="admin-form-group">
+        <label className="admin-label">Orders and messages of @{bot.username} go to</label>
+        <div style={{ ...muted, marginTop: 0, marginBottom: 8 }}>
+          {bot.chat ? <><b>{bot.chat.title}</b> ({bot.chat.type === 'private' ? 'a person' : bot.chat.type})</>
+            : bot.isPrimary ? 'No chat yet.' : "No chat of its own: they go to the primary bot's chat."}
         </div>
-      )}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <button type="button" className="admin-btn admin-btn-primary admin-btn-sm" disabled={!!busy}
+            onClick={() => act(`inbox${id}`, async () => { const r = await post(`bots/${id}/inbox-link`); window.open(r.url, '_blank', 'noopener'); return r },
+              'In Telegram, press Start: this bot then sends its orders and customer messages to that account.')}>Receive them in my Telegram</button>
+          {bot.seenChats.length > 0 && (
+            <select className="admin-input" style={{ maxWidth: 320 }} value="" disabled={!!busy}
+              onChange={e => e.target.value && act(`chat${id}`, () => post(`bots/${id}/chat`, { chatId: e.target.value }), 'Chat changed. A message was posted there.')}>
+              <option value="">Or pick a chat it is in…</option>
+              {bot.seenChats.map(c => <option key={c.id} value={c.id}>{c.title} ({c.type})</option>)}
+            </select>
+          )}
+        </div>
+        <div style={muted}>To answer a customer, <b>reply</b> to their notification in that chat: the answer goes to their own Telegram, from this bot. The link is valid 30 minutes.</div>
+      </div>
       {groups.length > 0 && (
         <div className="admin-form-group">
           <label className="admin-label">Post new products to</label>

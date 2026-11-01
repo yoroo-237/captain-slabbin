@@ -6,7 +6,7 @@ import { ok } from '../../utils/response.js';
 import { appError } from '../../utils/formatters.js';
 import {
   telegramStatus, inspectBot, linkBot, applyStyle, setPrimary, changeChat, unlinkBot, sendTelegram,
-  setPostChat, setShelves, postProduct, setBotPhoto, setStylePhoto, styleFromBot, findBot, setPgpKey,
+  setPostChat, setShelves, postProduct, setBotPhoto, setStylePhoto, styleFromBot, findBot, setPgpKey, inboxLink,
 } from '../../services/telegram.service.js';
 import { DEFAULT_LOOK, neutralLook } from '../../services/telegramStyle.js';
 
@@ -63,6 +63,9 @@ r.post('/bots/:id/primary', async (req, res) => {
   await setPrimary(req.params.id);
   res.json(ok({ primary: true }));
 });
+
+// A one-time link that makes the private chat of whoever opens it this bot's staff chat
+r.post('/bots/:id/inbox-link', async (req, res) => res.json(ok(await inboxLink(req.params.id))));
 
 r.post('/bots/:id/chat', async (req, res) => {
   if (!chatOf(req.body)) throw appError('Choose a chat', 400);

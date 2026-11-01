@@ -229,4 +229,10 @@ export default {
   'Unlink this bot': 'Délier ce bot', 'Upload a photo (JPG)': 'Envoyer une photo (JPG)',
   'No style (the bot keeps its own profile)': 'Aucun style (le bot garde son propre profil)',
   'Update from the bot': 'Mettre à jour depuis le bot', 'Starting…': 'Démarrage…', 'Update': 'Mettre à jour',
+  'Receive them in my Telegram': 'Les recevoir dans mon Telegram', 'Or pick a chat it is in…': 'Ou choisir un groupe où il est…',
+  'In Telegram, press Start: this bot then sends its orders and customer messages to that account.': 'Dans Telegram, appuyez sur Démarrer : ce bot envoie alors ses commandes et les messages de ses clients à ce compte.',
+  'No chat yet.': 'Aucun groupe pour l’instant.', "No chat of its own: they go to the primary bot's chat.": 'Pas de compte à lui : ils vont dans le groupe du bot principal.',
+  'a person': 'une personne', 'reply': 'répondez',
+  'To answer a customer,': 'Pour répondre à un client,',
+  'to their notification in that chat: the answer goes to their own Telegram, from this bot. The link is valid 30 minutes.': 'à sa notification dans ce chat : la réponse part sur son propre Telegram, par ce bot. Le lien est valable 30 minutes.',
 }

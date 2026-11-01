@@ -4,7 +4,7 @@ import { prisma } from '../db.js';
 import { walletService } from '../services/wallet.service.js';
 import { ok } from '../utils/response.js';
 import { env } from '../config/env.js';
-import { findBot, primaryBot, rememberChat, tg, notifyNewMessage, replyFromStaffChat } from '../services/telegram.service.js';
+import { findBot, primaryBot, rememberChat, tg, notifyNewMessage, replyFromStaffChat, claimInbox } from '../services/telegram.service.js';
 import { menuScreen, shelfScreen, pageScreen, homeScreen } from '../services/telegramCatalog.js';
 import { withBot, look, siteLinks } from '../services/telegramStyle.js';
 import * as shop from '../services/telegramShop.js';
@@ -182,9 +182,22 @@ ${menu.text}` };
     }
   };
 
-  // The staff answering a customer from the shop's group (reply to a notification)
-  if (upd.message && upd.message.chat?.type !== 'private') {
+  // A staff member linking their own Telegram as this bot's staff chat
+  const startText = upd.message?.text?.trim() || ''
+  if (upd.message?.chat?.type === 'private' && /^\/start(@\w+)?\s+inbox_/.test(startText)) {
+    const r = await claimInbox(bot, upd.message.chat, startText.split(/\s+/)[1].slice(6));
+    await tg(bot.token, 'sendMessage', { chat_id: upd.message.chat.id, parse_mode: 'HTML', text: r.error ? `⚠️ ${r.error}`
+      : `✅ This chat now receives the orders and customer messages of @${bot.username}.\n\nTo answer a customer, <b>reply</b> to their notification: your answer goes to their own Telegram.` }).catch(() => {});
+    return;
+  }
+  // The staff answering a customer: a reply to a notification in this bot's staff chat
+  if (upd.message && String(upd.message.chat?.id) === String(bot.chatId)) {
     try { if (await replyFromStaffChat(bot, upd.message)) return; } catch (err) { console.error('[Webhook Telegram] staff reply:', err.message); }
+    // In the staff's private chat, plain text is not a customer message
+    if (upd.message.chat.type === 'private' && upd.message.text && !upd.message.text.startsWith('/')) {
+      await tg(bot.token, 'sendMessage', { chat_id: upd.message.chat.id, text: 'To answer a customer, reply to their notification (swipe it, or long-press then Reply).' }).catch(() => {});
+      return;
+    }
   }
 
   // A customer writing to the shop in the bot (plain text, no command): kept in
