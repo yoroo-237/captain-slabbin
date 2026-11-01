@@ -669,7 +669,17 @@ class Explorer:
             for cmd in self.args.start:
                 self.enqueue(("cmd", cmd))
         elif not self.queue:
-            print("Capture déjà complète : rien à rejouer (--fresh pour tout recommencer).")
+            # Commandes restées sans réponse (délai dépassé, pause de Telegram) : rejouées
+            failed = [st["action"] for st in self.steps
+                      if st.get("error") in ("Timeout", "FloodWaitError") and not st["action"].startswith("[")]
+            if not self.screens:
+                failed = list(self.args.start) + failed
+            for value in dict.fromkeys(failed):
+                self.queue.append(("cmd", value))
+            if self.queue:
+                print(f"{len(self.queue)} commande(s) restée(s) sans réponse : rejouée(s).")
+            else:
+                print("Capture déjà complète : rien à rejouer (--fresh pour tout recommencer).")
         done = len(self.steps)
         while self.queue and len(self.steps) - done < self.args.max_actions:
             if stop_requested(self.args):
