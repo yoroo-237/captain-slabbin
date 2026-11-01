@@ -34,10 +34,10 @@
 
 /* ---- top bar & navigation ---- */
 .bp-top { position: sticky; top: 0; z-index: 50; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
-.bp-top-in { height: 44px; display: flex; align-items: center; gap: 12px; }
+.bp-top-in { height: 32px; display: flex; align-items: center; gap: 10px; }
 .bp .brand { display: flex; align-items: center; gap: 11px; font-weight: 600; letter-spacing: -.02em; color: inherit; text-decoration: none; }
 .bp .brand small { display: block; font-family: var(--f-mono); font-size: 9px; font-weight: 400; letter-spacing: .08em; opacity: .6; text-transform: uppercase; }
-.bp .brand-mark { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; transition: transform .6s var(--ease); }
+.bp .brand-mark { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; transition: transform .6s var(--ease); }
 .bp .brand-mark img { width: 100%; height: 100%; object-fit: contain; }
 .bp .brand:hover .brand-mark { transform: rotate(-12deg) scale(1.06); }
 .bp-top .spacer { flex: 1; }
@@ -54,12 +54,12 @@
 
 .bp-nav { display: flex; flex: 1; min-width: 0; gap: 2px; overflow-x: auto; padding: 0; scrollbar-width: none; }
 .bp-nav::-webkit-scrollbar { display: none; }
-.bp-nav a { flex: none; display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px; border-radius: 999px; border: 1px solid transparent;
+.bp-nav a { flex: none; display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 999px; border: 1px solid transparent;
   font-family: var(--f-mono); font-size: 10px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); text-decoration: none;
   transition: color .3s var(--ease), border-color .3s var(--ease), background .3s var(--ease); }
 .bp-nav a:hover { color: var(--text); border-color: var(--line); }
 .bp-nav a.active { background: var(--char); color: var(--paper); }
-.bp-nav .sep { flex: none; width: 1px; margin: 6px 4px; background: var(--line); }
+.bp-nav .sep { flex: none; width: 1px; margin: 5px 4px; background: var(--line); }
 .bp-nav .nb { min-width: 15px; height: 15px; padding: 0 4px; border-radius: 999px; background: var(--orange); color: var(--paper); display: inline-grid; place-items: center; font-size: 9.5px; letter-spacing: 0; }
 
 .bp-main { padding-top: clamp(24px, 3.5vw, 44px); }
@@ -356,7 +356,7 @@
 .bp .bp-top .brand { font-size: 13px; gap: 8px; }
 .bp .bp-top .brand small { font-size: 8px; }
 .bp .bp-user { font-size: 12px; gap: 8px; }
-.bp .bp-top .btn.sm, .bp .bp-top .mode { height: 26px; }
+.bp .bp-top .btn.sm, .bp .bp-top .mode { height: 22px; }
 .bp .bp-top .btn.sm { padding: 0 10px; font-size: 11px; }
 .bp .bp-top .mode button { padding: 0 9px; font-size: 9px; }
 .bp .bp-main { zoom: .78; }
