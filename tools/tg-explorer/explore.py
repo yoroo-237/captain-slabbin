@@ -478,39 +478,42 @@ class Explorer:
                 return recent.id
         return msg_id
 
-    async def find_button(self, label, data=None, limit=10):
-        """Le message récent du bot qui montre ce bouton : par ses données, sinon par son libellé."""
-        async for recent in self.client.iter_messages(self.bot, limit=limit):
+    async def recent_buttons(self, limit=10):
+        """Les boutons des derniers messages du bot, lus en une seule requête
+        (Telegram limite le nombre de lectures de l'historique)."""
+        out = []
+        for recent in await self.client.get_messages(self.bot, limit=limit):
             markup = recent.reply_markup
             if recent.out or not isinstance(markup, types.ReplyInlineMarkup):
                 continue
-            for row in markup.rows:
-                for b in row.buttons:
-                    bdata = getattr(getattr(b, "type", b), "data", None)
-                    if bdata is not None and (bdata == data or (label and b.text == label)):
-                        return recent.id, bdata
-        if label:
-            wanted = self.norm(label)
-            async for recent in self.client.iter_messages(self.bot, limit=limit):
-                markup = recent.reply_markup
-                if recent.out or not isinstance(markup, types.ReplyInlineMarkup):
-                    continue
-                for row in markup.rows:
-                    for b in row.buttons:
-                        bdata = getattr(getattr(b, "type", b), "data", None)
-                        if bdata is not None and self.norm(b.text) == wanted:
-                            return recent.id, bdata
+            out.append((recent.id, [(b.text, getattr(getattr(b, "type", b), "data", None))
+                                    for row in markup.rows for b in row.buttons]))
+        return out
+
+    def pick(self, shown, label, data=None):
+        """Dans des boutons déjà lus : par les données, le libellé, puis le libellé aux chiffres près."""
+        for test in (lambda t, d: d == data or (label and t == label),
+                     lambda t, d: label and self.norm(t) == self.norm(label)):
+            for msg_id, buttons in shown:
+                for text, bdata in buttons:
+                    if bdata is not None and test(text, bdata):
+                        return msg_id, bdata
         return None
 
+    async def find_button(self, label, data=None, limit=10):
+        """Le message récent du bot qui montre ce bouton."""
+        return self.pick(await self.recent_buttons(limit), label, data)
+
     async def wait_button(self, label, data=None, timeout=6.0):
-        """Le bouton, attendu le temps que le bot affiche ou modifie son écran."""
+        """Le bouton, attendu le temps que le bot affiche ou modifie son écran
+        (une lecture toutes les 1,5 s, pas plus)."""
         waited = 0.0
         while True:
             found = await self.find_button(label, data)
             if found or waited >= timeout:
                 return found
-            await asyncio.sleep(0.75)
-            waited += 0.75
+            await asyncio.sleep(1.5)
+            waited += 1.5
 
     async def go_back_to(self, data, label):
         """Le bot a remplacé l'écran qui portait ce bouton : on refait le chemin qui y
@@ -520,14 +523,15 @@ class Explorer:
         if not path:
             return None
         # Le bouton est encore affiché quelque part : aucun chemin à refaire
-        here = await self.find_button(label, data)
+        shown = await self.recent_buttons()
+        here = self.pick(shown, label, data)
         if here:
             return here
         # Sinon on repart du dernier carrefour encore affiché (l'étape la plus avancée
         # du chemin dont le bouton est visible), pas de /start
         i = 0
         for j in range(len(path) - 1, -1, -1):
-            if path[j][0] == "cb" and await self.find_button(path[j][1]):
+            if path[j][0] == "cb" and self.pick(shown, path[j][1]):
                 i = j
                 break
         print(f"  retour sur l'écran du bouton [{label}] ({len(path) - i} étape(s){' sur ' + str(len(path)) if i else ''})")
@@ -549,16 +553,18 @@ class Explorer:
                 i += 1
                 await asyncio.sleep(min(self.args.wait, 1.5))
                 continue
-            # Le bouton voulu est peut-être déjà là (raccourci)
-            if await self.find_button(label, data):
+            # Le bouton voulu est peut-être déjà là (raccourci) ; une seule lecture pour les deux
+            shown = await self.recent_buttons()
+            if self.pick(shown, label, data):
                 break
-            found = await self.wait_button(value)
+            found = self.pick(shown, value) or await self.wait_button(value, timeout=4.5)
             if not found:
                 # Une étape qui ne s'affiche plus (conditions déjà acceptées, âge déjà
                 # confirmé…) : on saute à la première étape suivante visible
                 later = None
+                shown = await self.recent_buttons()
                 for j in range(i + 1, len(path)):
-                    if path[j][0] == "cb" and await self.find_button(path[j][1]):
+                    if path[j][0] == "cb" and self.pick(shown, path[j][1]):
                         later = j
                         break
                 if later is None:
