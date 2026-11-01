@@ -392,11 +392,18 @@ class Explorer:
             self.last_id = max(self.last_id, msg.id)
             if not msg.out:
                 keys.append(await self.capture(msg, label, path))
+        # The message the bot edited in place (a button under it was pressed): the app
+        # shows the new screen in that same message, not as a new one
+        edited_key = None
         if pressed:
             edited = await self.client.get_messages(self.bot, ids=pressed)
             if edited:
-                keys.append(await self.capture(edited, label, path))
-        self.steps.append({"action": label, "alert": alert, "error": error, "screens": keys})
+                edited_key = await self.capture(edited, label, path)
+                keys.append(edited_key)
+        step = {"action": label, "alert": alert, "error": error, "screens": keys}
+        if edited_key and edited_key not in keys[:-1]:
+            step["edited"] = edited_key
+        self.steps.append(step)
         print(f"{len(self.steps):>4}  {label[:60]:<60} -> {len(keys)} écran(s){'  ' + error if error else ''}")
 
     async def run(self):
