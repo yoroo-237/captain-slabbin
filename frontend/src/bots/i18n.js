@@ -13,7 +13,7 @@ function detect() {
   return /^fr\b/i.test(navigator.language || '') ? 'fr' : 'en'
 }
 export const lang = detect()
-document.documentElement.lang = lang
+if (import.meta.env.VITE_PLATFORM === 'bots') document.documentElement.lang = lang
 
 export function setLang(code) {
   try { localStorage.setItem(KEY, code) } catch { /* storage blocked */ }

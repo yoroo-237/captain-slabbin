@@ -18,7 +18,7 @@ const normalizeBot = x => x.trim().replace(/^(https?:\/\/)?(t|telegram)\.me\//, 
 
 // The running task's output, live. EventSource cannot send the admin's token, so
 // the stream is read with fetch; it reconnects after a drop.
-function useTask() {
+export function useTask() {
   const [state, setState] = useState({ running: false, name: null })
   const [lines, setLines] = useState([])
   const onDone = useRef(() => {})
@@ -71,9 +71,9 @@ function useTask() {
 
 // The server names its tasks in French
 const TASKS = { 'Exploration': 'Exploring', 'Import du style': 'Style import', 'Import des produits': 'Products import', 'Déconnexion': 'Signing out' }
-const taskName = n => L(n, TASKS[n] || n)
+export const taskName = n => L(n, TASKS[n] || n)
 
-const lineKind = l => (l.startsWith('$ ') ? 'cmd'
+export const lineKind = l => (l.startsWith('$ ') ? 'cmd'
   : /^-- terminé \(code 0\)/.test(l) ? 'ok'
   : /^-- terminé|erreur|error|impossible|inaccessible|traceback/i.test(l) ? 'err'
   : /^==|^Rapport|^Reprise|Arrêt demandé/.test(l) ? 'info' : '')

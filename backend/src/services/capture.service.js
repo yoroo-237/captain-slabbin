@@ -225,7 +225,20 @@ function exploreArgs(userId, b) {
   return args;
 }
 
+// The bots a style was replicated from: on the site, the only bots that may be
+// captured (to update their style), never any other
+export async function replicaBots() {
+  const styles = await prisma.botStyle.findMany({ select: { capture: true, look: true } });
+  return new Set(styles.filter(s => s.look?.replica && s.capture?.bot).map(s => normalizeBot(s.capture.bot).toLowerCase()));
+}
+const freeCaptures = () => env.platform === 'bots';
+
 export async function explore(userId, body) {
+  if (!freeCaptures()) {
+    const allowed = await replicaBots();
+    const asked = (Array.isArray(body.bots) ? body.bots : []).map(b => normalizeBot(b).toLowerCase());
+    if (!asked.length || asked.some(b => !allowed.has(b))) throw Object.assign(new Error('Only the bot of an existing style can be captured here, to update that style.'), { status: 403 });
+  }
   const args = exploreArgs(userId, body);
   await fs.mkdir(capturesOf(userId), { recursive: true });
   await fs.rm(stopFile(userId), { force: true });
@@ -308,6 +321,8 @@ export async function refreshStyle(user, styleId) {
 }
 
 export async function importCapture(user, { bot, kind, dry, name, applyTo, catalog, refresh = false }) {
+  // On the site a capture only ever updates the style it came from (refreshStyle)
+  if (!freeCaptures() && !refresh) throw Object.assign(new Error('On this dashboard a capture only updates its own style: use "Update from the bot".'), { status: 403 });
   if (!IMPORTS[kind]) throw bad('Invalid import.');
   const userId = Number(user.sub);
   const dir = captureDir(userId, bot);
