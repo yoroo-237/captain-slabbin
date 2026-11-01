@@ -102,9 +102,24 @@ const NO_KEY = '<b>Our PGP key</b>\n\nSet the PGP public key on each bot (Admin,
 
 const stats = { pages: 0, images: 0, back: 0, linked: 0, dropped: 0 };
 const pages = [];
+// The reply keyboard of a screen (under the input box), as Telegram shows it: text
+// buttons (their screen opens when typed, see triggers) and the buttons that make
+// the customer share something (contact, location, poll, users, a chat) or open a
+// Mini App; with its settings (resize, one-time, persistent, placeholder)
+const KEYBOARD_KINDS = { keyboard: 'text', request_contact: 'contact', request_location: 'location', request_poll: 'poll', request_users: 'users', request_chat: 'chat', web_app: 'webapp' };
+const isReplyKeyboard = s => s.markup?.type === 'keyboard' || (s.buttons || []).some(r => r.some(b => b.kind === 'keyboard'));
+function replyKeyboardOf(s) {
+  const rows = (s.buttons || []).map(row => row.filter(b => KEYBOARD_KINDS[b.kind]).map(b => ({
+    text: b.text, kind: KEYBOARD_KINDS[b.kind], ...(b.url ? { url: b.url } : {}), ...(b.quiz ? { quiz: true } : {}), ...(b.style ? { style: b.style } : {}),
+  }))).filter(r => r.length);
+  const m = s.markup || {};
+  return { rows, resize: m.resize !== false, oneTime: !!m.one_time, persistent: !!m.persistent, placeholder: m.placeholder || '' };
+}
 for (const s of [...screens].sort((a, b) => a.order - b.order)) {
   const rows = [];
-  for (const row of s.buttons || []) {
+  const keyboard = isReplyKeyboard(s) ? replyKeyboardOf(s) : null;
+  if (keyboard) stats.keyboards = (stats.keyboards || 0) + 1;
+  for (const row of keyboard ? [] : s.buttons || []) {
     const out = [];
     for (const b of row) {
       // A link stays a link
@@ -114,7 +129,11 @@ for (const s of [...screens].sort((a, b) => a.order - b.order)) {
       if ((b.kind === 'url' || b.kind === 'login_url') && /^https?:\/\//.test(b.url || '')) { out.push({ text: b.text, action: `url:${b.url}`, ...look }); stats.linked++; continue; }
       if (b.kind === 'web_app' && /^https:\/\//.test(b.url || '')) { out.push({ text: b.text, action: `webapp:${b.url}`, ...look }); stats.linked++; continue; }
       if (b.kind === 'copy' && b.copy) { out.push({ text: b.text, action: `copy:${String(b.copy).slice(0, 256)}`, ...look }); stats.linked++; continue; }
-      // Contact, location, polls, payments, games, inline search: the replica cannot answer them
+      // Inline search: the replica answers it with its own pages (inline mode on in @BotFather)
+      if (b.kind === 'switch_inline') { out.push({ text: b.text, action: `inline:${b.same_chat ? 'here' : 'any'}:${String(b.query || '').slice(0, 200)}`, ...look }); stats.linked++; continue; }
+      // Pay: the shop's own checkout, the customer's wallet (the original's invoice is its own)
+      if (b.kind === 'pay') { out.push({ text: b.text, action: 'wallet', ...look }); stats.linked++; continue; }
+      // A game needs one registered with @BotFather by the bot's owner: it cannot be copied
       if (b.kind !== 'callback' && b.kind !== 'keyboard') { stats.dropped++; continue; }
       if (isBack(b)) { if (mergeInto) { out.push({ text: b.text, action: 'menu' }); stats.back++; } else if (menuKey) { out.push({ text: b.text, action: `page:${menuKey}` }); stats.back++; } else stats.dropped++; continue; }
       const target = targetOf(s, b);
@@ -133,7 +152,8 @@ for (const s of [...screens].sort((a, b) => a.order - b.order)) {
     stats.keys = (stats.keys || 0) + 1;
   }
   const triggers = typedOf(s);
-  pages.push({ key: keyOf.get(s.key), html, media: s.media, buttons: rows, ...(triggers.length ? { triggers } : {}) });
+  const markup = s.markup?.type === 'force_reply' || s.markup?.type === 'remove_keyboard' ? { markup: { type: s.markup.type, placeholder: s.markup.placeholder || '' } } : {};
+  pages.push({ key: keyOf.get(s.key), html, media: s.media, buttons: rows, ...(keyboard ? { keyboard } : {}), ...markup, ...(triggers.length ? { triggers } : {}) });
   stats.pages++;
 }
 // The image of each page kept: all of them for a new style, the chosen ones when merging
@@ -143,7 +163,7 @@ async function withImages(list) {
   return out;
 }
 
-console.log(`@${bot}: ${stats.pages} pages, ${stats.images} with an image, ${stats.back} back buttons, ${stats.linked} linked buttons, ${stats.dropped} dropped${stats.keys ? `, PGP key left out of ${stats.keys}` : ''}`);
+console.log(`@${bot}: ${stats.pages} pages, ${stats.images} with an image, ${stats.back} back buttons, ${stats.linked} linked buttons, ${stats.keyboards || 0} reply keyboards, ${stats.dropped} dropped${stats.keys ? `, PGP key left out of ${stats.keys}` : ''}`);
 console.log(`Profile: ${profile.name || '(not captured: explore the bot again to read it)'}${profile.commands?.length ? `, ${profile.commands.length} commands` : ''}${profile.photo ? ', photo' : ''}`);
 
 // The bot the style goes to, checked before anything is written (an owner's own bots only)

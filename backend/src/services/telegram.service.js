@@ -161,7 +161,7 @@ export async function rememberChat(bot, chat) {
 
 const webhookBase = base => `${base.replace(/\/$/, '')}/api/webhooks/telegram-bot`;
 const webhookUrl = (base, bot) => `${webhookBase(base)}/${bot.id}`;
-const UPDATES = ['message', 'channel_post', 'my_chat_member', 'callback_query'];
+const UPDATES = ['message', 'channel_post', 'my_chat_member', 'callback_query', 'inline_query'];
 
 // Commands and, on an HTTPS site, the menu button, in the bot's style
 async function installNavigation(bot) {
@@ -194,7 +194,7 @@ export async function telegramStatus() {
       if (me.username !== bot.username || me.first_name !== bot.name) {
         await prisma.telegramBot.update({ where: { id: bot.id }, data: { username: me.username, name: me.first_name } });
       }
-      if (hook.url && bot.secret && !(hook.allowed_updates || []).includes('callback_query')) {
+      if (hook.url && bot.secret && !UPDATES.every(u => (hook.allowed_updates || []).includes(u))) {
         await tg(bot.token, 'setWebhook', { url: hook.url, secret_token: bot.secret, allowed_updates: UPDATES });
         await installNavigation(bot);
       }

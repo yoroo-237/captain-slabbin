@@ -5,7 +5,7 @@ import { walletService } from '../services/wallet.service.js';
 import { ok } from '../utils/response.js';
 import { env } from '../config/env.js';
 import { findBot, primaryBot, rememberChat, tg, notifyNewMessage, replyFromStaffChat, claimInbox } from '../services/telegram.service.js';
-import { menuScreen, shelfScreen, pageScreen, homeScreen } from '../services/telegramCatalog.js';
+import { menuScreen, shelfScreen, pageScreen, homeScreen, inlineResults } from '../services/telegramCatalog.js';
 import { withBot, look, siteLinks } from '../services/telegramStyle.js';
 import * as shop from '../services/telegramShop.js';
 import * as board from '../services/telegramCommands.js';
@@ -121,13 +121,15 @@ async function answerTelegram(bot, upd) {
     || (member && ['member', 'administrator'].includes(member.new_chat_member?.status) ? member.chat : null);
   if (chat) await rememberChat(bot, chat).catch(err => console.error('[Webhook Telegram] remember chat:', err.message));
 
-  const show = (chatId, screen, messageId) => screen && tg(bot.token, messageId ? 'editMessageText' : 'sendMessage', {
+  // A screen with a reply keyboard (or a forced reply) is always a new message:
+  // Telegram cannot put one on an edited message
+  const show = (chatId, screen, messageId) => screen && tg(bot.token, messageId && !screen.reply ? 'editMessageText' : 'sendMessage', {
     chat_id: chatId,
-    ...(messageId ? { message_id: messageId } : {}),
+    ...(messageId && !screen.reply ? { message_id: messageId } : {}),
     text: screen.text,
     parse_mode: 'HTML',
     link_preview_options: screen.image ? { url: screen.image, prefer_large_media: true, show_above_text: true } : { is_disabled: true },
-    reply_markup: { inline_keyboard: (screen.keyboard || []).filter(r => r.length) },
+    reply_markup: screen.reply || { inline_keyboard: (screen.keyboard || []).filter(r => r.length) },
   }).catch(err => { if (!/not modified/i.test(err.message)) throw err; });
 
   // Screens for a private chat; anything that needs an account asks for 21+ first
@@ -218,6 +220,11 @@ ${menu.text}` };
   // A replica of a captured bot answers with its own screens only: no account,
   // no shop screens (wallet, cart, orders), unknown input brings back its home
   if (look().replica) {
+    // Inline search (@bot words…): the replica's pages that match
+    if (upd.inline_query) {
+      await tg(bot.token, 'answerInlineQuery', { inline_query_id: upd.inline_query.id, results: inlineResults(upd.inline_query.query), cache_time: 60 }).catch(() => {});
+      return;
+    }
     const cbq = upd.callback_query;
     const m = upd.message;
     const chatId = cbq?.message?.chat?.id || m?.chat?.id;
@@ -226,7 +233,22 @@ ${menu.text}` };
     if (cbq) {
       await tg(bot.token, 'answerCallbackQuery', { callback_query_id: cbq.id }).catch(() => {});
       const [kind, key] = String(cbq.data || '').split(':');
+      // Pay and the wallet: the shop's own checkout (an account is opened if needed)
+      if (['w', 'dep'].includes(kind) && cbq.message?.chat?.type === 'private') {
+        await shop.openAccount(cbq.from).catch(() => null);
+        return show(chatId, await screenFor(cbq.from, cbq.data), cbq.message.message_id);
+      }
       return show(chatId, (kind === 'pg' && pageScreen(key)) || home(), cbq.message.message_id);
+    }
+    // What the customer shared with a reply-keyboard button: kept for the shop
+    const shared = m && (m.contact ? `📱 Contact shared: ${[m.contact.first_name, m.contact.last_name].filter(Boolean).join(' ')} ${m.contact.phone_number || ''}`.trim()
+      : m.location ? `📍 Location shared: https://maps.google.com/?q=${m.location.latitude},${m.location.longitude}`
+      : m.users_shared ? `👤 Users shared: ${(m.users_shared.users || []).map(u => u.username ? '@' + u.username : [u.first_name, u.last_name].filter(Boolean).join(' ') || u.user_id).join(', ')}`
+      : m.chat_shared ? `👥 Chat shared: ${m.chat_shared.title || m.chat_shared.username || m.chat_shared.chat_id}`
+      : m.poll ? `📊 Poll: ${m.poll.question} (${(m.poll.options || []).map(o => o.text).join(' / ')})` : null);
+    if (shared && m.chat.type === 'private') {
+      await toShop({ ...m, text: shared }, { open: true });
+      return show(chatId, home());
     }
     const text = m?.text?.trim();
     if (!text) return;

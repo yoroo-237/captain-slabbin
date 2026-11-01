@@ -168,6 +168,11 @@ function pageAction(b) {
   // A Mini App (private chats only) and a copy-text button, as the original had them
   if (a.startsWith('webapp:')) return /^https:\/\//.test(a.slice(7)) ? { text: b.text, web_app: { url: a.slice(7) } } : null;
   if (a.startsWith('copy:')) return a.length > 5 ? { text: b.text, copy_text: { text: a.slice(5, 261) } } : null;
+  // Inline search ('here' = in this chat), answered with the style's pages
+  if (a.startsWith('inline:')) {
+    const [, where, ...q] = a.split(':');
+    return where === 'here' ? { text: b.text, switch_inline_query_current_chat: q.join(':') } : { text: b.text, switch_inline_query: q.join(':') };
+  }
   if (a === 'site') return site().startsWith('http') && siteLinks() ? { text: b.text, url: site() } : null;
   if (a.startsWith('page:')) return { text: b.text, callback_data: `pg:${a.slice(5)}`.slice(0, 64) };
   if (a.startsWith('cat:')) return { text: b.text, callback_data: `cat:${a.slice(4)}:1`.slice(0, 64) };
@@ -175,14 +180,59 @@ function pageAction(b) {
 }
 
 // null when the style has no page by that key
+// A reply keyboard (under the input box): text buttons, and the buttons that make
+// the customer share their contact, location, a poll, users or a chat, or open a Mini App
+function replyKeyboard(kb) {
+  let id = 0;
+  const button = b => {
+    const look = ['danger', 'success', 'primary'].includes(b.style) ? { style: b.style } : {};
+    switch (b.kind) {
+      case 'contact':  return { text: b.text, request_contact: true, ...look };
+      case 'location': return { text: b.text, request_location: true, ...look };
+      case 'poll':     return { text: b.text, request_poll: b.quiz ? { type: 'quiz' } : {}, ...look };
+      case 'users':    return { text: b.text, request_users: { request_id: ++id, max_quantity: 1 }, ...look };
+      case 'chat':     return { text: b.text, request_chat: { request_id: ++id, chat_is_channel: false }, ...look };
+      case 'webapp':   return /^https:\/\//.test(b.url || '') ? { text: b.text, web_app: { url: b.url }, ...look } : { text: b.text, ...look };
+      default:         return { text: b.text, ...look };
+    }
+  };
+  return {
+    keyboard: kb.rows.map(row => row.map(button)),
+    resize_keyboard: kb.resize !== false,
+    one_time_keyboard: !!kb.oneTime,
+    is_persistent: !!kb.persistent,
+    ...(kb.placeholder ? { input_field_placeholder: kb.placeholder.slice(0, 64) } : {}),
+  };
+}
+
 export function pageScreen(key) {
   const page = (look().pages || []).find(p => p.key === key);
   if (!page) return null;
+  // A screen with a reply keyboard, a forced reply or a removed keyboard is sent as a new
+  // message (Telegram cannot put those on an edited message)
+  const reply = page.keyboard?.rows?.length ? replyKeyboard(page.keyboard)
+    : page.markup?.type === 'force_reply' ? { force_reply: true, ...(page.markup.placeholder ? { input_field_placeholder: page.markup.placeholder.slice(0, 64) } : {}) }
+    : page.markup?.type === 'remove_keyboard' ? { remove_keyboard: true } : null;
   return {
     text: page.html || look().texts.header,
     keyboard: (page.buttons || []).map(row => row.map(pageButton).filter(Boolean)),
     image: page.image || null,
+    ...(reply ? { reply } : {}),
   };
+}
+
+// Inline search in a replica (@bot words…): its pages whose text matches
+export function inlineResults(query) {
+  const words = String(query || '').toLowerCase().split(/\s+/).filter(Boolean);
+  const plain = html => String(html || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+  return (look().pages || [])
+    .filter(p => p.html && words.every(w => plain(p.html).toLowerCase().includes(w)))
+    .slice(0, 20)
+    .map(p => ({
+      type: 'article', id: String(p.key).slice(0, 64), title: plain(p.html).slice(0, 60) || p.key,
+      description: plain(p.html).slice(60, 160), ...(p.image ? { thumbnail_url: p.image } : {}),
+      input_message_content: { message_text: p.html.slice(0, 4096), parse_mode: 'HTML', link_preview_options: p.image ? { url: p.image, show_above_text: true } : { is_disabled: true } },
+    }));
 }
 
 // /start: the style's home page when it has one, else the welcome (commands
