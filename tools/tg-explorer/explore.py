@@ -15,6 +15,7 @@ Usage : python explore.py QTMARKETBOT --out M:\\tmp\\qt-capture
 """
 import argparse
 import asyncio
+import time
 import base64
 import hashlib
 import html
@@ -614,16 +615,9 @@ class Explorer:
             try:
                 alert, pressed = await self.perform(action)
                 break
-            except errors.FloodWaitError as e:
-                # Telegram limite le rythme : on attend, en le disant, et un arrêt reste possible
-                print(f"  attente imposée par Telegram : {e.seconds}s (la capture reprend ensuite toute seule)")
-                left = e.seconds + 1
-                while left > 0 and not stop_requested(self.args):
-                    await asyncio.sleep(min(30, left))
-                    left -= 30
-                    if left > 0:
-                        print(f"  … encore {left}s d'attente imposée")
-                error = type(e).__name__ if attempt else None
+            except errors.FloodWaitError:
+                # Telegram impose une pause : elle se fait dans run(), hors du délai par action
+                raise
             except errors.RPCError as e:
                 # Bouton périmé, bot muet, message supprimé… : on note et on passe à la suite
                 error = type(e).__name__
@@ -684,6 +678,15 @@ class Explorer:
             action = self.queue.popleft()
             try:
                 await asyncio.wait_for(self.step(action), STEP_TIMEOUT)
+            except errors.FloodWaitError as e:
+                # Pause imposée par Telegram : l'action repart en tête de file, la capture
+                # est enregistrée, et le parcours reprend tout seul à la fin de la pause
+                self.queue.appendleft(action)
+                self.save_state()
+                if not await self.flood_pause(e.seconds):
+                    print("Arrêt demandé pendant la pause : relancez (sans « Tout recommencer ») pour reprendre ici.")
+                    break
+                continue
             except asyncio.TimeoutError:
                 label = action[1] if action[0] != "cb" else f"[{action[3]}]"
                 self.steps.append({"action": label, "alert": None, "error": "Timeout", "screens": []})
@@ -710,6 +713,22 @@ class Explorer:
             print(f"{self.skipped_known} bouton(s) déjà connus non rejoués (ils mènent toujours au même écran).")
         if self.queue:
             print(f"{len(self.queue)} action(s) non jouée(s) : relancez pour continuer là où le parcours s'est arrêté.")
+
+    async def flood_pause(self, seconds):
+        """Attend la fin de la pause imposée par Telegram (un arrêt reste possible).
+        La capture ne peut pas aller plus vite : toute requête pendant la pause l'allonge."""
+        until = time.strftime("%H:%M", time.localtime(time.time() + seconds))
+        print(f"  pause imposée par Telegram : {seconds}s, reprise vers {until} (capture enregistrée)")
+        left = seconds + 2
+        while left > 0:
+            if stop_requested(self.args):
+                return False
+            await asyncio.sleep(min(30, left))
+            left -= 30
+            if left > 0 and left % 300 < 30:
+                print(f"  … encore {left // 60} min de pause imposée")
+        print("  pause terminée : le parcours reprend")
+        return True
 
     async def reconnect(self, tries=RECONNECT_TRIES):
         """Attend le retour du réseau (environ 10 minutes au plus), sans rien rejouer."""
