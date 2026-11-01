@@ -30,6 +30,7 @@ const NAV_ITEMS = [
   { label: 'Analytics', path: '/admin/analytics' },
   { label: 'Settings', path: '/admin/settings' },
   { label: 'Telegram bots', path: '/admin/telegram' },
+  { label: 'Bot captures', path: '/admin/captures' },
   { label: 'My account', path: '/admin/account' },
 ]
 

@@ -14,6 +14,8 @@ export const env = {
   // serves the bots dashboard itself and runs the bot captures (tg-explorer).
   platform:         process.env.PLATFORM === 'bots' ? 'bots' : 'site',
   capture: {
+    // Captures run on the bots platform, and on the site when its server has Python (site.Dockerfile)
+    enabled:     process.env.PLATFORM === 'bots' || process.env.CAPTURES === 'on',
     toolDir:     process.env.CAPTURE_TOOL_DIR || '',     // tools/tg-explorer by default
     capturesDir: process.env.CAPTURES_DIR || '',          // <toolDir>/captures by default
     sessionsDir: process.env.TG_SESSIONS_DIR || '',       // <toolDir>/sessions by default

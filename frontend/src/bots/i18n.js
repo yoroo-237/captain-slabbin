@@ -41,6 +41,14 @@ const PATTERNS = [
     (_, b, a) => `@${b} est déjà lié par le compte ${a === 'of the super admin' ? 'du super admin' : a}. Connectez-vous avec ce compte et déliez le bot (Bots, ouvrir le bot, Délier ce bot), puis liez-le ici.`],
   [/^Unlink @(\w+)\? It stops answering customers here\.$/, (_, b) => `Délier @${b} ? Il ne répondra plus aux clients ici.`],
   [/^@(\w+) is already linked\.$/, (_, b) => `@${b} est déjà lié.`],
+  [/^Update "(.+)" from @(\w+)\? The capture resumes where it stopped and runs to the end, then this style is rebuilt and the bots using it get its new screens and commands\.$/,
+    (_, n, b) => `Mettre à jour « ${n} » depuis @${b} ? La capture reprend là où elle s’était arrêtée et va jusqu’au bout, puis ce style est reconstruit et les bots qui l’utilisent reçoivent ses nouveaux écrans et commandes.`],
+  [/^Capture of @(\w+) resumed\. When it ends, the style "(.+)" and its bots are updated\. Follow it in Captures\.$/,
+    (_, b, n) => `Capture de @${b} relancée. À la fin, le style « ${n} » et ses bots sont mis à jour. Suivez-la dans Captures.`],
+  [/^Capture @(\w+) again \(resumed, then finished\) and rebuild this style from it$/, (_, b) => `Capturer à nouveau @${b} (reprise, puis jusqu’au bout) et reconstruire ce style`],
+  [/^ · replica of @(\w+)$/, (_, b) => ` · réplique de @${b}`],
+  [/^This style was not made from a capture: it has no bot to capture again\.$/, () => 'Ce style ne vient pas d’une capture : il n’a pas de bot à capturer à nouveau.'],
+  [/^A shared style of the platform cannot be updated: make your own replica\.$/, () => 'Un style partagé de la plateforme ne peut pas être mis à jour : faites votre propre réplique.'],
   [/^Edit (.+)$/, (_, n) => (FR[n] ? `Modifier ${FR[n].toLowerCase()}` : `Modifier ${n}`)],
 ]
 

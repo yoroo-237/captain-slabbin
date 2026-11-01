@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { adminFetch } from '../pages/admin/utils/api.js'
 import { useUi, Modal } from './ui.jsx'
 import { L, locale } from './i18n.js'
+import { BASE } from '../utils/api.js'
 
 // Captures: what tg-explorer does on a PC, run by the bots platform's server.
 // The platform's Telegram account browses a bot and records its screens, buttons
@@ -39,7 +40,7 @@ function useTask() {
       while (alive) {
         ctrl = new AbortController()
         try {
-          const res = await fetch('/api/admin/capture/events', { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }, signal: ctrl.signal })
+          const res = await fetch(`${BASE}/api/admin/capture/events`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }, signal: ctrl.signal })
           // An expired token: any API call renews it, then the stream starts again
           if (res.status === 401) await api('/state').catch(() => {})
           if (!res.ok || !res.body) throw new Error(String(res.status))
@@ -412,7 +413,7 @@ export default function CapturePage() {
   }
 
   const busy = state.running
-  const files = `/api/capture-files/${filesKey}`
+  const files = `${BASE}/api/capture-files/${filesKey}`
   return (
     <>
       <header className="hero">

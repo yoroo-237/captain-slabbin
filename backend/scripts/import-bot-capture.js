@@ -32,6 +32,8 @@ const dry = args.includes('--dry');
 const opt = flag => (args.includes(flag) ? args[args.indexOf(flag) + 1] : null);
 const mergeInto = opt('--merge-into');
 const applyTo = Number(opt('--apply-to')) || null;
+// After the style is rebuilt: every bot using it gets its new command menu
+const refreshBots = args.includes('--refresh-bots');
 if (!dir) { console.error('Usage: node scripts/import-bot-capture.js <capture folder> [--name "Style name"] [--apply-to <bot id>] [--dry]'); process.exit(1); }
 
 const { bot, screens: captured, profile = {} } = JSON.parse(await fs.readFile(path.join(dir, 'data.json'), 'utf8'));
@@ -222,4 +224,12 @@ const style = mine
   : await prisma.botStyle.create({ data });
 console.log(`Style "${name}" ${mine ? 'updated' : 'created'} (id ${style.id}).`);
 await applied(style);
+if (refreshBots) {
+  const using = await prisma.telegramBot.findMany({ where: { styleId: style.id }, select: { id: true, username: true } });
+  for (const b of using) {
+    try { await applyStyle(b.id, style.id); console.log(`@${b.username} updated: new screens and commands.`); }
+    catch (err) { console.error(`@${b.username}: ${err.message}`); }
+  }
+  if (!using.length) console.log('No bot uses this style yet: apply it to one in Bots.');
+}
 await prisma.$disconnect();

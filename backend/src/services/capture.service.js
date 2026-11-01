@@ -57,7 +57,8 @@ function emit(userId, event, data) {
 }
 export const state = userId => { const t = ws(userId).task; return { running: !!t, name: t?.name || null }; };
 
-function run(userId, name, cmd, args, cwd, childEnv = CHILD_ENV) {
+// then(code): runs when the task ends, for a task that hands over to the next
+function run(userId, name, cmd, args, cwd, childEnv = CHILD_ENV, then = null) {
   busy(userId);
   const w = ws(userId);
   emit(userId, 'line', `$ ${[path.basename(cmd), ...args].join(' ')}`);
@@ -76,13 +77,17 @@ function run(userId, name, cmd, args, cwd, childEnv = CHILD_ENV) {
   };
   feed(child.stdout);
   feed(child.stderr);
-  const done = line => {
+  const done = (line, code) => {
     if (w.task?.child !== child) return; // 'error' and 'close' can both fire
     clearTimeout(w.task.killTimer);
-    emit(userId, 'line', line); w.task = null; emit(userId, 'state', state(userId));
+    const stopped = !!w.task.killTimer || !!w.task.stopped;
+    emit(userId, 'line', line); w.task = null;
+    if (then && !stopped) {
+      Promise.resolve().then(() => then(code)).catch(err => emit(userId, 'line', `-- ${err.message}`)).finally(() => emit(userId, 'state', state(userId)));
+    } else emit(userId, 'state', state(userId));
   };
-  child.on('error', err => done(`Impossible de lancer : ${err.message}`));
-  child.on('close', code => done(`-- terminé (code ${code})`));
+  child.on('error', err => done(`Impossible de lancer : ${err.message}`, -1));
+  child.on('close', code => done(`-- terminé (code ${code})`, code));
   emit(userId, 'state', state(userId));
 }
 
@@ -239,6 +244,7 @@ export async function stop(userId) {
       await fs.writeFile(stopFile(userId), '');
       emit(userId, 'line', "Arrêt demandé : fin de l'action en cours…");
     }
+    task.stopped = true; // a stopped exploration never hands over to its style update
     task.killTimer = setTimeout(() => child.kill(), task.name === 'Exploration' ? 20000 : 0);
   }
   return state(userId);
@@ -278,7 +284,30 @@ export async function removeCapture(userId, bot) {
 // under `name`, given to the member's bot `applyTo` when one is picked.
 // Products: into a catalog (`source`), matched by name, images uploaded once.
 // Everything goes into the member's own shop (TENANT_ID, see src/tenant.js).
-export async function importCapture(user, { bot, kind, dry, name, applyTo, catalog }) {
+// Styles → "Update from the bot": the capture of the style's bot is resumed (what
+// was played is not played again) and finished, then the same style is rebuilt
+// from it in place; the bots using it get its new screens and commands at once.
+export async function refreshStyle(user, styleId) {
+  const userId = Number(user.sub);
+  const style = await prisma.botStyle.findUnique({ where: { id: Number(styleId) } });
+  if (!style) throw Object.assign(new Error('Style not found.'), { status: 404 });
+  const bot = normalizeBot(style.capture?.bot || '');
+  if (!style.look?.replica || !BOT.test(bot)) throw bad('This style was not made from a capture: it has no bot to capture again.');
+  const tenant = tenantOfStaff(user);
+  if (tenant && style.tenantId !== tenant) throw bad('A shared style of the platform cannot be updated: make your own replica.');
+  busy(userId);
+  const args = exploreArgs(userId, { bots: [bot], profile: 'explorer', maxActions: 20000 });
+  await fs.mkdir(capturesOf(userId), { recursive: true });
+  await fs.rm(stopFile(userId), { force: true });
+  emit(userId, 'line', `== Mise à jour du style « ${style.name} » depuis @${bot}`);
+  run(userId, 'Exploration', PYTHON, args, TOOL, await userEnv(userId), async code => {
+    if (code !== 0) { emit(userId, 'line', `-- Capture inachevée : le style « ${style.name} » n'a pas été modifié.`); return; }
+    await importCapture(user, { bot, kind: 'style', dry: false, name: style.name, refresh: true });
+  });
+  return { ...state(userId), bot, style: style.name };
+}
+
+export async function importCapture(user, { bot, kind, dry, name, applyTo, catalog, refresh = false }) {
   if (!IMPORTS[kind]) throw bad('Invalid import.');
   const userId = Number(user.sub);
   const dir = captureDir(userId, bot);
@@ -292,6 +321,7 @@ export async function importCapture(user, { bot, kind, dry, name, applyTo, catal
       if (!Number.isInteger(Number(applyTo))) throw bad('Invalid bot.');
       extra.push('--apply-to', String(Number(applyTo)));
     }
+    if (refresh) extra.push('--refresh-bots');
   } else {
     const source = String(catalog || bot).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
     if (!source) throw bad('Invalid catalog.');

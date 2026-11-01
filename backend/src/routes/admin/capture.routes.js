@@ -7,7 +7,7 @@ import * as capture from '../../services/capture.service.js';
 // Admin → Captures (bots platform only): browse a Telegram bot with the platform's
 // Telegram account, then import its style and products
 const r = Router();
-r.use((req, res, next) => (env.platform === 'bots' ? next() : res.status(404).json(fail('Captures run on the bots platform only'))));
+r.use((req, res, next) => (env.capture.enabled ? next() : res.status(404).json(fail('Captures are off on this server: deploy it with its Dockerfile (Python) and CAPTURES=on.'))));
 r.use(requireAdmin);
 
 // Everything below is the signed-in member's own: task, journal, captures
@@ -27,13 +27,14 @@ r.post('/account/sign-out', async (req, res) => res.json(ok(await capture.signOu
 r.post('/explore', async (req, res) => res.status(202).json(ok(await capture.explore(req.user.sub, req.body || {}))));
 r.post('/stop', async (req, res) => res.json(ok(await capture.stop(req.user.sub))));
 r.post('/import', async (req, res) => res.status(202).json(ok(await capture.importCapture(req.user, req.body || {}))));
+r.post('/styles/:id/refresh', async (req, res) => res.status(202).json(ok(await capture.refreshStyle(req.user, req.params.id))));
 
 export default r;
 
 // Report and images of a capture, behind the signed key from GET /captures
 export const captureFiles = Router();
 captureFiles.get('/:key/*', async (req, res) => {
-  const userId = env.platform === 'bots' ? capture.checkFilesKey(req.params.key) : null;
+  const userId = env.capture.enabled ? capture.checkFilesKey(req.params.key) : null;
   if (!userId) return res.status(403).end();
   await capture.sendFile(userId, res, req.params[0]);
 });

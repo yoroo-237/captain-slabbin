@@ -57,8 +57,8 @@ export default function BotsLayout({ fallback }) {
   const admin = ['admin', 'superadmin'].includes(user.role)
   const items = NAV.filter(i => (!i.admin || admin) && (!i.superadmin || user.role === 'superadmin'))
   return (
-    <UiProvider>
     <div className="bp">
+    <UiProvider>
       <header className="bp-top">
         <div className="bp-wrap">
           <div className="bp-top-in">
@@ -88,7 +88,7 @@ export default function BotsLayout({ fallback }) {
       <main className="bp-wrap bp-main">
         <Suspense fallback={fallback}><Outlet /></Suspense>
       </main>
-    </div>
     </UiProvider>
+    </div>
   )
 }

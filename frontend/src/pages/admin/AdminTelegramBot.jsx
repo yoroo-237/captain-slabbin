@@ -52,7 +52,7 @@ export default function AdminTelegramBot({ canEdit }) {
           <LinkForm hasBots={status.bots.length > 0} styles={status.styles} busy={busy} act={act} post={post} />
         </div>
       )}
-      {tab === 'Styles' && <StylesTab bots={status.bots} styles={status.styles} shelves={shelves} busy={busy} act={act} post={post} reload={load} />}
+      {tab === 'Styles' && <StylesTab bots={status.bots} styles={status.styles} captures={!!status.captures} shelves={shelves} busy={busy} act={act} post={post} reload={load} />}
       {tab === 'Staff sign-in' && <StaffSignIn status={status} busy={busy} act={act} reload={load} />}
     </div>
   )
@@ -341,7 +341,7 @@ function LinkForm({ hasBots, styles, busy, act, post }) {
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
-function StylesTab({ bots, styles, shelves, busy, act, post, reload }) {
+function StylesTab({ bots, styles, captures, shelves, busy, act, post, reload }) {
   const [editing, setEditing] = useState(null) // { id?, name, look }
   const [defaults, setDefaults] = useState(null)
   const [neutral, setNeutral] = useState(null)
@@ -355,6 +355,11 @@ function StylesTab({ bots, styles, shelves, busy, act, post, reload }) {
     const { style } = await adminFetch(`/admin/telegram/styles/${id}`)
     setEditing({ id: style.id, name: style.name, look: style.look || {}, source: style.source })
   })
+  // A replica made from a capture: its bot is captured again (resumed where it
+  // stopped, finished), then this same style is rebuilt and its bots updated.
+  // The progress is in Captures (bots platform).
+  const refresh = s => act(`refresh${s.id}`, () => adminFetch(`/admin/capture/styles/${s.id}/refresh`, { method: 'POST', body: '{}' }),
+    `Capture of @${s.replicaOf} resumed. When it ends, the style "${s.name}" and its bots are updated. Follow it in Captures.`)
   const recreate = body => act('import', async () => {
     const { style } = await post('styles/import', body)
     setToken('')
@@ -374,8 +379,15 @@ function StylesTab({ bots, styles, shelves, busy, act, post, reload }) {
         <div style={{ display: 'grid', gap: 8 }}>
           {styles.map(s => (
             <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid #eee' }}>
-              <span><b>{s.name}</b>{s.source ? <span style={{ color: '#999' }}> · recreated from {s.source}</span> : ''}</span>
-              <span style={{ display: 'flex', gap: 6 }}>
+              <span><b>{s.name}</b>{s.replicaOf ? <span style={{ color: '#999' }}> · replica of @{s.replicaOf}</span> : s.source ? <span style={{ color: '#999' }}> · recreated from {s.source}</span> : ''}</span>
+              <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                {captures && s.replicaOf && (
+                  <button type="button" className="admin-btn admin-btn-primary admin-btn-sm" disabled={!!busy}
+                    title={`Capture @${s.replicaOf} again (resumed, then finished) and rebuild this style from it`}
+                    onClick={async () => await askConfirm(`Update "${s.name}" from @${s.replicaOf}? The capture resumes where it stopped and runs to the end, then this style is rebuilt and the bots using it get its new screens and commands.`, { okLabel: 'Update' }) && refresh(s)}>
+                    {busy === `refresh${s.id}` ? 'Starting…' : 'Update from the bot'}
+                  </button>
+                )}
                 <button type="button" className="admin-btn admin-btn-secondary admin-btn-sm" disabled={!!busy} onClick={() => open(s.id)}>Edit</button>
                 <button type="button" className="admin-btn admin-btn-danger admin-btn-sm" disabled={!!busy}
                   onClick={async () => await askConfirm(`Delete the style "${s.name}"? Bots using it keep their current profile and go back to the default copy.`, { okLabel: 'Delete', danger: true }) && act('delete', () => adminFetch(`/admin/telegram/styles/${s.id}`, { method: 'DELETE' }), 'Style deleted.')}>Delete</button>

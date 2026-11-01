@@ -52,6 +52,7 @@ const AdminAnalytics = lazyPage(() => import('./pages/admin/AdminAnalytics.jsx')
 const AdminSettings = lazyPage(() => import('./pages/admin/AdminSettings.jsx'))
 const AdminAccount = lazyPage(() => import('./pages/admin/AdminAccount.jsx'))
 const AdminTelegram = lazyPage(() => import('./pages/admin/AdminTelegram.jsx'))
+const AdminCaptures = lazyPage(() => import('./pages/admin/AdminCaptures.jsx'))
 const AdminSuperDashboard = lazyPage(() => import('./pages/admin/AdminSuperDashboard.jsx'))
 const AdminInbox = lazyPage(() => import('./pages/admin/AdminInbox.jsx'))
 import { STAFF_ROLES } from './utils/roles.js'
@@ -171,6 +172,7 @@ export default function App() {
                 <Route path="settings" element={<AdminSettings />} />
                 <Route path="account" element={<AdminAccount />} />
                 <Route path="telegram" element={<AdminTelegram />} />
+                <Route path="captures" element={<AdminCaptures />} />
                 <Route path="super" element={<SuperAdminRoute><AdminSuperDashboard /></SuperAdminRoute>} />
               </Route>
               <Route path="/admin-tg" element={<StaffTelegramPage />} />

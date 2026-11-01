@@ -176,7 +176,8 @@ export async function telegramStatus() {
   }));
   // (a style's look can be large: only the catalog it sells goes to the admin)
   return {
-    bots: rows, styles: styles.map(({ look, ...s }) => ({ ...s, catalog: look?.catalog || null })),
+    bots: rows, styles: styles.map(({ look, capture, ...s }) => ({ ...s, catalog: look?.catalog || null, replicaOf: look?.replica ? capture?.bot || null : null })),
+    captures: env.capture.enabled,
     staffLogin: { enabled: await staffLoginEnabled(), domain: siteDomain() },
   };
 }

@@ -228,4 +228,5 @@ export default {
   'Wrong 2FA password.': 'Mot de passe 2FA incorrect.',
   'Unlink this bot': 'Délier ce bot', 'Upload a photo (JPG)': 'Envoyer une photo (JPG)',
   'No style (the bot keeps its own profile)': 'Aucun style (le bot garde son propre profil)',
+  'Update from the bot': 'Mettre à jour depuis le bot', 'Starting…': 'Démarrage…', 'Update': 'Mettre à jour',
 }
