@@ -4,7 +4,7 @@ import { prisma } from '../db.js';
 import { walletService } from '../services/wallet.service.js';
 import { ok } from '../utils/response.js';
 import { env } from '../config/env.js';
-import { findBot, primaryBot, rememberChat, tg, notifyNewMessage } from '../services/telegram.service.js';
+import { findBot, primaryBot, rememberChat, tg, notifyNewMessage, replyFromStaffChat } from '../services/telegram.service.js';
 import { menuScreen, shelfScreen, pageScreen, homeScreen } from '../services/telegramCatalog.js';
 import { withBot, look, siteLinks } from '../services/telegramStyle.js';
 import * as shop from '../services/telegramShop.js';
@@ -182,6 +182,26 @@ ${menu.text}` };
     }
   };
 
+  // The staff answering a customer from the shop's group (reply to a notification)
+  if (upd.message && upd.message.chat?.type !== 'private') {
+    try { if (await replyFromStaffChat(bot, upd.message)) return; } catch (err) { console.error('[Webhook Telegram] staff reply:', err.message); }
+  }
+
+  // A customer writing to the shop in the bot (plain text, no command): kept in
+  // the admin's Messages and posted to the staff group, where they can be answered
+  // (a shop bot asks for 21+ first: only a customer with an account can write;
+  // a replica has no such gate and opens the account)
+  const toShop = async (m, { open = false } = {}) => {
+    const user = (await shop.findCustomer(m.from)) || (open ? await shop.openAccount(m.from).catch(() => null) : null);
+    if (!user) return false;
+    const body = String(m.text).slice(0, 2000);
+    await prisma.message.create({ data: { userId: user.id, senderId: user.id, isStaff: false, body } });
+    if (user.telegramBotId !== bot.id) await prisma.user.update({ where: { id: user.id }, data: { telegramBotId: bot.id } }).catch(() => {});
+    notifyNewMessage(user, body).catch(() => {});
+    await tg(bot.token, 'sendMessage', { chat_id: m.chat.id, reply_to_message_id: m.message_id, text: '✅ Sent to the shop. We answer you right here.' }).catch(() => {});
+    return true;
+  };
+
   // A replica of a captured bot answers with its own screens only: no account,
   // no shop screens (wallet, cart, orders), unknown input brings back its home
   if (look().replica) {
@@ -202,7 +222,10 @@ ${menu.text}` };
     const typed = cmd && cmd !== '/start' ? await resolveCommand(cmd) : null;
     const page = typed?.startsWith('pg:') ? typed.slice(3)
       : !cmd ? (look().pages || []).find(p => (p.triggers || []).includes(text))?.key : null;
-    return show(chatId, (page && pageScreen(page)) || home());
+    if (page) return show(chatId, pageScreen(page) || home());
+    // Text that opens no screen is a message to the shop
+    if (!cmd && m.chat.type === 'private' && await toShop(m, { open: true })) return;
+    return show(chatId, home());
   }
 
   try {
@@ -290,6 +313,8 @@ ${body}` } });
     } else if (priv && cmd && look().layout === 'commands') {
       // A command the bot doesn't know: the original's error, nothing else
       await show(msg.chat.id, unknownCommandScreen());
+    } else if (priv && !cmd && await toShop(msg)) {
+      // A plain message: sent to the shop (Messages and the staff group)
     } else if (priv) {
       await show(msg.chat.id, await screenFor(msg.from, 'menu'));
     }

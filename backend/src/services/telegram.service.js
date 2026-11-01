@@ -110,6 +110,11 @@ export async function sendAs(bot, chatId, html, buttons) {
 }
 
 // Staff notifications: the primary bot, in the shop's chat
+// The customer a staff notification is about, as its last line: replying to that
+// message in the staff group sends the reply to them (see replyFromStaffChat)
+export const customerTag = userId => `\n\n↩️ <i>Reply to this message to answer the customer</i> · #c${userId}`;
+const TAG = /#c(\d+)\b/;
+
 export async function sendTelegram(html, buttons, chatOverride) {
   const bot = await primaryBot();
   return sendAs(bot, chatOverride || bot?.chatId, html, buttons);
@@ -381,7 +386,7 @@ export async function notifyWalletOrder(order, user, payments, { channel = 'site
       ? `📦 <b>Ship to:</b> ${/^-----BEGIN PGP MESSAGE/.test(order.shippingAddress) ? '🔒 PGP encrypted address, decrypt it on the order' : `${escapeHtml(order.name)}\n${escapeHtml(order.shippingAddress)}`}${Number(order.shippingFee) > 0 ? ` · ${money(order.shippingFee)}` : ' · free shipping'}`
       : '📦 No delivery, arrange on Telegram',
     order.note ? `📝 <b>Notes:</b>\n${escapeHtml(order.note)}` : null,
-  ].filter(Boolean).join('\n'), link ? [await staffButton('📦 Open order', link)] : null);
+  ].filter(Boolean).join('\n') + customerTag(user.id), link ? [await staffButton('📦 Open order', link)] : null);
   // An order placed on the website: its receipt also goes to the customer's own
   // Telegram, through the bot they use (the bot shows its own receipt already)
   const receipt = channel === 'site' ? await dmUser(user.id, [
@@ -402,11 +407,37 @@ export async function notifyNewMessage(user, body) {
   const preview = body.length > 400 ? body.slice(0, 400) + '…' : body;
   const link = adminLink(`/messages/${user.id}`);
   pushStaff({ title: `Message from ${user.username}`, body: preview.slice(0, 140), url: `/admin/messages/${user.id}`, tag: `message-${user.id}` });
+  const last = await prisma.order.findFirst({ where: { userId: user.id }, orderBy: { placedAt: 'desc' }, select: { orderNumber: true, status: true } });
   return sendTelegram([
     `💬 <b>New message from ${escapeHtml(user.username)}</b>`,
     telegram ? `✈️ ${escapeHtml(telegram)}` : null,
+    last ? `📦 Last order ${escapeHtml(last.orderNumber)} (${escapeHtml(last.status)})` : null,
+    '',
     escapeHtml(preview),
-  ].filter(Boolean).join('\n'), link ? [await staffButton('💬 Reply in admin', link)] : null);
+  ].filter(v => v !== null).join('\n') + customerTag(user.id), link ? [await staffButton('💬 Reply in admin', link)] : null);
+}
+
+// A message the staff typed in the shop's group as a reply to a notification
+// (new message, paid order): it goes to that customer through their bot and
+// joins the conversation in the admin. Only in the primary bot's staff chat.
+export async function replyFromStaffChat(bot, msg) {
+  const quoted = msg.reply_to_message;
+  if (!bot.isPrimary || !quoted || String(msg.chat.id) !== String(bot.chatId)) return false;
+  if (!quoted.from?.is_bot) return false;
+  const userId = Number((String(quoted.text || quoted.caption || '').match(TAG) || [])[1]);
+  const body = String(msg.text || '').trim();
+  if (!userId || !body) return false;
+  const customer = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, username: true } });
+  if (!customer) { await sendAs(bot, msg.chat.id, '⚠️ This customer no longer exists.'); return true; }
+  // The staff member who answered, when their Telegram is linked to a staff account
+  const staff = msg.from?.id ? await prisma.user.findFirst({ where: { staffTelegramId: String(msg.from.id) }, select: { id: true } }) : null;
+  await prisma.message.create({ data: { userId, senderId: staff?.id ?? null, isStaff: true, body: body.slice(0, 2000) } });
+  const sent = await dmUser(userId, `💬 <b>Message from the shop</b>\n${escapeHtml(body.slice(0, 2000))}`);
+  await tg(bot.token, 'sendMessage', {
+    chat_id: msg.chat.id, reply_to_message_id: msg.message_id, parse_mode: 'HTML',
+    text: sent.delivered ? `✓ Sent to <b>${escapeHtml(customer.username)}</b>` : `⚠️ Not delivered to ${escapeHtml(customer.username)}: ${escapeHtml(sent.reason || 'unknown reason')}. It is kept in Messages.`,
+  }).catch(() => {});
+  return true;
 }
 
 // ─── Customers on the bot ────────────────────────────────────────────────────
