@@ -157,8 +157,17 @@ export async function shelfScreen(slug, page = 1, { inBot = false, account = nul
 // button either opens another page or one of the shop's screens.
 export const ACTION_DATA = { menu: 'menu', deals: `cat:${FIRE}:1`, wallet: 'w', orders: 'o' };
 function pageButton(b) {
+  // A colour from the copied bot (Bot API 9.4: danger, success, primary)
+  const look = ['danger', 'success', 'primary'].includes(b.style) ? { style: b.style } : {};
+  const btn = pageAction(b);
+  return btn ? { ...btn, ...look } : null;
+}
+function pageAction(b) {
   const a = String(b.action || 'menu');
   if (a.startsWith('url:')) return /^https?:\/\//.test(a.slice(4)) ? { text: b.text, url: a.slice(4) } : null;
+  // A Mini App (private chats only) and a copy-text button, as the original had them
+  if (a.startsWith('webapp:')) return /^https:\/\//.test(a.slice(7)) ? { text: b.text, web_app: { url: a.slice(7) } } : null;
+  if (a.startsWith('copy:')) return a.length > 5 ? { text: b.text, copy_text: { text: a.slice(5, 261) } } : null;
   if (a === 'site') return site().startsWith('http') && siteLinks() ? { text: b.text, url: site() } : null;
   if (a.startsWith('page:')) return { text: b.text, callback_data: `pg:${a.slice(5)}`.slice(0, 64) };
   if (a.startsWith('cat:')) return { text: b.text, callback_data: `cat:${a.slice(4)}:1`.slice(0, 64) };

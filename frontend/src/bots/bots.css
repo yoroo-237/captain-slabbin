@@ -34,10 +34,10 @@
 
 /* ---- top bar & navigation ---- */
 .bp-top { position: sticky; top: 0; z-index: 50; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
-.bp-top-in { height: 67px; display: flex; align-items: center; gap: 16px; }
+.bp-top-in { height: 40px; display: flex; align-items: center; gap: 12px; }
 .bp .brand { display: flex; align-items: center; gap: 11px; font-weight: 600; letter-spacing: -.02em; color: inherit; text-decoration: none; }
 .bp .brand small { display: block; font-family: var(--f-mono); font-size: 9px; font-weight: 400; letter-spacing: .08em; opacity: .6; text-transform: uppercase; }
-.bp .brand-mark { width: 39px; height: 39px; border-radius: 50%; display: grid; place-items: center; transition: transform .6s var(--ease); }
+.bp .brand-mark { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; transition: transform .6s var(--ease); }
 .bp .brand-mark img { width: 100%; height: 100%; object-fit: contain; }
 .bp .brand:hover .brand-mark { transform: rotate(-12deg) scale(1.06); }
 .bp-top .spacer { flex: 1; }
@@ -52,10 +52,10 @@
 .bp .status.on .pulse::after { content: ""; position: absolute; inset: -4.5px; border-radius: 50%; border: 1.5px solid var(--orange); animation: pulse 2s infinite; }
 @keyframes pulse { from { transform: scale(.5); opacity: 1; } to { transform: scale(1.7); opacity: 0; } }
 
-.bp-nav { display: flex; gap: 4px; overflow-x: auto; padding: 10px 0 12px; scrollbar-width: none; }
+.bp-nav { display: flex; gap: 2px; overflow-x: auto; padding: 3px 0 5px; scrollbar-width: none; }
 .bp-nav::-webkit-scrollbar { display: none; }
-.bp-nav a { flex: none; display: inline-flex; align-items: center; gap: 7px; height: 33px; padding: 0 14px; border-radius: 999px; border: 1px solid transparent;
-  font-family: var(--f-mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); text-decoration: none;
+.bp-nav a { flex: none; display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px; border-radius: 999px; border: 1px solid transparent;
+  font-family: var(--f-mono); font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); text-decoration: none;
   transition: color .3s var(--ease), border-color .3s var(--ease), background .3s var(--ease); }
 .bp-nav a:hover { color: var(--text); border-color: var(--line); }
 .bp-nav a.active { background: var(--char); color: var(--paper); }
@@ -301,5 +301,24 @@
 .bp .tg-input input { border-radius: 999px; }
 .bp .sim { margin-top: 16px; }
 
+/* Button colours (Bot API 9.4), disabled buttons (10.3), stickers and audio */
+.bp .tg-inline-row button.st-primary { background: #2b6cb0; }
+.bp .tg-inline-row button.st-success { background: var(--ok); }
+.bp .tg-inline-row button.st-danger { background: #b42318; }
+.bp .tg-inline-row button.off { opacity: .45; cursor: not-allowed; }
+.bp .tg-sticker { display: block; width: 160px; max-width: 100%; margin: 0 auto; }
+.bp .tg-audio { display: block; width: 100%; margin-bottom: 6px; }
+.bp .tg-bubble:has(.tg-sticker) { background: transparent; box-shadow: none; }
+
 /* ---- the capture page inside the site's admin ---- */
 .bp.bp-embed { min-height: 0; border-radius: 16px; padding: clamp(16px, 2.6vw, 36px); }
+
+/* Denser: the header and its menu at half height, the page about a quarter smaller */
+.bp .bp-top .brand { font-size: 13px; gap: 8px; }
+.bp .bp-top .brand small { font-size: 8px; }
+.bp .bp-user { font-size: 12px; gap: 8px; }
+.bp .bp-top .btn.sm, .bp .bp-top .mode { height: 26px; }
+.bp .bp-top .btn.sm { padding: 0 10px; font-size: 11px; }
+.bp .bp-top .mode button { padding: 0 9px; font-size: 9px; }
+.bp .bp-main { zoom: .78; }
+.bp .bp-modal, .bp .bp-toasts { zoom: .85; }

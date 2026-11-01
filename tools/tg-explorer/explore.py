@@ -133,21 +133,94 @@ class Explorer:
 
     @staticmethod
     def describe_button(b, markup):
-        """Une cellule du clavier, quelle que soit la couche Telegram (b.type en récent)."""
+        """Une cellule du clavier, quelle que soit la couche Telegram (b.type en récent).
+        Tous les boutons que Telegram permet sont décrits (voir l'API Bot : InlineKeyboardButton,
+        KeyboardButton) ; seuls les boutons de rappel et les textes du clavier sont joués."""
         cell = {"text": b.text}
         kind = getattr(b, "type", b)
         name = type(kind).__name__
+        keyboard = isinstance(markup, types.ReplyKeyboardMarkup)
+        # Couleur et icône du bouton (API 9.4 : KeyboardButtonStyle), bouton désactivé (API 10.3)
+        style = getattr(b, "style", None)
+        if style is not None:
+            for flag, color in (("bg_danger", "danger"), ("bg_success", "success"), ("bg_primary", "primary")):
+                if getattr(style, flag, False):
+                    cell["style"] = color
+                    break
+            if getattr(style, "icon", None):
+                cell["icon"] = str(style.icon)
+        if getattr(b, "disabled", False) or getattr(kind, "disabled", False):
+            cell["disabled"] = True
         if "Callback" in name and hasattr(kind, "data"):
             cell.update(kind="callback", data=kind.data.decode("utf-8", "replace"))
+            if getattr(kind, "requires_password", False):
+                cell["password"] = True
             return cell, ("cb", None, kind.data, b.text)
+        if "WebView" in name:          # web_app (inline ou clavier) : une Mini App
+            cell.update(kind="web_app", url=getattr(kind, "url", ""))
+            return cell, None
+        if "UrlAuth" in name:          # login_url : connexion sur un site
+            cell.update(kind="login_url", url=getattr(kind, "url", ""))
+            return cell, None
         if "Url" in name and hasattr(kind, "url"):
             cell.update(kind="url", url=kind.url)
             return cell, None
-        if isinstance(markup, types.ReplyKeyboardMarkup) and name in ("KeyboardButton", "KeyboardButtonType"):
+        if "Copy" in name:             # copy_text : copie un texte (adresse, code…)
+            cell.update(kind="copy", copy=getattr(kind, "copy_text", ""))
+            return cell, None
+        if "SwitchInline" in name:     # recherche en mode inline
+            cell.update(kind="switch_inline", query=getattr(kind, "query", ""), same_chat=bool(getattr(kind, "same_peer", False)))
+            return cell, None
+        if "RequestPhone" in name:
+            cell["kind"] = "request_contact"
+            return cell, None
+        if "RequestGeoLocation" in name:
+            cell["kind"] = "request_location"
+            return cell, None
+        if "RequestPoll" in name:
+            cell.update(kind="request_poll", quiz=bool(getattr(kind, "quiz", False)))
+            return cell, None
+        if "RequestPeer" in name:      # request_users / request_chat
+            peer = type(getattr(kind, "peer_type", None)).__name__
+            cell.update(kind="request_chat" if "Chat" in peer or "Broadcast" in peer else "request_users")
+            return cell, None
+        if "Game" in name:
+            cell["kind"] = "game"
+            return cell, None
+        if "Buy" in name:
+            cell["kind"] = "pay"
+            return cell, None
+        if "UserProfile" in name:
+            cell.update(kind="user_profile", user_id=getattr(kind, "user_id", None))
+            return cell, None
+        if keyboard and name in ("KeyboardButton", "KeyboardButtonType", "ButtonTypeDefault"):
             cell["kind"] = "keyboard"
             return cell, ("text", b.text)
         cell["kind"] = name
         return cell, None
+
+    @staticmethod
+    def describe_markup(markup):
+        """Les réglages du clavier : persistant, redimensionné, à usage unique, texte
+        d'invite, réponse forcée, clavier retiré."""
+        if isinstance(markup, types.ReplyKeyboardMarkup):
+            return {"type": "keyboard", "resize": bool(markup.resize), "one_time": bool(markup.single_use),
+                    "persistent": bool(getattr(markup, "persistent", False)), "placeholder": getattr(markup, "placeholder", None) or ""}
+        if isinstance(markup, types.ReplyKeyboardForceReply):
+            return {"type": "force_reply", "placeholder": getattr(markup, "placeholder", None) or ""}
+        if isinstance(markup, types.ReplyKeyboardHide):
+            return {"type": "remove_keyboard"}
+        return None
+
+    @staticmethod
+    def media_type(msg):
+        """photo, video, animation (GIF), voice, audio, sticker, document… ou None."""
+        if msg.photo:
+            return "photo"
+        for kind in ("sticker", "gif", "video_note", "video", "voice", "audio", "document"):
+            if getattr(msg, kind, None):
+                return "animation" if kind == "gif" else kind
+        return None
 
     @staticmethod
     def template(text_html, rows):
@@ -175,6 +248,7 @@ class Explorer:
 
         text_html = msg.text or ""
         media = await self.save_media(msg)
+        markup_info = self.describe_markup(markup)
         key = hashlib.sha1(json.dumps([text_html, rows, media], ensure_ascii=False).encode()).hexdigest()[:12]
         if key not in self.screens:
             tkey = self.template(text_html, rows)
@@ -190,6 +264,8 @@ class Explorer:
                 "html": text_html,
                 "raw": msg.raw_text or "",
                 "media": media,
+                "media_type": self.media_type(msg) if media else None,
+                "markup": markup_info,
                 "buttons": rows,
                 "sources": [source],
             }

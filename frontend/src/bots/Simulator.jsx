@@ -25,6 +25,25 @@ function safeHtml(html) {
 const media = (files, bot, name) => (name ? `${files}/${bot}/media/${encodeURIComponent(name)}` : null)
 const IMAGE = /\.(jpe?g|png|webp|gif)$/i
 const isImage = name => !!name && (IMAGE.test(name) || !/\.[a-z0-9]{2,4}$/i.test(name))
+// The kind of media a screen carries (captures before this version only knew the file)
+const kindOf = s => s.media_type || (isImage(s.media) ? 'photo' : /\.(mp4|webm|mov)$/i.test(s.media) ? 'video' : /\.(ogg|oga|mp3|m4a)$/i.test(s.media) ? 'audio' : 'document')
+
+// Every button Telegram allows (Bot API: InlineKeyboardButton, KeyboardButton)
+const ICON = { web_app: '🌐 ', login_url: '🔐 ', copy: '📋 ', switch_inline: '🔎 ', request_contact: '📱 ', request_location: '📍 ',
+  request_poll: '📊 ', request_users: '👤 ', request_chat: '👥 ', pay: '💳 ', game: '🎮 ', user_profile: '👤 ' }
+const WHAT = {
+  switch_inline: ['recherche en mode inline dans une conversation', 'inline search in a chat'],
+  request_contact: ['le client partage son numéro de téléphone', 'the customer shares their phone number'],
+  request_location: ['le client partage sa position', 'the customer shares their location'],
+  request_poll: ['le client crée un sondage', 'the customer creates a poll'],
+  request_users: ['le client choisit des contacts à partager', 'the customer picks contacts to share'],
+  request_chat: ['le client choisit un groupe ou un canal à partager', 'the customer picks a group or channel to share'],
+  pay: ['paiement d’une facture Telegram', 'payment of a Telegram invoice'],
+  game: ['ouvre un jeu', 'opens a game'],
+  user_profile: ['ouvre un profil Telegram', 'opens a Telegram profile'],
+}
+// Reply keyboard (under the box) or buttons under the message
+const replyKeyboard = s => s?.markup?.type === 'keyboard' || (s?.buttons || []).some(r => r.some(b => b.kind === 'keyboard'))
 
 export default function Simulator({ bot, files, onClose }) {
   const [data, setData] = useState(null)
@@ -57,10 +76,18 @@ export default function Simulator({ bot, files, onClose }) {
   const NOT_CAPTURED = L('Cet écran n’a pas été capturé (le bot ne l’a pas encore montré pendant l’exploration).', 'This screen was not captured (the bot did not show it during the exploration).')
 
   const press = (screen, b) => {
-    if (b.kind === 'url' && b.url) { window.open(b.url, '_blank', 'noopener'); return }
+    if (b.disabled) return
+    if (['url', 'web_app', 'login_url'].includes(b.kind) && b.url) { window.open(b.url, '_blank', 'noopener'); return }
+    if (b.kind === 'copy') {
+      navigator.clipboard?.writeText(b.copy || '').catch(() => {})
+      return reply(null, L(`📋 Copié : ${b.copy}`, `📋 Copied: ${b.copy}`))
+    }
+    if (WHAT[b.kind]) return reply(null, `${ICON[b.kind] || ''}${b.text} : ${L(...WHAT[b.kind])}. ${L('Le bouton existe dans la capture ; la simulation ne peut pas le jouer.', 'The button is in the capture; the simulation cannot play it.')}`)
     if (b.kind === 'keyboard') { setChat(c => [...c, { from: 'me', text: b.text }]); return reply(opened(screen, b.text), NOT_CAPTURED) }
     reply(opened(screen, `[${b.text}]`), NOT_CAPTURED)
   }
+  const label = b => <>{b.password ? '🔒 ' : ''}{ICON[b.kind] || ''}{b.text}{b.kind === 'url' && <span aria-hidden="true"> ↗</span>}</>
+  const btnClass = b => [b.style ? `st-${b.style}` : '', b.disabled ? 'off' : ''].filter(Boolean).join(' ') || undefined
   const send = e => {
     e.preventDefault()
     const t = text.trim()
@@ -77,7 +104,8 @@ export default function Simulator({ bot, files, onClose }) {
   const name = profile.name || `@${bot}`
   const photo = profile.photo && media(files, bot, profile.photo)
   // The reply keyboard of the last bot message that has one stays under the box
-  const keyboard = [...chat].reverse().find(m => m.from === 'bot' && (m.screen.buttons || []).some(r => r.some(b => b.kind === 'keyboard')))?.screen
+  const keyboard = [...chat].reverse().find(m => m.from === 'bot' && replyKeyboard(m.screen))?.screen
+  const placeholder = [...chat].reverse().find(m => m.from === 'bot' && m.screen.markup?.placeholder)?.screen.markup.placeholder
 
   return (
     <section className="panel sim" aria-label={L('Simulation du bot', 'Bot simulation')}>
@@ -106,20 +134,23 @@ export default function Simulator({ bot, files, onClose }) {
             <div key={i} className="tg-row">
               <div className="tg-msg">
                 <div className="tg-bubble">
-                  {isImage(m.screen.media) && <img className="tg-img" src={media(files, bot, m.screen.media)} alt="" loading="lazy" />}
-                  {m.screen.media && !isImage(m.screen.media) && <div className="tg-file">📎 {m.screen.media}</div>}
+                  {m.screen.media && (() => {
+                    const src = media(files, bot, m.screen.media)
+                    const k = kindOf(m.screen)
+                    if (k === 'photo' || k === 'sticker') return <img className={k === 'sticker' ? 'tg-sticker' : 'tg-img'} src={src} alt="" loading="lazy" />
+                    if (k === 'video' || k === 'animation' || k === 'video_note') return <video className="tg-img" src={src} muted={k !== 'video'} loop={k !== 'video'} autoPlay={k !== 'video'} controls={k === 'video'} playsInline />
+                    if (k === 'voice' || k === 'audio') return <audio className="tg-audio" src={src} controls />
+                    return <div className="tg-file">📎 {m.screen.media}</div>
+                  })()}
                   {(m.screen.html || m.screen.raw) && <div className="tg-text" dangerouslySetInnerHTML={{ __html: safeHtml(m.screen.html || m.screen.raw) }} />}
                 </div>
-                {(m.screen.buttons || []).some(r => r.some(b => b.kind !== 'keyboard')) && (
+                {!replyKeyboard(m.screen) && (m.screen.buttons || []).length > 0 && (
                   <div className="tg-inline">
-                    {m.screen.buttons.map((row, r) => {
-                      const cells = row.filter(b => b.kind !== 'keyboard')
-                      return cells.length ? (
-                        <div key={r} className="tg-inline-row">
-                          {cells.map((b, k) => <button key={k} type="button" onClick={() => press(m.screen, b)}>{b.text}{b.kind === 'url' && <span aria-hidden="true"> ↗</span>}</button>)}
-                        </div>
-                      ) : null
-                    })}
+                    {m.screen.buttons.map((row, r) => row.length ? (
+                      <div key={r} className="tg-inline-row">
+                        {row.map((b, k) => <button key={k} type="button" className={btnClass(b)} disabled={b.disabled} title={b.url || b.copy || undefined} onClick={() => press(m.screen, b)}>{label(b)}</button>)}
+                      </div>
+                    ) : null)}
                   </div>
                 )}
               </div>
@@ -127,14 +158,14 @@ export default function Simulator({ bot, files, onClose }) {
           ))}
         </div>
         <form className="tg-input" onSubmit={send}>
-          <input value={text} onChange={e => setText(e.target.value)} placeholder={L('Écrire un message ou une /commande', 'Write a message or a /command')} disabled={!data} />
+          <input value={text} onChange={e => setText(e.target.value)} placeholder={placeholder || L('Écrire un message ou une /commande', 'Write a message or a /command')} disabled={!data} />
           <button className="btn primary sm" disabled={!data || !text.trim()}>{L('Envoyer', 'Send')}</button>
         </form>
         {keyboard && (
           <div className="tg-keyboard">
             {keyboard.buttons.map((row, r) => (
               <div key={r} className="tg-inline-row">
-                {row.filter(b => b.kind === 'keyboard').map((b, k) => <button key={k} type="button" onClick={() => press(keyboard, b)}>{b.text}</button>)}
+                {row.map((b, k) => <button key={k} type="button" className={btnClass(b)} disabled={b.disabled} onClick={() => press(keyboard, b)}>{label(b)}</button>)}
               </div>
             ))}
           </div>

@@ -108,7 +108,13 @@ for (const s of [...screens].sort((a, b) => a.order - b.order)) {
     const out = [];
     for (const b of row) {
       // A link stays a link
-      if (b.kind === 'url' && /^https?:\/\//.test(b.url || '')) { out.push({ text: b.text, action: `url:${b.url}` }); stats.linked++; continue; }
+      // Buttons a bot can give as they are: links (a login link opens as a link),
+      // Mini Apps, copy buttons; with their colour (Bot API 9.4)
+      const look = b.style ? { style: b.style } : {};
+      if ((b.kind === 'url' || b.kind === 'login_url') && /^https?:\/\//.test(b.url || '')) { out.push({ text: b.text, action: `url:${b.url}`, ...look }); stats.linked++; continue; }
+      if (b.kind === 'web_app' && /^https:\/\//.test(b.url || '')) { out.push({ text: b.text, action: `webapp:${b.url}`, ...look }); stats.linked++; continue; }
+      if (b.kind === 'copy' && b.copy) { out.push({ text: b.text, action: `copy:${String(b.copy).slice(0, 256)}`, ...look }); stats.linked++; continue; }
+      // Contact, location, polls, payments, games, inline search: the replica cannot answer them
       if (b.kind !== 'callback' && b.kind !== 'keyboard') { stats.dropped++; continue; }
       if (isBack(b)) { if (mergeInto) { out.push({ text: b.text, action: 'menu' }); stats.back++; } else if (menuKey) { out.push({ text: b.text, action: `page:${menuKey}` }); stats.back++; } else stats.dropped++; continue; }
       const target = targetOf(s, b);

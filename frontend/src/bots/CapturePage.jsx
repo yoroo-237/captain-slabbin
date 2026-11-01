@@ -10,7 +10,7 @@ import Simulator from './Simulator.jsx'
 // and pictures; the capture then gives a style and products to this platform.
 const api = (path, body) => adminFetch(`/admin/capture${path}`, body === undefined ? {} : { method: 'POST', body: JSON.stringify(body) })
 
-const DEFAULTS = { profile: 'explorer', wait: '2.5', maxActions: '200', skip: '', allow: '',
+const DEFAULTS = { profile: 'explorer', wait: '2.5', maxActions: '20000', skip: '', allow: '',
   fresh: false, noMedia: false, noCommands: false, strict: false }
 
 // Same rules as the server: @bot, bot, t.me/bot?start=x all give 'bot'
@@ -467,7 +467,6 @@ export default function CapturePage() {
 
               <div className="row3">
                 <label className="field">{L('Attente (s)', 'Wait (s)')}<input type="number" min="0.5" max="60" step="0.5" value={opts.wait} onChange={set('wait')} /></label>
-                <label className="field">{L('Actions max', 'Max actions')}<input type="number" min="1" max="20000" value={opts.maxActions} onChange={set('maxActions')} /></label>
               </div>
 
               <div className="toggles">
