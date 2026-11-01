@@ -82,6 +82,9 @@ class Explorer:
         self.profile = {}
         # Retour sur un écran : le chemin qui y mène depuis le départ, et l'écran
         # d'où vient chaque bouton (un bot qui modifie son message efface les autres)
+        self.button_screen = {}  # données d'un bouton -> l'écran (au chiffre près) qui le porte
+        self.label_results = {}  # libellé -> {"played": n, "screens": [clés obtenues]}
+        self.skipped_known = 0
         self.paths = {}       # clé d'écran -> [["cmd"|"text"|"cb", valeur], ...]
         self.origin = {}      # données du bouton (base64) -> clé de l'écran qui le porte
         self.templates = set()  # écrans au chiffre près (quantité, prix, page…)
@@ -99,6 +102,18 @@ class Explorer:
         label = action[-1] if kind == "cb" else action[1]
         if key in self.seen:
             return
+        if kind == "cb":
+            # Le même bouton sur le même écran (données différentes à chaque affichage) : une fois
+            same = ("btn", self.button_screen.get(action[2]), self.norm(label))
+            if same in self.seen:
+                return
+            self.seen.add(same)
+            # Un bouton présent partout (retour, accueil, panier…) qui a déjà mené deux fois au
+            # même écran : il y mènera encore, inutile de le rejouer depuis chaque écran
+            known = self.label_results.get(self.norm(label))
+            if known and known["played"] >= 2 and len(known["screens"]) == 1:
+                self.skipped_known += 1
+                return
         if kind == "cb" and BACK.search(label or ""):
             key = ("back", label.strip())
             if key in self.seen:
@@ -226,6 +241,11 @@ class Explorer:
         return None
 
     @staticmethod
+    def norm(label):
+        """Un libellé sans ses nombres : « 🛒 £0.00 » et « 🛒 £8.00 » sont le même bouton."""
+        return re.sub(r"\d+(?:[.,]\d+)?", "#", (label or "").strip())
+
+    @staticmethod
     def template(text_html, rows):
         """L'écran sans ses nombres : « 5.00 pcs [£35.00] » et « 6.00 pcs [£42.00] »
         sont le même écran, dont les boutons ne sont donc joués qu'une fois."""
@@ -237,6 +257,11 @@ class Explorer:
         rows = []
         markup = msg.reply_markup
         children = []
+        # L'écran au chiffre près, connu avant les boutons : il sert à ne jouer chaque bouton
+        # qu'une fois par écran
+        tkey_now = None
+        if isinstance(markup, (types.ReplyInlineMarkup, types.ReplyKeyboardMarkup)):
+            tkey_now = self.template(msg.text or "", [[{"text": b.text} for b in row.buttons] for row in markup.rows])
         if isinstance(markup, (types.ReplyInlineMarkup, types.ReplyKeyboardMarkup)):
             for row in markup.rows:
                 cells = []
@@ -244,6 +269,7 @@ class Explorer:
                     cell, child = self.describe_button(b, markup)
                     if child and child[0] == "cb":
                         child = ("cb", msg.id, child[2], child[3])
+                        self.button_screen[child[2]] = tkey_now
                     if child:
                         children.append(child)
                     cells.append(cell)
@@ -252,7 +278,11 @@ class Explorer:
         text_html = msg.text or ""
         media = await self.save_media(msg)
         markup_info = self.describe_markup(markup)
-        key = hashlib.sha1(json.dumps([text_html, rows, media], ensure_ascii=False).encode()).hexdigest()[:12]
+        # Ce que l'écran montre (texte, libellés, image), sans les données cachées des boutons :
+        # beaucoup de bots y mettent un jeton qui change à chaque affichage, et le même écran
+        # passerait pour un nouveau à chaque fois (boucle)
+        shown = [[{k: v for k, v in c.items() if k not in ("data",)} for c in row] for row in rows]
+        key = hashlib.sha1(json.dumps([text_html, shown, media], ensure_ascii=False).encode()).hexdigest()[:12]
         if key not in self.screens:
             tkey = self.template(text_html, rows)
             repeat = tkey in self.templates
@@ -410,6 +440,12 @@ class Explorer:
             if edited:
                 edited_key = await self.capture(edited, label, path)
                 keys.append(edited_key)
+        if action[0] == "cb" and not error:
+            known = self.label_results.setdefault(self.norm(action[3]), {"played": 0, "screens": []})
+            known["played"] += 1
+            for k in keys:
+                if k not in known["screens"]:
+                    known["screens"].append(k)
         step = {"action": label, "alert": alert, "error": error, "screens": keys}
         if edited_key and edited_key not in keys[:-1]:
             step["edited"] = edited_key
@@ -454,6 +490,8 @@ class Explorer:
                 continue
             if len(self.steps) % SAVE_EVERY == 0:
                 self.save_state()
+        if self.skipped_known:
+            print(f"{self.skipped_known} bouton(s) déjà connus non rejoués (ils mènent toujours au même écran).")
         if self.queue:
             print(f"{len(self.queue)} action(s) non jouée(s) : relancez pour continuer là où le parcours s'est arrêté.")
 
@@ -480,10 +518,11 @@ class Explorer:
             return [base64.b64encode(x).decode() if isinstance(x, bytes) else x for x in action]
         state = {
             "queue": [pack(a) for a in self.queue],
-            "seen": [[k, base64.b64encode(v).decode() if isinstance(v, bytes) else v] for k, v in self.seen],
+            "seen": [[k, base64.b64encode(v).decode() if isinstance(v, bytes) else v] for k, v in (s for s in self.seen if len(s) == 2)],
+            "seen_buttons": [list(s) for s in self.seen if len(s) == 3],
             "per_prefix": self.per_prefix, "media_cache": self.media_cache,
             "last_id": self.last_id, "ignored": self.ignored,
-            "paths": self.paths, "origin": self.origin,
+            "paths": self.paths, "origin": self.origin, "label_results": self.label_results,
         }
         (self.out / "state.json").write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
         self.write_data()
@@ -501,6 +540,7 @@ class Explorer:
         self.per_prefix, self.media_cache = state["per_prefix"], state["media_cache"]
         self.last_id, self.ignored = state["last_id"], state["ignored"]
         self.paths, self.origin = state.get("paths", {}), state.get("origin", {})
+        self.label_results = state.get("label_results", {})
         self.templates = {self.template(s.get("html", ""), s.get("buttons", [])) for s in self.screens.values()}
         # Les données de callback sont des octets, encodés en base64 dans le JSON
         for action in state["queue"]:
@@ -509,6 +549,8 @@ class Explorer:
             self.queue.append(tuple(action))
         for kind, value in state["seen"]:
             self.seen.add((kind, base64.b64decode(value) if kind == "cb" else value))
+        for item in state.get("seen_buttons", []):
+            self.seen.add(tuple(item))
         # Une file enregistrée par une ancienne version garde un retour par écran : un seul par libellé
         played = {s["action"] for s in self.steps}
         queued, self.queue, dropped = list(self.queue), deque(), 0
