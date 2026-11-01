@@ -66,6 +66,15 @@ export default function BotsLayout({ fallback }) {
               <span className="brand-mark" aria-hidden="true"><img src="/logo-mko-192.png" alt="" width="39" height="39" /></span>
               <span>Bots<small>{L('Plateforme des bots Telegram', 'Telegram bots platform')}</small></span>
             </Link>
+            <nav className="bp-nav" aria-label={L('Sections', 'Sections')}>
+              {items.map((i, k) => i.sep
+                ? <span key={k} className="sep" aria-hidden="true" />
+                : (
+                  <NavLink key={i.path} to={i.path} end={i.end} className={({ isActive }) => (isActive ? 'active' : '')}>
+                    {i.label}{i.badge && badges[i.badge] > 0 && <span className="nb">{badges[i.badge]}</span>}
+                  </NavLink>
+                ))}
+            </nav>
             <span className="spacer" />
             <span className="bp-user">
               <Link to="/admin/account" className="who-name" style={{ color: 'inherit', textDecoration: 'none' }} title={L('Mon compte : identifiant et mot de passe', 'My account: sign-in name and password')}>{user.username}</Link>
@@ -74,15 +83,7 @@ export default function BotsLayout({ fallback }) {
               <button type="button" className="btn sm" onClick={logout}>{L('Déconnexion', 'Sign out')}</button>
             </span>
           </div>
-          <nav className="bp-nav" aria-label={L('Sections', 'Sections')}>
-            {items.map((i, k) => i.sep
-              ? <span key={k} className="sep" aria-hidden="true" />
-              : (
-                <NavLink key={i.path} to={i.path} end={i.end} className={({ isActive }) => (isActive ? 'active' : '')}>
-                  {i.label}{i.badge && badges[i.badge] > 0 && <span className="nb">{badges[i.badge]}</span>}
-                </NavLink>
-              ))}
-          </nav>
+
         </div>
       </header>
       <main className="bp-wrap bp-main">
