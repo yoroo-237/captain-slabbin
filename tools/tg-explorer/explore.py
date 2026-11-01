@@ -519,8 +519,29 @@ class Explorer:
         path = self.paths.get(screen)
         if not path:
             return None
-        print(f"  retour sur l'écran du bouton [{label}] ({len(path)} étape(s))")
+        # Le bouton est encore affiché quelque part : aucun chemin à refaire
+        here = await self.find_button(label, data)
+        if here:
+            return here
+        # Sinon on repart du dernier carrefour encore affiché (l'étape la plus avancée
+        # du chemin dont le bouton est visible), pas de /start
         i = 0
+        for j in range(len(path) - 1, -1, -1):
+            if path[j][0] == "cb" and await self.find_button(path[j][1]):
+                i = j
+                break
+        print(f"  retour sur l'écran du bouton [{label}] ({len(path) - i} étape(s){' sur ' + str(len(path)) if i else ''})")
+        found = await self.replay(path, i, data, label)
+        if not found and i:
+            # Le carrefour visible était périmé : chemin complet depuis le début
+            print(f"  carrefour périmé : chemin complet ({len(path)} étape(s))")
+            found = await self.replay(path, 0, data, label)
+        if not found:
+            print(f"  écran du bouton [{label}] introuvable après le retour")
+        return found
+
+    async def replay(self, path, i, data, label):
+        """Rejoue le chemin à partir de l'étape i, puis attend le bouton voulu."""
         while i < len(path):
             kind, value = path[i]
             if kind in ("cmd", "text"):
@@ -555,10 +576,7 @@ class Explorer:
         latest = await self.client.get_messages(self.bot, limit=1)
         if latest:
             self.last_id = max(self.last_id, latest[0].id)
-        found = await self.wait_button(label, data)
-        if not found:
-            print(f"  écran du bouton [{label}] introuvable après le retour")
-        return found
+        return await self.wait_button(label, data)
 
     async def perform(self, action):
         alert = None
