@@ -3,6 +3,7 @@ import { adminFetch } from '../pages/admin/utils/api.js'
 import { useUi, Modal } from './ui.jsx'
 import { L, locale } from './i18n.js'
 import { BASE } from '../utils/api.js'
+import Simulator from './Simulator.jsx'
 
 // Captures: what tg-explorer does on a PC, run by the bots platform's server.
 // The platform's Telegram account browses a bot and records its screens, buttons
@@ -245,14 +246,13 @@ function Account({ account, checking, profile, setProfile, busy, onCheck, onSign
   )
 }
 
-function CaptureCard({ c, files, busy, onResume, onImport, onRemove }) {
+function CaptureCard({ c, files, busy, onResume, onImport, onRemove, onSimulate }) {
   const updated = new Date(c.updated).toLocaleString(locale, { dateStyle: 'short', timeStyle: 'short' })
-  const report = `${files}/${c.name}/report.html`
   return (
     <article className="card">
-      <a className="cover" href={report} target="_blank" rel="noreferrer" aria-label={L(`Rapport de @${c.name}`, `Report of @${c.name}`)}>
+      <button type="button" className="cover" onClick={() => onSimulate(c.name)} aria-label={L(`Simuler @${c.name}`, `Simulate @${c.name}`)} style={{ border: 0, padding: 0, cursor: 'pointer', width: '100%' }}>
         {c.cover ? <img src={`${files}/${c.name}/media/${encodeURIComponent(c.cover)}`} alt="" loading="lazy" /> : <span>@{c.name.slice(0, 2)}</span>}
-      </a>
+      </button>
       <div className="card-body">
         <div className="card-title">
           <h3>@{c.name}</h3>
@@ -266,7 +266,7 @@ function CaptureCard({ c, files, busy, onResume, onImport, onRemove }) {
           {c.queued > 0 && <li className="warn"><b>{c.queued}</b> {L('en attente', 'queued')}</li>}
         </ul>
         <div className="actions">
-          <a className="btn sm" href={report} target="_blank" rel="noreferrer">{L('Rapport', 'Report')} <span className="arrow" aria-hidden="true">↗</span></a>
+          <button type="button" className="btn sm primary" onClick={() => onSimulate(c.name)}>{L('Simuler', 'Simulate')} <span className="arrow" aria-hidden="true">↓</span></button>
           {c.queued > 0 && <button className="btn sm" disabled={busy} onClick={() => onResume(c.name)}>{L('Reprendre', 'Resume')}</button>}
           <span className="spacer" />
           <button className="btn sm" disabled={busy} onClick={() => onRemove(c.name)} title={L('Supprimer la capture', 'Delete the capture')}>×</button>
@@ -340,6 +340,7 @@ export default function CapturePage() {
   const [filesKey, setFilesKey] = useState('')
   const [myBots, setMyBots] = useState([])
   const [importing, setImporting] = useState(null) // { bot, kind }
+  const [simulating, setSimulating] = useState('')
   const { notify, confirm } = useUi()
   const [error, setError] = useState('')
   const set = key => e => setOpts(o => ({ ...o, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
@@ -414,6 +415,7 @@ export default function CapturePage() {
 
   const busy = state.running
   const files = `${BASE}/api/capture-files/${filesKey}`
+  const latest = [...captures].sort((a, b) => String(b.updated).localeCompare(String(a.updated)))[0]?.name || ''
   return (
     <>
       <header className="hero">
@@ -525,9 +527,12 @@ export default function CapturePage() {
         {captures.length === 0
           ? <div className="empty-state" style={{ marginTop: 18 }}>{L('Aucune capture pour l’instant. Lancez une exploration ci-dessus.', 'No capture yet. Start an exploration above.')}</div>
           : <div className="cards">{captures.map(c => (
-            <CaptureCard key={c.name} c={c} files={files} busy={busy} onResume={resume} onImport={(bot, kind) => setImporting({ bot, kind })} onRemove={remove} />
+            <CaptureCard key={c.name} c={c} files={files} busy={busy} onResume={resume} onImport={(bot, kind) => setImporting({ bot, kind })} onRemove={remove}
+              onSimulate={name => { setSimulating(name); setTimeout(() => document.getElementById('sim')?.scrollIntoView({ behavior: 'smooth' }), 50) }} />
           ))}</div>}
       </section>
+      {/* The capture shown in the simulation: the one picked, else the latest */}
+      {filesKey && (simulating || latest) && <div id="sim"><Simulator key={simulating || latest} bot={simulating || latest} files={files} /></div>}
       {importing && <ImportDialog {...importing} bots={myBots} onClose={() => setImporting(null)} onStart={startImport} />}
     </>
   )

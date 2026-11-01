@@ -262,5 +262,44 @@
   .bp .row-head .mode button { flex: 1; }
 }
 
+/* ---- simulation: a capture replayed like a Telegram chat, in our colours ---- */
+.bp .tg { max-width: 460px; margin: 0 auto; border-radius: 22px; overflow: hidden; border: 1px solid var(--line);
+  background: var(--paper-2); box-shadow: 0 24px 50px -30px rgba(22, 24, 27, .45); display: flex; flex-direction: column; }
+.bp .tg-head { display: flex; align-items: center; gap: 11px; padding: 12px 16px; background: var(--char); color: var(--paper); }
+.bp .tg-avatar { width: 40px; height: 40px; border-radius: 50%; flex: none; display: grid; place-items: center; overflow: hidden;
+  background: var(--orange); color: var(--paper); font-family: var(--f-serif); font-style: italic; font-size: 20px; text-transform: uppercase; }
+.bp .tg-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.bp .tg-who { display: grid; line-height: 1.25; min-width: 0; }
+.bp .tg-who b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bp .tg-who small { font-family: var(--f-mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted-dark); }
+.bp .tg-chat { height: 560px; overflow-y: auto; padding: 16px 12px; display: flex; flex-direction: column; gap: 10px;
+  background: radial-gradient(circle at 20% 10%, rgba(205, 73, 24, .05), transparent 40%), var(--paper-2); }
+.bp .tg-row { display: flex; }
+.bp .tg-row.me { justify-content: flex-end; }
+.bp .tg-msg { max-width: 86%; display: grid; gap: 4px; }
+.bp .tg-bubble { background: var(--card); border-radius: 16px 16px 16px 4px; padding: 9px 12px; font-size: 14px; line-height: 1.45;
+  overflow-wrap: anywhere; box-shadow: 0 1px 0 rgba(22, 24, 27, .06); }
+.bp .tg-bubble.me { background: var(--orange); color: var(--paper); border-radius: 16px 16px 4px 16px; max-width: 80%; }
+.bp .tg-img { display: block; width: calc(100% + 24px); margin: -9px -12px 8px; max-height: 320px; object-fit: cover; border-radius: 16px 16px 0 0; }
+.bp .tg-bubble:not(:has(.tg-text)) .tg-img { margin-bottom: -9px; border-radius: 16px 16px 16px 4px; }
+.bp .tg-text a { color: var(--orange); }
+.bp .tg-text pre, .bp .tg-text code { font-family: var(--f-mono); font-size: 12px; background: var(--paper-2); border-radius: 6px; padding: 1px 4px; white-space: pre-wrap; }
+.bp .tg-text blockquote { margin: 4px 0; padding-left: 10px; border-left: 3px solid var(--orange); }
+.bp .tg-file { font-family: var(--f-mono); font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.bp .tg-inline, .bp .tg-keyboard { display: grid; gap: 4px; }
+.bp .tg-inline-row { display: flex; gap: 4px; }
+.bp .tg-inline-row button { flex: 1; min-width: 0; font: inherit; font-size: 13px; padding: 8px 6px; border: 0; border-radius: 10px; cursor: pointer;
+  background: rgba(42, 46, 50, .78); color: var(--paper); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  transition: background .3s var(--ease); }
+.bp .tg-inline-row button:hover { background: var(--orange); }
+.bp .tg-keyboard { padding: 8px; background: var(--paper-3); }
+.bp .tg-keyboard .tg-inline-row button { background: var(--card); color: var(--text); border: 1px solid var(--line); }
+.bp .tg-keyboard .tg-inline-row button:hover { background: var(--orange); color: var(--paper); }
+.bp .tg-note { align-self: center; max-width: 90%; text-align: center; font-size: 12px; color: var(--muted); background: rgba(243, 239, 232, .9);
+  border-radius: 999px; padding: 4px 12px; }
+.bp .tg-input { display: flex; gap: 8px; padding: 10px; background: var(--card); border-top: 1px solid var(--line); }
+.bp .tg-input input { border-radius: 999px; }
+.bp .sim { margin-top: 16px; }
+
 /* ---- the capture page inside the site's admin ---- */
 .bp.bp-embed { min-height: 0; border-radius: 16px; padding: clamp(16px, 2.6vw, 36px); }
