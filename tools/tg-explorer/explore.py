@@ -84,6 +84,7 @@ class Explorer:
         # d'où vient chaque bouton (un bot qui modifie son message efface les autres)
         self.button_screen = {}  # données d'un bouton -> l'écran (au chiffre près) qui le porte
         self.answered = set()    # écrans dont la question ou le captcha a déjà reçu une réponse
+        self.retried = set()     # boutons déjà remis en file après un échec
         self.joined = []         # canaux rejoints parce que le bot l'exigeait
         self.inline = None       # ce que le bot propose en mode inline (@bot …)
         self.label_results = {}  # libellé -> {"played": n, "screens": [clés obtenues]}
@@ -488,7 +489,28 @@ class Explorer:
                     bdata = getattr(getattr(b, "type", b), "data", None)
                     if bdata is not None and (bdata == data or (label and b.text == label)):
                         return recent.id, bdata
+        if label:
+            wanted = self.norm(label)
+            async for recent in self.client.iter_messages(self.bot, limit=limit):
+                markup = recent.reply_markup
+                if recent.out or not isinstance(markup, types.ReplyInlineMarkup):
+                    continue
+                for row in markup.rows:
+                    for b in row.buttons:
+                        bdata = getattr(getattr(b, "type", b), "data", None)
+                        if bdata is not None and self.norm(b.text) == wanted:
+                            return recent.id, bdata
         return None
+
+    async def wait_button(self, label, data=None, timeout=6.0):
+        """Le bouton, attendu le temps que le bot affiche ou modifie son écran."""
+        waited = 0.0
+        while True:
+            found = await self.find_button(label, data)
+            if found or waited >= timeout:
+                return found
+            await asyncio.sleep(0.75)
+            waited += 0.75
 
     async def go_back_to(self, data, label):
         """Le bot a remplacé l'écran qui portait ce bouton : on refait le chemin qui y
@@ -498,23 +520,45 @@ class Explorer:
         if not path:
             return None
         print(f"  retour sur l'écran du bouton [{label}] ({len(path)} étape(s))")
-        for kind, value in path:
+        i = 0
+        while i < len(path):
+            kind, value = path[i]
             if kind in ("cmd", "text"):
                 await self.client.send_message(self.bot, value)
-            else:
-                found = await self.find_button(value)
-                if not found:
-                    return None
-                try:
-                    await self.client(functions.messages.GetBotCallbackAnswerRequest(peer=self.bot, msg_id=found[0], data=found[1]))
-                except errors.BotResponseTimeoutError:
-                    pass
-            # Écrans de passage : pas besoin de l'attente complète
+                i += 1
+                await asyncio.sleep(min(self.args.wait, 1.5))
+                continue
+            # Le bouton voulu est peut-être déjà là (raccourci)
+            if await self.find_button(label, data):
+                break
+            found = await self.wait_button(value)
+            if not found:
+                # Une étape qui ne s'affiche plus (conditions déjà acceptées, âge déjà
+                # confirmé…) : on saute à la première étape suivante visible
+                later = None
+                for j in range(i + 1, len(path)):
+                    if path[j][0] == "cb" and await self.find_button(path[j][1]):
+                        later = j
+                        break
+                if later is None:
+                    break
+                i = later
+                continue
+            try:
+                await self.client(functions.messages.GetBotCallbackAnswerRequest(peer=self.bot, msg_id=found[0], data=found[1]))
+            except errors.BotResponseTimeoutError:
+                pass
+            except errors.RPCError as e:
+                print(f"  étape [{value}] refusée ({type(e).__name__})")
+            i += 1
             await asyncio.sleep(min(self.args.wait, 1.5))
         latest = await self.client.get_messages(self.bot, limit=1)
         if latest:
             self.last_id = max(self.last_id, latest[0].id)
-        return await self.find_button(label, data)
+        found = await self.wait_button(label, data)
+        if not found:
+            print(f"  écran du bouton [{label}] introuvable après le retour")
+        return found
 
     async def perform(self, action):
         alert = None
@@ -559,6 +603,12 @@ class Explorer:
             except errors.RPCError as e:
                 # Bouton périmé, bot muet, message supprimé… : on note et on passe à la suite
                 error = type(e).__name__
+                if action[0] == "cb" and isinstance(e, (errors.DataInvalidError, errors.MessageIdInvalidError)) \
+                        and action[2] not in self.retried:
+                    # Rejoué une fois en fin de file : l'écran aura peut-être été retrouvé d'ici là
+                    self.retried.add(action[2])
+                    self.queue.append(action)
+                    error += " (nouvel essai plus tard)"
                 break
         await asyncio.sleep(self.args.wait)
 
