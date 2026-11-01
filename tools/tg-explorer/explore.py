@@ -43,6 +43,9 @@ BACK = re.compile(r"^\W*(⇇|⇆|<<?\s*back\b|back\b)", re.I)
 IMAGE_EXT = (".jpg", ".jpeg", ".png", ".webp", ".gif")
 SAVE_EVERY = 10
 RECONNECT_TRIES, RECONNECT_WAIT = 20, 30  # secondes entre deux essais quand le réseau tombe
+# Une action qui ne finit pas (Telegram ou le bot ne répond pas) est abandonnée après ce
+# délai : la capture continue avec la suivante au lieu de caler
+STEP_TIMEOUT = 120
 DEFAULT_CAPTURES = Path(__file__).with_name("captures")
 
 
@@ -334,7 +337,8 @@ class Explorer:
                     await self.client(functions.messages.GetBotCallbackAnswerRequest(peer=self.bot, msg_id=found[0], data=found[1]))
                 except errors.BotResponseTimeoutError:
                     pass
-            await asyncio.sleep(self.args.wait)
+            # Écrans de passage : pas besoin de l'attente complète
+            await asyncio.sleep(min(self.args.wait, 1.5))
         latest = await self.client.get_messages(self.bot, limit=1)
         if latest:
             self.last_id = max(self.last_id, latest[0].id)
@@ -371,8 +375,14 @@ class Explorer:
                 alert, pressed = await self.perform(action)
                 break
             except errors.FloodWaitError as e:
-                print(f"  attente imposée par Telegram : {e.seconds}s")
-                await asyncio.sleep(e.seconds + 1)
+                # Telegram limite le rythme : on attend, en le disant, et un arrêt reste possible
+                print(f"  attente imposée par Telegram : {e.seconds}s (la capture reprend ensuite toute seule)")
+                left = e.seconds + 1
+                while left > 0 and not stop_requested(self.args):
+                    await asyncio.sleep(min(30, left))
+                    left -= 30
+                    if left > 0:
+                        print(f"  … encore {left}s d'attente imposée")
                 error = type(e).__name__ if attempt else None
             except errors.RPCError as e:
                 # Bouton périmé, bot muet, message supprimé… : on note et on passe à la suite
@@ -421,7 +431,12 @@ class Explorer:
                 break
             action = self.queue.popleft()
             try:
-                await self.step(action)
+                await asyncio.wait_for(self.step(action), STEP_TIMEOUT)
+            except asyncio.TimeoutError:
+                label = action[1] if action[0] != "cb" else f"[{action[3]}]"
+                self.steps.append({"action": label, "alert": None, "error": "Timeout", "screens": []})
+                print(f"{len(self.steps):>4}  {label[:60]:<60} -> sans réponse après {STEP_TIMEOUT}s : passée")
+                continue
             except (ConnectionError, OSError) as e:
                 # Réseau coupé : l'action repart en tête de file, la capture est écrite,
                 # puis on attend que la connexion revienne au lieu de s'arrêter
@@ -431,6 +446,11 @@ class Explorer:
                 if not await self.reconnect():
                     print("Pas de réseau depuis plusieurs minutes : arrêt. Relancez pour reprendre là où le parcours s'est arrêté.")
                     break
+                continue
+            except Exception as e:  # une erreur sur une action ne doit pas arrêter toute la capture
+                label = action[1] if action[0] != "cb" else f"[{action[3]}]"
+                self.steps.append({"action": label, "alert": None, "error": type(e).__name__, "screens": []})
+                print(f"{len(self.steps):>4}  {label[:60]:<60} -> erreur {type(e).__name__} : {str(e)[:80]} (action passée)")
                 continue
             if len(self.steps) % SAVE_EVERY == 0:
                 self.save_state()

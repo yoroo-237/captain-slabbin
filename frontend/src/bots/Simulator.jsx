@@ -19,7 +19,37 @@ function safeHtml(html) {
     }
   }
   walk(doc.body.firstChild)
+  linkify(doc, doc.body.firstChild)
   return doc.body.firstChild.innerHTML
+}
+
+// Like Telegram: /commands, web addresses and @usernames in a message are links
+const LINKS = /(^|[\s(])(\/[A-Za-z][A-Za-z0-9_]{0,31})(?![\w/])|(https?:\/\/[^\s<]+[^\s<.,;:!?)])|(^|[\s(])@([A-Za-z][A-Za-z0-9_]{3,31})/g
+function linkify(doc, root) {
+  const texts = []
+  const tw = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  while (tw.nextNode()) if (!tw.currentNode.parentElement.closest('a, code, pre')) texts.push(tw.currentNode)
+  for (const node of texts) {
+    const value = node.nodeValue
+    LINKS.lastIndex = 0
+    if (!LINKS.test(value)) continue
+    LINKS.lastIndex = 0
+    const frag = doc.createDocumentFragment()
+    let at = 0, m
+    while ((m = LINKS.exec(value))) {
+      const [all, lead1, cmd, url, lead2, user] = m
+      const lead = lead1 || lead2 || ''
+      frag.append(value.slice(at, m.index) + lead)
+      const a = doc.createElement('a')
+      if (cmd) { a.textContent = cmd; a.setAttribute('data-cmd', cmd); a.setAttribute('href', '#') }
+      else if (url) { a.textContent = url; a.setAttribute('href', url); a.setAttribute('target', '_blank'); a.setAttribute('rel', 'noreferrer') }
+      else { a.textContent = `@${user}`; a.setAttribute('href', `https://t.me/${user}`); a.setAttribute('target', '_blank'); a.setAttribute('rel', 'noreferrer') }
+      frag.append(a)
+      at = m.index + all.length
+    }
+    frag.append(value.slice(at))
+    node.replaceWith(frag)
+  }
 }
 
 const media = (files, bot, name) => (name ? `${files}/${bot}/media/${encodeURIComponent(name)}` : null)
@@ -179,7 +209,8 @@ export default function Simulator({ bot, files, onClose }) {
               <div className="tg-msg">
                 <div className="tg-bubble">
                   {mediaOf(m.screen)}
-                  {(m.screen.html || m.screen.raw) && <div className="tg-text" dangerouslySetInnerHTML={{ __html: safeHtml(m.screen.html || m.screen.raw) }} />}
+                  {(m.screen.html || m.screen.raw) && <div className="tg-text" onClick={e => { const c = e.target.closest('[data-cmd]'); if (c) { e.preventDefault(); sendText(c.dataset.cmd, m.screen) } }}
+                    dangerouslySetInnerHTML={{ __html: safeHtml(m.screen.html || m.screen.raw) }} />}
                   <span className="tg-time">{m.edited ? L('modifié ', 'edited ') : ''}{m.time}</span>
                 </div>
                 {!replyKeyboard(m.screen) && (m.screen.buttons || []).length > 0 && (
