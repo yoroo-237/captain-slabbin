@@ -11,7 +11,7 @@ import Simulator from './Simulator.jsx'
 const api = (path, body) => adminFetch(`/admin/capture${path}`, body === undefined ? {} : { method: 'POST', body: JSON.stringify(body) })
 
 const DEFAULTS = { profile: 'explorer', wait: '2.5', maxActions: '20000', skip: '', allow: '',
-  fresh: false, noMedia: false, noCommands: false, strict: false }
+  fresh: false, noMedia: false, noCommands: false, strict: false, noJoin: false, noInline: false, startParam: '' }
 
 // Same rules as the server: @bot, bot, t.me/bot?start=x all give 'bot'
 const BOT = /^[A-Za-z][A-Za-z0-9_]{2,63}$/
@@ -465,6 +465,9 @@ export default function CapturePage() {
                 </ul>
               )}
 
+              <label className="field">{L('Lien de démarrage (facultatif)', 'Start link (optional)')}
+                <input value={opts.startParam} onChange={set('startParam')} spellCheck="false" placeholder={L('t.me/LeBot?start=parrain42 ou parrain42', 't.me/TheBot?start=ref42 or ref42')} />
+              </label>
               <div className="row3">
                 <label className="field">{L('Attente (s)', 'Wait (s)')}<input type="number" min="0.5" max="60" step="0.5" value={opts.wait} onChange={set('wait')} /></label>
               </div>
@@ -474,6 +477,8 @@ export default function CapturePage() {
                 <Toggle checked={opts.noMedia} onChange={set('noMedia')}>{L('Sans images', 'Without pictures')}</Toggle>
                 <Toggle checked={opts.noCommands} onChange={set('noCommands')}>{L('Sans commandes trouvées dans les textes', 'Without commands found in the texts')}</Toggle>
                 <Toggle checked={opts.strict} onChange={set('strict')}>{L('Mode strict (ignorer achats, paiements, panier, commandes, dépôt…)', 'Strict mode (skip buying, payments, cart, orders, deposit…)')}</Toggle>
+                <Toggle checked={opts.noJoin} onChange={set('noJoin')}>{L('Ne pas rejoindre les canaux que le bot exige (sinon votre compte les rejoint pour continuer)', 'Do not join the channels the bot requires (otherwise your account joins them to go on)')}</Toggle>
+                <Toggle checked={opts.noInline} onChange={set('noInline')}>{L('Sans le mode inline (@bot recherche)', 'Without inline mode (@bot search)')}</Toggle>
               </div>
 
               <details className="advanced">

@@ -156,6 +156,9 @@ export default function Simulator({ bot, files, onClose }) {
   const commands = profile.commands?.length ? profile.commands
     : [...new Set(screens.flatMap(s => (s.sources || []).filter(x => /^\/[a-z]/i.test(x) && x !== '/start')))].slice(0, 12).map(c => ({ command: c.slice(1), description: '' }))
   const lastBot = [...chat].reverse().find(m => m.from === 'bot')
+  // "@bot words": the inline results the capture read (data.inline)
+  const inlineQuery = /^@\S*/.test(text) && data?.inline ? text.replace(/^@\S*\s?/, '') : null
+  const inlineResults = inlineQuery === null ? [] : (data.inline.results || []).filter(r => !inlineQuery || `${r.title} ${r.description} ${r.text}`.toLowerCase().includes(inlineQuery.toLowerCase())).slice(0, 12)
   const keyboard = [...chat].reverse().find(m => m.from === 'bot' && replyKeyboard(m.screen))?.screen
   const placeholder = lastBot?.screen.markup?.placeholder
 
@@ -170,6 +173,34 @@ export default function Simulator({ bot, files, onClose }) {
     if (k === 'voice' || k === 'audio') return <audio className="tg-audio" src={src} controls />
     return <div className="tg-file">📎 {screen.media}</div>
   }
+  const money = (amount, currency) => (currency === 'XTR' ? `${amount} ⭐` : `${(amount / 100).toFixed(2)} ${currency}`)
+  const map = (lat, long) => `https://www.openstreetmap.org/?mlat=${lat}&mlon=${long}#map=16/${lat}/${long}`
+  const contentOf = s => <>
+    {s.poll && (
+      <div className="tg-poll">
+        <b>{s.poll.question}</b>
+        <small>{s.poll.quiz ? L('Quiz', 'Quiz') : L('Sondage', 'Poll')}{s.poll.multiple ? L(' · plusieurs réponses', ' · multiple answers') : ''}</small>
+        {s.poll.options.map((o, i) => <button key={i} type="button" onClick={() => setToast(L(`Vote : ${o}`, `Vote: ${o}`))}>{o}</button>)}
+      </div>
+    )}
+    {s.checklist && (
+      <div className="tg-poll"><b>{s.checklist.title || L('Liste de tâches', 'Checklist')}</b>{s.checklist.items.map((t, i) => <span key={i} className="tg-check">☐ {t}</span>)}</div>
+    )}
+    {s.invoice && (
+      <div className="tg-invoice">
+        <b>{s.invoice.title}</b><span>{s.invoice.description}</span>
+        <strong>{money(s.invoice.amount, s.invoice.currency)}</strong>
+        <button type="button" onClick={() => setToast(L('Paiement Telegram : la réplique ouvre le paiement de votre boutique (portefeuille).', 'Telegram payment: the replica opens your shop\'s checkout (wallet).'))}>{L('Payer', 'Pay')} {money(s.invoice.amount, s.invoice.currency)}</button>
+      </div>
+    )}
+    {s.paid_media && <div className="tg-file">🔒 {L('Média payant', 'Paid media')}{s.paid_media.stars ? ` · ${s.paid_media.stars} ⭐` : ''}</div>}
+    {(s.location || s.venue) && (() => {
+      const g = s.venue || s.location
+      return <a className="tg-place" href={map(g.lat, g.long)} target="_blank" rel="noreferrer">📍 {s.venue ? <><b>{s.venue.title}</b> {s.venue.address}</> : `${g.lat?.toFixed(5)}, ${g.long?.toFixed(5)}${s.location.live ? L(' (position en direct)', ' (live location)') : ''}`}</a>
+    })()}
+    {s.contact && <div className="tg-contact"><span className="tg-avatar">{(s.contact.name || '?').slice(0, 1)}</span><span><b>{s.contact.name}</b><small>{s.contact.phone}</small></span></div>}
+    {s.dice && <div className="tg-dice">{s.dice.emoji} <small>{s.dice.value}</small></div>}
+  </>
 
   return (
     <section className="panel sim" aria-label={L('Simulation du bot', 'Bot simulation')}>
@@ -197,11 +228,15 @@ export default function Simulator({ bot, files, onClose }) {
               {intro && <img src={intro} alt="" />}
               <b>{L('Que peut faire ce bot ?', 'What can this bot do?')}</b>
               <div>{profile.description || profile.about || L('(description non capturée)', '(description not captured)')}</div>
+              {data.inline && <div className="tg-hint">{L(`Mode inline : tapez @${bot} dans la zone de saisie`, `Inline mode: type @${bot} in the box`)}</div>}
+              {data.joined?.length > 0 && <div className="tg-hint">{L('Canaux rejoints pendant la capture : ', 'Channels joined during the capture: ')}{data.joined.join(', ')}</div>}
             </div>
           )}
           {started && <div className="tg-date">{L('Aujourd’hui', 'Today')}</div>}
-          {chat.map(m => m.from === 'me' ? (
-            <div key={m.id} className="tg-row me"><div className="tg-bubble me">{m.text}<span className="tg-time">{m.time} ✓✓</span></div></div>
+          {chat.map((m, i) => m.from === 'bot' && m.screen.album && chat[i - 1]?.screen?.album === m.screen.album ? (
+            <div key={m.id} className="tg-row tg-album-next"><div className="tg-msg"><div className="tg-bubble">{mediaOf(m.screen)}</div></div></div>
+          ) : m.from === 'me' ? (
+            <div key={m.id} className="tg-row me"><div className="tg-bubble me">{m.via && <small className="tg-via">via @{bot}</small>}{m.text}<span className="tg-time">{m.time} ✓✓</span></div></div>
           ) : m.from === 'note' ? (
             <div key={m.id} className="tg-note">{m.text}</div>
           ) : (
@@ -209,6 +244,7 @@ export default function Simulator({ bot, files, onClose }) {
               <div className="tg-msg">
                 <div className="tg-bubble">
                   {mediaOf(m.screen)}
+                  {contentOf(m.screen)}
                   {(m.screen.html || m.screen.raw) && <div className="tg-text" onClick={e => { const c = e.target.closest('[data-cmd]'); if (c) { e.preventDefault(); sendText(c.dataset.cmd, m.screen) } }}
                     dangerouslySetInnerHTML={{ __html: safeHtml(m.screen.html || m.screen.raw) }} />}
                   <span className="tg-time">{m.edited ? L('modifié ', 'edited ') : ''}{m.time}</span>
@@ -238,6 +274,15 @@ export default function Simulator({ bot, files, onClose }) {
                     <b>/{c.command}</b>{c.description && c.description !== c.command && <span>{c.description}</span>}
                   </button>
                 ))}
+              </div>
+            )}
+            {inlineQuery !== null && data?.inline && (
+              <div className="tg-commands">
+                {inlineResults.length ? inlineResults.map((r, i) => (
+                  <button key={i} type="button" onClick={() => { setText(''); say({ from: 'me', text: r.text || r.title, via: true }) }}>
+                    <b>{r.title || r.text.slice(0, 40)}</b>{r.description && <span>{r.description}</span>}
+                  </button>
+                )) : <div className="tg-note" style={{ margin: 8 }}>{L('Aucun résultat capturé pour cette recherche.', 'No captured result for this search.')}</div>}
               </div>
             )}
             <form className="tg-input" onSubmit={send}>

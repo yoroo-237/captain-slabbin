@@ -83,6 +83,9 @@ class Explorer:
         # Retour sur un écran : le chemin qui y mène depuis le départ, et l'écran
         # d'où vient chaque bouton (un bot qui modifie son message efface les autres)
         self.button_screen = {}  # données d'un bouton -> l'écran (au chiffre près) qui le porte
+        self.answered = set()    # écrans dont la question ou le captcha a déjà reçu une réponse
+        self.joined = []         # canaux rejoints parce que le bot l'exigeait
+        self.inline = None       # ce que le bot propose en mode inline (@bot …)
         self.label_results = {}  # libellé -> {"played": n, "screens": [clés obtenues]}
         self.skipped_known = 0
         self.paths = {}       # clé d'écran -> [["cmd"|"text"|"cb", valeur], ...]
@@ -128,7 +131,7 @@ class Explorer:
             if self.args.no_commands:
                 return
             prefix = re.sub(r"\d+$", "", action[1])
-            if self.per_prefix.get(prefix, 0) >= self.args.max_per_prefix:
+            if self.args.max_per_prefix and self.per_prefix.get(prefix, 0) >= self.args.max_per_prefix:
                 return
             self.per_prefix[prefix] = self.per_prefix.get(prefix, 0) + 1
         self.seen.add(key)
@@ -217,6 +220,107 @@ class Explorer:
         cell["kind"] = name
         return cell, None
 
+    # Un captcha ou une question : le bot attend un texte avant de continuer
+    MATH = re.compile(r"(-?\d+)\s*([+\-x×*/÷])\s*(-?\d+)\s*(?:=|\?|$)")
+    CODE = re.compile(r"(?:code|captcha|enter|type|tape[zr]?|saisi[sr]|recopie[zr]?)\W{0,12}[«\"'`]?([A-Za-z0-9]{4,10})[»\"'`]?\b", re.I)
+    ASKS = [
+        (re.compile(r"quantit|how many|amount of|combien", re.I), "1"),
+        (re.compile(r"post ?code|zip", re.I), "10001"),
+        (re.compile(r"\bcity\b|ville", re.I), "New York"),
+        (re.compile(r"\bstate\b|r[ée]gion", re.I), "NY"),
+        (re.compile(r"address|street|adresse|\brue\b", re.I), "1 Test Street"),
+        (re.compile(r"\bname\b|\bnom\b", re.I), "Test"),
+        (re.compile(r"e-?mail", re.I), "test@example.com"),
+        (re.compile(r"phone|t[ée]l[ée]phone", re.I), "+10000000000"),
+        (re.compile(r"voucher|coupon|promo", re.I), "TEST"),
+    ]
+    ASKING = re.compile(r"\b(send|enter|type|reply|write|provide|input|solve|answer|envoye[zr]|entre[zr]|tape[zr]|[ée]cri(?:s|vez)|r[ée]ponde[zr]|r[ée]sou[ds])\b", re.I)
+    JOIN = re.compile(r"\b(join|subscribe|rejoin|abonne)", re.I)
+
+    def prompt_answer(self, text, markup_info):
+        """La réponse de test à un captcha ou à une question, ou None."""
+        raw = text or ""
+        m = self.MATH.search(raw)
+        if m and re.search(r"captcha|solve|r[ée]sou|calcul|human|humain|=|\?", raw, re.I):
+            a, op, b = int(m.group(1)), m.group(2), int(m.group(3))
+            value = {"+": a + b, "-": a - b, "x": a * b, "×": a * b, "*": a * b}.get(op)
+            if value is None and b:
+                value = a // b
+            return str(value)
+        m = self.CODE.search(raw)
+        if m and re.search(r"captcha|code|v[ée]rif|human|humain", raw, re.I):
+            return m.group(1)
+        forced = (markup_info or {}).get("type") == "force_reply"
+        if forced or self.ASKING.search(raw):
+            for pattern, answer in self.ASKS:
+                if pattern.search(raw + " " + ((markup_info or {}).get("placeholder") or "")):
+                    return answer
+            if forced:
+                return "1"
+        return None
+
+    async def handle_gate(self, key, msg, rows):
+        """Ce qui bloque un parcours : un captcha ou une question (on y répond par une valeur
+        de test, en tête de file), un canal à rejoindre (on le rejoint une fois, puis le bouton
+        « j'ai rejoint » est joué comme les autres)."""
+        if key in self.answered:
+            return
+        answer = self.prompt_answer(msg.raw_text, self.describe_markup(msg.reply_markup))
+        if answer is not None:
+            self.answered.add(key)
+            self.queue.appendleft(("text", answer))
+            print(f"  question ou captcha détecté : réponse « {answer} » envoyée ensuite")
+        if self.args.no_join or not self.JOIN.search(msg.raw_text or ""):
+            return
+        links = [c.get("url", "") for row in rows for c in row if c.get("kind") == "url"]
+        links += re.findall(r"(?:https?://)?t\.me/[^\s)\]]+", msg.raw_text or "")
+        for link in links:
+            m = re.search(r"t\.me/(?:joinchat/|\+)([\w-]+)|t\.me/([A-Za-z][\w]{3,31})(?:[/?]|$)", link)
+            if not m:
+                continue
+            target = m.group(1) or m.group(2)
+            if target in self.joined or target.lower() in ("share", "addstickers", self.args.bot.lower()):
+                continue
+            try:
+                if m.group(1):
+                    await self.client(functions.messages.ImportChatInviteRequest(target))
+                else:
+                    await self.client(functions.channels.JoinChannelRequest(target))
+                self.joined.append(target)
+                print(f"  canal rejoint (exigé par le bot) : {target}")
+                await asyncio.sleep(self.args.wait)
+            except errors.UserAlreadyParticipantError:
+                self.joined.append(target)
+            except errors.RPCError as e:
+                print(f"  impossible de rejoindre {target} : {type(e).__name__}")
+
+    async def read_inline(self):
+        """Le mode inline (@bot …) : ce que le bot propose pour une recherche vide et pour
+        quelques mots de son propre vocabulaire."""
+        try:
+            me = await self.client.get_entity(self.bot)
+            placeholder = getattr(me, "bot_inline_placeholder", None)
+            if not placeholder:
+                return
+            results, seen = [], set()
+            for q in ["", *list({w for s in list(self.screens.values())[:5] for w in re.findall(r"[A-Za-z]{4,}", s.get("raw", ""))})[:3]]:
+                try:
+                    found = await self.client.inline_query(me, q)
+                except errors.RPCError:
+                    continue
+                for r in found[:20]:
+                    rid = getattr(r.result, "id", None) or r.title
+                    if rid in seen:
+                        continue
+                    seen.add(rid)
+                    results.append({"query": q, "title": r.title or "", "description": r.description or "",
+                                     "text": getattr(getattr(r.result, "send_message", None), "message", "") or "",
+                                     "url": getattr(r.result, "url", None)})
+            self.inline = {"placeholder": placeholder, "results": results[:60]}
+            print(f"Mode inline : {len(results)} résultat(s) lu(s)")
+        except errors.RPCError as e:
+            print(f"Mode inline illisible ({type(e).__name__}).")
+
     @staticmethod
     def describe_markup(markup):
         """Les réglages du clavier : persistant, redimensionné, à usage unique, texte
@@ -229,6 +333,40 @@ class Explorer:
         if isinstance(markup, types.ReplyKeyboardHide):
             return {"type": "remove_keyboard"}
         return None
+
+    @staticmethod
+    def _txt(v):
+        """Un texte Telethon : chaîne, ou TextWithEntities (couches récentes)."""
+        return v if isinstance(v, str) else getattr(v, "text", "") or ""
+
+    def describe_content(self, msg):
+        """Ce que le message porte en plus du texte : sondage, facture, position, lieu,
+        contact, dé, média payant ; et l'album auquel il appartient."""
+        m = msg.media
+        out = {}
+        if isinstance(m, types.MessageMediaPoll):
+            poll = m.poll
+            out["poll"] = {"question": self._txt(poll.question), "options": [self._txt(a.text) for a in poll.answers],
+                           "quiz": bool(getattr(poll, "quiz", False)), "multiple": bool(getattr(poll, "multiple_choice", False))}
+        elif isinstance(m, types.MessageMediaInvoice):
+            out["invoice"] = {"title": m.title, "description": m.description, "currency": m.currency,
+                              "amount": m.total_amount, "test": bool(getattr(m, "test", False))}
+        elif isinstance(m, types.MessageMediaVenue):
+            out["venue"] = {"title": m.title, "address": m.address, "lat": getattr(m.geo, "lat", None), "long": getattr(m.geo, "long", None)}
+        elif isinstance(m, (types.MessageMediaGeo, types.MessageMediaGeoLive)):
+            out["location"] = {"lat": getattr(m.geo, "lat", None), "long": getattr(m.geo, "long", None), "live": isinstance(m, types.MessageMediaGeoLive)}
+        elif isinstance(m, types.MessageMediaContact):
+            out["contact"] = {"name": " ".join(x for x in (m.first_name, m.last_name) if x), "phone": m.phone_number}
+        elif isinstance(m, types.MessageMediaDice):
+            out["dice"] = {"emoji": m.emoticon, "value": m.value}
+        elif type(m).__name__ == "MessageMediaPaidMedia":
+            out["paid_media"] = {"stars": getattr(m, "stars_amount", None), "count": len(getattr(m, "extended_media", []) or [])}
+        elif type(m).__name__ in ("MessageMediaToDo", "MessageMediaChecklist"):
+            todo = getattr(m, "todo", None)
+            out["checklist"] = {"title": self._txt(getattr(todo, "title", "")), "items": [self._txt(getattr(i, "title", "")) for i in getattr(todo, "list", []) or []]}
+        if msg.grouped_id:
+            out["album"] = str(msg.grouped_id)
+        return out
 
     @staticmethod
     def media_type(msg):
@@ -299,9 +437,13 @@ class Explorer:
                 "media": media,
                 "media_type": self.media_type(msg) if media else None,
                 "markup": markup_info,
+                **self.describe_content(msg),
                 "buttons": rows,
                 "sources": [source],
             }
+            # Captcha, question du bot, canal à rejoindre : traités avant le reste de la file
+            if not repeat:
+                await self.handle_gate(key, msg, rows)
             # Le même écran à un nombre près : ses boutons sont déjà en file ou joués
             if not repeat:
                 for child in children:
@@ -536,6 +678,8 @@ class Explorer:
         data = json.loads(data_file.read_text(encoding="utf-8"))
         self.steps = data["steps"]
         self.profile = data.get("profile") or {}
+        self.inline = data.get("inline")
+        self.joined = data.get("joined") or []
         self.screens = {s["key"]: s for s in data["screens"]}
         self.per_prefix, self.media_cache = state["per_prefix"], state["media_cache"]
         self.last_id, self.ignored = state["last_id"], state["ignored"]
@@ -602,7 +746,8 @@ class Explorer:
     def write_data(self):
         screens = sorted(self.screens.values(), key=lambda s: s["order"])
         (self.out / "data.json").write_text(json.dumps(
-            {"bot": self.args.bot, "profile": self.profile, "steps": self.steps, "ignored": sorted(set(self.ignored)),
+            {"bot": self.args.bot, "profile": self.profile, "inline": self.inline, "joined": self.joined,
+             "steps": self.steps, "ignored": sorted(set(self.ignored)),
              "screens": screens}, ensure_ascii=False, indent=2), encoding="utf-8")
         return screens
 
@@ -659,9 +804,11 @@ def parse_args():
                         help="message(s) de départ, répétable (défaut : /start)")
     parser.add_argument("--wait", type=float, default=2.5, help="secondes d'attente après chaque action")
     parser.add_argument("--max-actions", type=int, default=200)
-    parser.add_argument("--max-per-prefix", type=int, default=12,
+    parser.add_argument("--max-per-prefix", type=int, default=0,
                         help="nombre max de commandes d'une même famille (/p1, /p2...)")
     parser.add_argument("--no-commands", action="store_true", help="ne pas envoyer les commandes trouvées dans les textes")
+    parser.add_argument("--no-join", action="store_true", help="ne pas rejoindre les canaux que le bot exige")
+    parser.add_argument("--no-inline", action="store_true", help="ne pas lire le mode inline du bot")
     parser.add_argument("--no-media", action="store_true", help="ne pas télécharger les images et fichiers")
     parser.add_argument("--max-media-mb", type=int, default=20, help="taille max d'un média téléchargé")
     parser.add_argument("--skip", action="append", default=[], metavar="REGEX",
@@ -697,6 +844,8 @@ async def explore_bot(client, name, args):
     await explorer.read_profile()
     try:
         await explorer.run()
+        if not args.no_inline:
+            await explorer.read_inline()
     finally:
         explorer.write()
         print(f"Rapport : {out / 'report.html'}")

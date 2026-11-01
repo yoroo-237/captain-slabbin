@@ -221,7 +221,14 @@ function exploreArgs(userId, b) {
       args.push(flag, v);
     }
   }
-  for (const [key, flag] of [['fresh', '--fresh'], ['noMedia', '--no-media'], ['noCommands', '--no-commands'], ['strict', '--strict']]) if (b[key]) args.push(flag);
+  for (const [key, flag] of [['fresh', '--fresh'], ['noMedia', '--no-media'], ['noCommands', '--no-commands'], ['strict', '--strict'],
+    ['noJoin', '--no-join'], ['noInline', '--no-inline']]) if (b[key]) args.push(flag);
+  // A start link (t.me/bot?start=xyz): the bot is started with that parameter
+  const param = String(b.startParam || '').trim().replace(/^.*[?&]start=/, '').replace(/^\/start\s+/, '');
+  if (param) {
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(param)) throw bad('Invalid start parameter (letters, digits, _ and -, 64 at most).');
+    args.push('--start', `/start ${param}`);
+  }
   return args;
 }
 
