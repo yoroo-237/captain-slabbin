@@ -7,13 +7,14 @@ import { fileURLToPath } from 'node:url'
 import express from 'express'
 import cors from 'cors'
 import { prisma, getSettings, saveSettings } from './db.js'
-import { detectType, TYPES } from './detect.js'
+import { detectType } from './detect.js'
 import { parseTarget } from './target.js'
 import { decodeFiles, proofUrlHash } from './proof.js'
 import { authRouter, requireUser, requireSuper, bootstrapSuperadmin } from './auth.js'
 import { walletRouter, webhookRouter, adminWalletRouter, startWalletJobs } from './wallet.js'
 import { getHoldings, allocateUsd, debit, round2 } from './balance.js'
 import { getCachedUsdPrices } from './price.js'
+import { requestCapture, recapture, captureQueued, captureEnabled, resumeCaptures } from './capture.js'
 
 const app = express()
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -76,7 +77,7 @@ app.get('/api/pricing', async (_req, res) => {
 // a limited number of reports per user and account (set in the super admin space).
 // Each report costs tokens, taken from the user's wallet.
 app.post('/api/reports', requireUser, async (req, res) => {
-  const { target: rawTarget, description = '', proofUrl, type, lang, files } = req.body || {}
+  const { target: rawTarget, description = '', proofUrl, lang, files } = req.body || {}
 
   const target = parseTarget(rawTarget)
   if (!target) return res.status(400).json({ error: 'invalid_target' })
@@ -90,8 +91,10 @@ app.post('/api/reports', requireUser, async (req, res) => {
   if (cleanProof && !/^https?:\/\//i.test(cleanProof)) return res.status(400).json({ error: 'invalid_proof' })
   const urlHash = proofUrlHash(cleanProof)
   const ipHash = hashIp(req.ip)
+  // The type comes from the capture of the account, filled in once it is done.
+  // Until then: what the description says, if a client sent one, otherwise "other".
   const detected = detectType(cleanDescription, cleanProof || '')
-  const finalType = TYPES.includes(type) ? type : detected.type
+  const finalType = detected.type
   const settings = await getSettings()
 
   // Le compte signalé est identifié par son @username s'il en a un, sinon par son ID Telegram numérique
@@ -182,7 +185,11 @@ app.post('/api/reports', requireUser, async (req, res) => {
     throw err
   }
 
-  res.status(201).json({ ok: true, targetId: saved.id, type: finalType, reportCount: saved.reportCount, tokensSpent: tokens })
+  const typed = await requestCapture(saved.id)
+  res.status(201).json({
+    ok: true, targetId: saved.id, reportCount: saved.reportCount, tokensSpent: tokens,
+    capturing: !typed && captureEnabled(),
+  })
 })
 
 // Public list: rejected and whitelisted accounts are hidden, confirmed ones come first
@@ -255,12 +262,38 @@ app.get('/api/admin/targets/:id', async (req, res) => {
     orderBy: { createdAt: 'desc' },
     take: 200,
     select: {
-      id: true, type: true, detectedType: true, description: true, proofUrl: true, lang: true, createdAt: true,
+      id: true, type: true, detectedType: true, captured: true, description: true, proofUrl: true, lang: true, createdAt: true,
       user: { select: { username: true } },
       evidence: { select: { id: true, mime: true, size: true } },
     },
   })
-  res.json({ ...target, whitelisted: await isWhitelisted(target), reports })
+  const capture = await prisma.capture.findFirst({
+    where: { targetId: id },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, status: true, error: true, kind: true, title: true, about: true, texts: true, detectedType: true, createdAt: true, finishedAt: true, photo: true },
+  })
+  res.json({
+    ...target, whitelisted: await isWhitelisted(target), reports,
+    capture: capture && { ...capture, photo: undefined, hasPhoto: !!capture.photo },
+    capturing: captureQueued(id), captureEnabled: captureEnabled(),
+  })
+})
+
+app.get('/api/admin/captures/:id/photo', async (req, res) => {
+  const id = Number(req.params.id)
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'invalid_id' })
+  const c = await prisma.capture.findUnique({ where: { id }, select: { photo: true } })
+  if (!c?.photo) return res.status(404).json({ error: 'not_found' })
+  res.set({ 'Content-Type': 'image/jpeg', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, no-store' })
+  res.send(Buffer.from(c.photo))
+})
+
+app.post('/api/admin/targets/:id/capture', async (req, res) => {
+  const id = Number(req.params.id)
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'invalid_id' })
+  if (!(await prisma.target.findUnique({ where: { id }, select: { id: true } }))) return res.status(404).json({ error: 'not_found' })
+  if (!recapture(id)) return res.status(503).json({ error: 'capture_not_configured' })
+  res.json({ ok: true })
 })
 
 app.get('/api/admin/evidence/:id', async (req, res) => {
@@ -362,5 +395,6 @@ bootstrapSuperadmin()
   .catch((err) => console.error('[auth] super admin not created:', err.message))
   .finally(() => {
     startWalletJobs()
+    resumeCaptures().catch((err) => console.error('[capture] resume failed:', err.message))
     app.listen(port, () => console.log(`scamwatch api on :${port}`))
   })

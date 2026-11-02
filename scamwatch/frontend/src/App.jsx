@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { messages, TYPE_KEYS } from './i18n.js'
+import { messages } from './i18n.js'
 import { api, session } from './api.js'
 import Admin from './Admin.jsx'
 import Auth from './Auth.jsx'
@@ -30,7 +30,6 @@ export default function App() {
   const [pricing, setPricing] = useState(null)
 
   const [target, setTarget] = useState('')
-  const [type, setType] = useState('')
   const [status, setStatus] = useState({ state: 'idle', message: '' })
 
   const [query, setQuery] = useState('')
@@ -81,7 +80,7 @@ export default function App() {
     return () => clearTimeout(id)
   }, [query])
 
-  // No description, link or screenshot field: the capture already records what happened
+  // Only the account: the server captures it and gives the report its type
   const submit = async (e) => {
     e.preventDefault()
     if (!user) return go('login')
@@ -89,10 +88,11 @@ export default function App() {
     try {
       const r = await api('/api/reports', {
         method: 'POST',
-        body: JSON.stringify({ target, type, lang }),
+        body: JSON.stringify({ target, lang }),
       })
-      setStatus({ state: 'ok', message: r.tokensSpent ? t.thanksPaid(r.tokensSpent) : t.thanks })
-      setTarget(''); setType('')
+      const done = r.tokensSpent ? t.thanksPaid(r.tokensSpent) : t.thanks
+      setStatus({ state: 'ok', message: r.capturing ? `${done} ${t.capturing}` : done })
+      setTarget('')
       loadTargets(query); loadStats(); reloadWallet()
     } catch (err) {
       setStatus({ state: 'error', message: t.errors[err.code] || t.error, code: err.code })
@@ -123,13 +123,7 @@ export default function App() {
           <input value={target} onChange={(e) => setTarget(e.target.value)} placeholder={t.targetHint} required />
         </label>
 
-        <label>
-          {t.type}
-          <select value={type} onChange={(e) => setType(e.target.value)} required>
-            <option value="" disabled>{t.pickType}</option>
-            {TYPE_KEYS.map((k) => <option key={k} value={k}>{t.types[k]}</option>)}
-          </select>
-        </label>
+        <p className="hint">{t.captureHint}</p>
 
         <button className="primary" disabled={status.state === 'sending' || short}>
           {status.state === 'sending' ? t.sending : user ? t.submitCost(cost) : t.loginAndReport}
@@ -206,7 +200,7 @@ export default function App() {
                     {x.username ? `@${x.username}` : `ID ${x.tgId}`}
                     {x.status === 'confirmed' && <span className="badge confirmed">{t.statuses.confirmed}</span>}
                   </span>
-                  <span className="count">{x.reportCount} {t.reports}</span>
+                  <span className="count">{t.reports(x.reportCount)}</span>
                 </li>
               ))}
             </ul>

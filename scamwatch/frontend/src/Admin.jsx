@@ -10,19 +10,57 @@ const SWEEPABLE = ['BTC', 'LTC', 'DOGE', 'ETH']
 const name = (x) => (x.username ? `@${x.username}` : `ID ${x.tgId}`)
 
 // Screenshots need the session header, so they are fetched as blobs
-function Screenshot({ id, alt }) {
+function Screenshot({ id, alt, path = `/api/admin/evidence/${id}` }) {
   const [src, setSrc] = useState(null)
   useEffect(() => {
     let url
     let alive = true
-    fetch(`/api/admin/evidence/${id}`, { headers: { Authorization: `Bearer ${session.token}` } })
+    fetch(path, { headers: { Authorization: `Bearer ${session.token}` } })
       .then((r) => (r.ok ? r.blob() : null))
       .then((b) => { if (b && alive) { url = URL.createObjectURL(b); setSrc(url) } })
       .catch(() => {})
     return () => { alive = false; if (url) URL.revokeObjectURL(url) }
-  }, [id])
+  }, [path])
   if (!src) return <span className="shot placeholder" />
   return <a href={src} target="_blank" rel="noreferrer"><img className="shot" src={src} alt={alt} /></a>
+}
+
+// What the server saw of the account; the type of the reports comes from it
+function CapturePanel({ t, target, busy, onRecapture }) {
+  const c = target.capture
+  const running = target.capturing || c?.status === 'pending'
+  return (
+    <div className="capture">
+      <div className="row">
+        <h3>{t.admin.capture}</h3>
+        {target.captureEnabled && (
+          <button className="ghost small" disabled={busy || running} onClick={onRecapture}>{t.admin.recapture}</button>
+        )}
+      </div>
+      {!target.captureEnabled && !c && <p className="hint">{t.admin.captureOff}</p>}
+      {running && <p className="hint">{t.admin.captureRunning}</p>}
+      {!running && !c && target.captureEnabled && <p className="hint">{t.admin.captureNone}</p>}
+      {!running && c?.status === 'failed' && <p className="msg error">{t.admin.captureFailed(c.error)}</p>}
+      {c?.status === 'done' && (
+        <div className="capture-body">
+          {c.hasPhoto && <Screenshot path={`/api/admin/captures/${c.id}/photo`} alt={c.title} />}
+          <div className="capture-text">
+            <p className="name">
+              {c.title || name(target)}
+              {c.kind && <span className="badge">{t.admin.kinds[c.kind] || c.kind}</span>}
+              <span className="badge confirmed">{t.types[c.detectedType] || c.detectedType}</span>
+            </p>
+            {c.about && <p className="desc">{c.about}</p>}
+            {c.texts?.length > 0 && (
+              <ul className="texts">
+                {c.texts.slice(0, 10).map((x, i) => <li key={i} className="desc">{x}</li>)}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function Moderation({ t, lang }) {
@@ -48,6 +86,14 @@ function Moderation({ t, lang }) {
     try { await fn(); await open(selected.id); await loadTargets() } catch {} finally { setBusy(false) }
   }
   const setStatus = (status) => act(() => api(`/api/admin/targets/${selected.id}/status`, { method: 'POST', body: JSON.stringify({ status }) }))
+  // While the account is being captured, the detail refreshes until the type is in
+  useEffect(() => {
+    if (!selected || !(selected.capturing || selected.capture?.status === 'pending')) return
+    const id = setTimeout(() => open(selected.id), 4000)
+    return () => clearTimeout(id)
+  }, [selected])
+
+  const recapture = () => act(() => api(`/api/admin/targets/${selected.id}/capture`, { method: 'POST' }))
   const protect = () => act(() => api('/api/admin/whitelist', { method: 'POST', body: JSON.stringify({ target: selected.username || selected.tgId }) }))
 
   const date = (d) => new Date(d).toLocaleString(lang)
@@ -67,7 +113,7 @@ function Moderation({ t, lang }) {
             <li key={x.id} className={`clickable ${selected?.id === x.id ? 'active' : ''}`} onClick={() => open(x.id)}>
               <span className="name">{name(x)}</span>
               <span className="count">
-                <span className={`badge ${x.status}`}>{t.statuses[x.status]}</span> {x.reportCount} {t.reports}
+                <span className={`badge ${x.status}`}>{t.statuses[x.status]}</span> {t.reports(x.reportCount)}
               </span>
             </li>
           ))}
@@ -85,7 +131,7 @@ function Moderation({ t, lang }) {
                 <span className={`badge ${selected.status}`}>{t.statuses[selected.status]}</span>
               </span>
             </div>
-            <p className="muted">{selected.reportCount} {t.reports}</p>
+            <p className="muted">{t.reports(selected.reportCount)}</p>
             <div className="actions">
               <button className="primary" disabled={busy || selected.status === 'confirmed'} onClick={() => setStatus('confirmed')}>{t.admin.confirm}</button>
               <button className="danger" disabled={busy || selected.status === 'rejected'} onClick={() => setStatus('rejected')}>{t.admin.reject}</button>
@@ -93,11 +139,13 @@ function Moderation({ t, lang }) {
               {!selected.whitelisted && <button className="ghost" disabled={busy} onClick={protect}>{t.admin.addWhitelist}</button>}
             </div>
 
+            <CapturePanel t={t} target={selected} busy={busy} onRecapture={recapture} />
+
             <ul className="reports">
               {selected.reports.map((r) => (
                 <li key={r.id}>
                   <div className="row muted">
-                    <span>{t.types[r.type] || r.type}{r.user ? ` · ${r.user.username}` : ''}</span>
+                    <span>{r.captured ? t.types[r.type] || r.type : t.admin.waitingType}{r.user ? ` · ${r.user.username}` : ''}</span>
                     <span>{date(r.createdAt)}</span>
                   </div>
                   {r.description && <p className="desc">{r.description}</p>}

@@ -3,11 +3,16 @@
 # reference its DATABASE_URL in this service's variables.
 FROM node:20-bookworm-slim
 
+# Python + Telethon run capture/capture.py, which looks at each reported account
 RUN apt-get update \
- && apt-get install -y --no-install-recommends openssl ca-certificates \
+ && apt-get install -y --no-install-recommends openssl ca-certificates python3 python3-pip \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+
+COPY capture/requirements.txt capture/
+RUN pip3 install --no-cache-dir --break-system-packages -r capture/requirements.txt
+COPY capture capture
 
 COPY frontend/package.json frontend/package-lock.json* frontend/
 RUN cd frontend && npm install

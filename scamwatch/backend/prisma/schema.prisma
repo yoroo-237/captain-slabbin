@@ -19,6 +19,27 @@ model Target {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   reports     Report[]
+  captures    Capture[]
+}
+
+// What the server saw of the account (capture/capture.py): the report type comes from it.
+model Capture {
+  id           Int       @id @default(autoincrement())
+  targetId     Int
+  target       Target    @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  status       String    @default("pending") // pending | done | failed
+  error        String?   // not_found | private | flood_wait | unauthorized | telegram | timeout | crashed
+  kind         String?   // user | bot | channel | group
+  title        String    @default("")
+  about        String    @default("")
+  texts        Json      @default("[]") // bot answer to /start, or latest channel / group messages
+  photo        Bytes?
+  detectedType String?
+  createdAt    DateTime  @default(now())
+  finishedAt   DateTime?
+
+  @@index([targetId, createdAt])
+  @@index([status])
 }
 
 model Report {
@@ -27,8 +48,9 @@ model Report {
   target       Target       @relation(fields: [targetId], references: [id], onDelete: Cascade)
   userId       Int?         // account that paid for the report (null for reports sent before accounts existed)
   user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
-  type         String       // type kept (user's choice, or the detected one)
+  type         String       // type kept: from the capture of the account ("other" until it is done)
   detectedType String       // type proposed by the automatic detection
+  captured     Boolean      @default(false) // type taken from a finished capture
   description  String       @default("")
   proofUrl     String?
   proofHash    String?      // normalized proof link hash: one link counts once per account

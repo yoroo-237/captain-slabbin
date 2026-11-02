@@ -19,7 +19,7 @@ Plateforme de signalement des comptes Telegram frauduleux, avec portefeuille cry
 - **Solde en crypto, au cours du direct** : comme dans les boutiques, le client détient la crypto déposée. Sa valeur en USD suit le marché, et ses jetons aussi : `jetons = solde en USD / prix du jeton`.
 - **Paiement d'un signalement** : `jetons par signalement × prix du jeton`, débité en crypto au cours du moment. Le débit et l'enregistrement se font ensemble : un signalement refusé (doublon, compte protégé, erreur) ne coûte rien.
 - **Pas de commission** : 100 % de chaque dépôt revient au super admin (MKO). Un seul balayage par crypto, vers vos adresses de réserve.
-- **Preuves** : le formulaire demande seulement le compte et le type. Ni description, ni lien, ni capture d'écran : la capture enregistre déjà ce qui s'est passé. Chaque utilisateur a une limite de signalements par compte (1 par défaut).
+- **Preuves et type** : le formulaire demande seulement le compte. Le serveur capture le compte (profil, bio, photo, ce qu'il publie ou répond) et attribue le type d'après cette capture (voir 1.5). Chaque utilisateur a une limite de signalements par compte (1 par défaut).
 - **Super admin** : aucun coût et aucune limite.
 - **Liste blanche** : les comptes et bots que vous y mettez ne peuvent pas être signalés et n'apparaissent pas dans la liste publique.
 
@@ -74,6 +74,8 @@ Certaines valeurs viennent du `.env` de la plateforme bots, d'autres **doivent**
 | `ALCHEMY_API_KEY` | clé d'une app Alchemy Ethereum Mainnet | **oui**, la même clé convient |
 | `ALCHEMY_WEBHOOK_ID`, `ALCHEMY_SIGNING_KEY` | facultatif : webhook ETH propre à ScamWatch (voir 3.2) | **non** : un webhook est lié à une seule adresse |
 | `ALCHEMY_AUTH_TOKEN` | jeton Notify du compte (`alcht_…`), utile seulement avec le webhook | oui |
+| `TG_API_ID`, `TG_API_HASH` | clés API du compte Telegram **dédié à ScamWatch** (voir 1.5) | **non**, compte dédié |
+| `TG_SESSION` | session de ce compte, produite par `capture/login.py` (voir 1.5) | **non**, nouvelle |
 
 Ne définissez pas `PORT` : Railway le fournit. ScamWatch n'utilise ni Cloudinary, ni `FRONTEND_URL`, ni `JWT_REFRESH_SECRET`, ni `TELEGRAM_*`, ni `XMR_ADDRESS` (l'adresse XMR se règle dans l'admin, voir 2.3).
 
@@ -91,6 +93,25 @@ Gardez une copie des deux seeds hors ligne : elles contrôlent les fonds dépos�
 
 ### 1.4 Vérifier
 Ouvrez `https://scamwatch.captainslabbin.shop/api/health` : la réponse doit être `{"ok":true}`. Dans les logs Railway, la ligne `[auth] super admin "MKO" created` confirme la création du compte au premier démarrage ; aux démarrages suivants, `already exists, kept as is`.
+
+### 1.5 Capture des comptes (type du signalement)
+Le formulaire ne demande que le compte. Le serveur le regarde ensuite avec un compte Telegram dédié à ScamWatch : nom, bio et photo ; pour un bot, l'écran qu'il affiche à `/start` ; pour un canal ou un groupe public, ses derniers messages. Le type (arnaque crypto, clone, spam, usurpation, hameçonnage, autre) est attribué d'après ce texte. Un simple utilisateur ne reçoit jamais de message.
+
+Le signalement est enregistré et payé tout de suite. La capture se fait en arrière-plan, une à la fois, et remplit le type de tous les signalements du compte. Une capture de moins de 24 h est réutilisée.
+
+Mise en place (une fois) :
+1. Créez un compte Telegram **réservé à ScamWatch** (un numéro à part). Si Telegram le limite, vos autres comptes ne sont pas touchés.
+2. Sur https://my.telegram.org → **API development tools**, créez une application : notez `api_id` et `api_hash`.
+3. Sur votre PC, depuis le dossier `scamwatch\capture` :
+   ```
+   cd M:\Travail\mario\scamwatch\capture
+   pip install -r requirements.txt
+   python login.py
+   ```
+   Saisissez `api_id`, `api_hash`, le numéro, puis le code reçu dans Telegram (et le mot de passe 2FA s'il y en a un). La dernière ligne affichée est la session.
+4. Dans Railway, renseignez `TG_API_ID`, `TG_API_HASH` et `TG_SESSION` (la session **est un mot de passe** : quiconque la détient est connecté à ce compte), puis redéployez.
+
+Sans ces variables, les signalements sont acceptés mais gardent le type « Autre » ; le log affiche `[capture] TG_API_ID / TG_API_HASH / TG_SESSION not set`. Dès qu'elles sont renseignées, les comptes en attente sont capturés au démarrage suivant. Dans **Admin → Modération**, chaque compte montre sa capture, et **Relancer la capture** en refait une.
 
 ---
 
@@ -145,6 +166,7 @@ Un appel sans signature valide est refusé.
 - [ ] Un signalement débite le bon nombre de jetons et apparaît dans l'**Historique**.
 - [ ] Un 2e signalement du même compte par le même utilisateur est refusé (limite à 1), et rien n'est débité.
 - [ ] Connecté en `MKO`, les signalements ne coûtent rien et ne sont pas limités.
+- [ ] Un signalement d'un bot public apparaît dans **Modération** avec sa capture (photo, bio, écran `/start`) et un type, en moins d'une minute.
 - [ ] Un compte de la liste blanche ne peut pas être signalé et n'apparaît pas dans la liste publique.
 - [ ] Dans **Modération**, Confirmer / Rejeter mettent à jour la liste publique (badge « Confirmé », compte rejeté masqué).
 - [ ] Après un redéploiement, la connexion `MKO` fonctionne toujours et les réglages sont conservés.

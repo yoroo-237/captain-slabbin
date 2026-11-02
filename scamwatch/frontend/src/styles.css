@@ -203,6 +203,15 @@ form > .primary { width: 100%; height: 52px; font-size: 15px; }
 .shot { width: 120px; height: 120px; object-fit: cover; border-radius: 12px; border: 1px solid var(--line); display: block; }
 a:hover .shot { border-color: var(--orange); }
 .shot.placeholder { background: var(--paper-2); }
+.capture { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; margin: 0 0 16px; display: grid; gap: 10px; }
+.capture h3 { margin: 0; }
+.capture-body { display: flex; gap: 14px; align-items: flex-start; }
+.capture-body .shot { width: 72px; height: 72px; border-radius: 50%; }
+@media (max-width: 480px) { .capture-body { flex-direction: column; } .capture-body .shot { width: 56px; height: 56px; } }
+.capture-text { flex: 1; min-width: 0; display: grid; gap: 8px; }
+.capture-text .name { margin: 0; }
+.texts { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; max-height: 320px; overflow: auto; }
+.texts li { padding: 8px 12px; border-radius: 10px; background: var(--paper); border: 1px solid var(--line); font-size: 13px; }
 .mono.muted, .reports .mono { font-size: 11px; text-transform: none; letter-spacing: 0; overflow-wrap: anywhere; margin: 0; }
 .inline { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .inline input { max-width: 240px; }

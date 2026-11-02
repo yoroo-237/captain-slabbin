@@ -6,9 +6,12 @@ Standalone project of this repository, with its own Railway project, served on i
 
 ## Features
 
-- Report form: account (@username, t.me link or numeric ID) and type, nothing else. No description,
-  proof link or screenshot field: the capture already records what happened.
-- `backend/src/detect.js` still guesses the type when another client sends a description without one.
+- Report form: the account only (@username, t.me link or numeric ID).
+- Capture (`capture/capture.py`, Telethon, a Telegram account dedicated to ScamWatch): name, bio
+  and photo; a bot's answer to `/start`; a public channel or group's latest messages. Regular users
+  are never messaged. It runs in the background, one at a time, and `backend/src/detect.js` gives
+  every report of the account its type from what was captured. A capture under 24 h is reused.
+  Without `TG_API_ID` / `TG_API_HASH` / `TG_SESSION`, reports keep the type "other".
 - A limited number of reports per user and account (1 by default, 0 = no limit). The API still
   accepts a proof link and screenshots from other clients (deduplicated, stored in Postgres).
 - The super admin has no cost and no limit.
@@ -91,6 +94,7 @@ Tests: `cd backend && npm test`
 | `ALCHEMY_API_KEY` | ETH checks and sweeps |
 | `ALCHEMY_WEBHOOK_ID`, `ALCHEMY_AUTH_TOKEN`, `ALCHEMY_SIGNING_KEY` | optional: ETH webhook to `https://scamwatch.captainslabbin.shop/api/webhooks/alchemy` |
 | `PUBLIC_URL` | `https://scamwatch.captainslabbin.shop`, for BlockCypher webhooks (optional, polling works without) |
+| `TG_API_ID`, `TG_API_HASH`, `TG_SESSION` | dedicated Telegram account for captures; the session comes from `python capture/login.py` |
 
 4. Settings → Networking → Custom Domain: `scamwatch.captainslabbin.shop`, CNAME at the registrar.
 5. Sign in at `https://scamwatch.captainslabbin.shop/#admin`, set the reserve addresses and the token price.
