@@ -349,6 +349,39 @@
 .bp .tg-inline-row button { position: relative; }
 .bp .tg-corner { position: absolute; top: 3px; right: 5px; font-size: 9px; opacity: .8; }
 
+/* Fidelity check: crossroads and their routes */
+.bp .fc { margin-top: 16px; }
+.bp .fc-head-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.bp .fc-head-actions select { width: auto; max-width: 260px; }
+.bp .fc-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 6px 0 16px; }
+.bp .fc-tile { display: grid; gap: 2px; padding: 14px 16px; border-radius: var(--radius); background: var(--sunken); border: 1px solid var(--line); border-left: 4px solid var(--muted); }
+.bp .fc-tile b { font-size: 30px; font-weight: 500; letter-spacing: -.03em; line-height: 1; }
+.bp .fc-tile small { color: var(--muted); font-size: 12px; }
+.bp .fc-tile.ok { border-left-color: var(--ok); } .bp .fc-tile.ok b { color: var(--ok); }
+.bp .fc-tile.warn { border-left-color: var(--warn); } .bp .fc-tile.warn b { color: var(--warn); }
+.bp .fc-tile.bad { border-left-color: var(--orange); } .bp .fc-tile.bad b { color: var(--orange); }
+.bp .fc-counts { list-style: none; margin: 0; padding: 12px 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; border-radius: var(--radius); border: 1px solid var(--line); font-size: 13px; }
+.bp .fc-counts li { display: flex; align-items: center; gap: 6px; }
+.bp .fc-pill { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px; font-size: 11px; white-space: nowrap; border: 1px solid var(--line); color: var(--muted); }
+.bp .fc-pill.ok { color: var(--ok); border-color: var(--ok); background: var(--ok-soft); }
+.bp .fc-pill.warn { color: var(--warn); border-color: var(--warn); background: var(--warn-soft); }
+.bp .fc-pill.bad { color: var(--orange); border-color: var(--orange); background: var(--orange-soft); }
+.bp .fc-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin-bottom: 12px;
+  position: sticky; top: 32px; background: var(--surface); z-index: 2; }
+.bp .fc-bar .spacer { flex: 1; }
+.bp .fc-check { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.bp .fc-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.bp .fc-x { padding: 12px 14px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--sunken); min-width: 0; }
+.bp .fc-x-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.bp .fc-x-head b { font-weight: 500; overflow-wrap: anywhere; }
+.bp .fc-path { margin-top: 4px; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+.bp .fc-routes { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
+.bp .fc-routes li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 5px 8px; border-radius: 8px; background: var(--surface); font-size: 13px; }
+.bp .fc-routes .spacer { flex: 1; }
+.bp .fc-routes input[type="checkbox"], .bp .fc-nobox { width: 15px; height: 15px; flex: none; margin: 0; accent-color: var(--orange); }
+.bp .fc-label { font-weight: 500; overflow-wrap: anywhere; }
+.bp .fc-target { font-size: 12px; overflow-wrap: anywhere; }
+
 /* What a message carries: poll, checklist, invoice, place, contact, dice; albums; inline */
 .bp .tg-poll { display: grid; gap: 5px; min-width: 220px; margin-bottom: 4px; }
 .bp .tg-poll small { color: var(--muted); font-size: 11px; }

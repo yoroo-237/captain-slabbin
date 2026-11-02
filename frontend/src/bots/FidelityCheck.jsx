@@ -1,0 +1,182 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { adminFetch } from '../pages/admin/utils/api.js'
+import { useUi } from './ui.jsx'
+import { L } from './i18n.js'
+
+// Fidelity check of a capture, crossroad by crossroad: every route (button, typed
+// text, menu command) of every screen with buttons, whether the capture followed
+// it and whether the replica style has it. Routes not covered can be picked and run
+// again: the capture goes back to their crossroad (the nearest one still shown,
+// never all the way from /start when it can avoid it) and presses them.
+const STATUS = {
+  captured: ['ok', () => L('capturée', 'captured')],
+  end: ['ok', () => L('jouée, sans nouvel écran', 'played, no new screen')],
+  equivalent: ['mute', () => L('déjà couverte', 'already covered')],
+  pending: ['warn', () => L('en attente', 'queued')],
+  failed: ['bad', () => L('échouée', 'failed')],
+  missing: ['bad', () => L('manquante', 'missing')],
+  ignored: ['mute', () => L('exclue', 'skipped')],
+  link: ['mute', () => L('lien', 'link')],
+  disabled: ['mute', () => L('désactivée', 'disabled')],
+}
+const REPLICA = {
+  copied: ['ok', () => L('copiée', 'copied')],
+  not_copied: ['bad', () => L('absente de la réplique', 'not in the replica')],
+  broken: ['bad', () => L('lien cassé', 'broken link')],
+  no_page: ['bad', () => L('page absente', 'no page')],
+}
+const Pill = ({ map, value, title }) => {
+  if (!value || !map[value]) return null
+  const [tone, label] = map[value]
+  return <span className={`fc-pill ${tone}`} title={title || undefined}>{label()}</span>
+}
+const PROBLEM = new Set(['pending', 'failed', 'missing'])
+const isProblem = r => PROBLEM.has(r.status) || ['not_copied', 'broken', 'no_page'].includes(r.replica)
+const idOf = (c, r) => `${c?.key || 'cmd'}|${r.label || r.command}`
+
+export default function FidelityCheck({ bot, busy, tick, onRetried }) {
+  const { notify } = useUi()
+  const [style, setStyle] = useState('')
+  const [report, setReport] = useState(null)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [all, setAll] = useState(false)
+  const [picked, setPicked] = useState(() => new Map())
+
+  const load = useCallback(async () => {
+    setLoading(true); setError('')
+    try {
+      const r = await adminFetch(`/admin/capture/captures/${encodeURIComponent(bot)}/check${style ? `?style=${style}` : ''}`)
+      setReport(r); setPicked(new Map())
+    } catch (e) { setError(e.message) } finally { setLoading(false) }
+  }, [bot, style])
+  useEffect(() => { load() }, [load, tick])
+
+  const retryable = useMemo(() => {
+    if (!report) return []
+    return [...report.crossroads.flatMap(c => c.routes.filter(r => r.retry).map(r => [idOf(c, r), r.retry])),
+      ...report.commands.filter(c => c.retry).map(c => [idOf(null, c), c.retry])]
+  }, [report])
+  const toggle = (id, retry) => setPicked(p => { const n = new Map(p); n.has(id) ? n.delete(id) : n.set(id, retry); return n })
+  const pickAll = () => setPicked(p => (p.size === retryable.length ? new Map() : new Map(retryable)))
+
+  async function retry() {
+    try {
+      await adminFetch(`/admin/capture/captures/${encodeURIComponent(bot)}/retry`, { method: 'POST', body: JSON.stringify({ items: [...picked.values()] }) })
+      notify(L(`${picked.size} route(s) relancée(s) : suivez le journal plus haut.`, `${picked.size} route(s) run again: follow the journal above.`), 'info')
+      setPicked(new Map())
+      onRetried?.()
+    } catch (e) { notify(e.message, 'err') }
+  }
+
+  const s = report?.summary
+  const rep = s?.replica
+  const shown = report ? report.crossroads.map(c => ({ ...c, routes: all ? c.routes : c.routes.filter(isProblem) })).filter(c => all || c.routes.length || (rep && !c.personal && !c.page)) : []
+  const commands = report ? report.commands.filter(c => all || isProblem(c)) : []
+
+  return (
+    <section className="panel fc" id="check">
+      <div className="row-head">
+        <h2><span className="idx">04</span>{L('Vérification', 'Check')} <span className="count">@{bot}</span></h2>
+        <div className="fc-head-actions">
+          {report?.styles?.length > 0 && (
+            <select value={style || report.summary.replica?.style.id || ''} onChange={e => setStyle(e.target.value)} aria-label={L('Réplique comparée', 'Replica compared')}>
+              {report.styles.map(st => <option key={st.id} value={st.id}>{st.name}</option>)}
+            </select>
+          )}
+          <button className="btn" onClick={load} disabled={loading}>{loading ? L('Analyse…', 'Checking…') : L('Actualiser', 'Refresh')}</button>
+        </div>
+      </div>
+      <p className="small muted" style={{ marginTop: -8 }}>
+        {L('Chaque écran qui a des boutons est un carrefour. Pour chacune de ses routes : la capture l’a-t-elle suivie, et la réplique l’a-t-elle ? Cochez les routes à relancer : la capture revient au carrefour le plus proche encore affiché et appuie dessus.',
+          'Each screen with buttons is a crossroad. For each of its routes: did the capture follow it, and does the replica have it? Tick the routes to run again: the capture goes back to the nearest crossroad still shown and presses them.')}
+      </p>
+      {error && <div className="alert err">{error}</div>}
+      {s && (
+        <>
+          <div className="fc-tiles">
+            <div className={`fc-tile ${s.coverage >= 95 ? 'ok' : s.coverage >= 70 ? 'warn' : 'bad'}`}>
+              <b>{s.coverage}%</b><span>{L('routes couvertes', 'routes covered')}</span><small>{s.covered} / {s.routes} · {s.crossroads} {L('carrefours', 'crossroads')}</small>
+            </div>
+            {rep
+              ? <div className={`fc-tile ${rep.fidelity >= 95 ? 'ok' : rep.fidelity >= 70 ? 'warn' : 'bad'}`}>
+                <b>{rep.fidelity}%</b><span>{L('copié dans la réplique', 'copied in the replica')}</span>
+                <small>{rep.copied} {L('copiées', 'copied')} · {rep.notCopied} {L('absentes', 'missing')} · {rep.broken} {L('cassées', 'broken')}{rep.missingPages ? ` · ${rep.missingPages} ${L('pages absentes', 'pages missing')}` : ''}</small>
+              </div>
+              : <div className="fc-tile mute"><b>–</b><span>{L('aucune réplique de ce bot', 'no replica of this bot')}</span><small>{L('« Répliquer le bot » pour comparer', '“Replicate the bot” to compare')}</small></div>}
+            <ul className="fc-counts">
+              <li><Pill map={STATUS} value="captured" /> {s.captured}</li>
+              <li><Pill map={STATUS} value="end" /> {s.end}</li>
+              <li><Pill map={STATUS} value="equivalent" /> {s.equivalent}</li>
+              <li><Pill map={STATUS} value="pending" /> {s.pending}</li>
+              <li><Pill map={STATUS} value="failed" /> {s.failed}</li>
+              <li><Pill map={STATUS} value="missing" /> {s.missing}</li>
+            </ul>
+          </div>
+
+          <div className="fc-bar">
+            <label className="fc-check"><input type="checkbox" checked={all} onChange={e => setAll(e.target.checked)} /> {L('Tout afficher (sinon : seulement ce qui manque)', 'Show everything (else: only what is missing)')}</label>
+            <span className="spacer" />
+            {retryable.length > 0 && <button className="btn sm" onClick={pickAll}>{picked.size === retryable.length ? L('Tout décocher', 'Untick all') : L(`Cocher les ${retryable.length} relançables`, `Tick the ${retryable.length} retryable`)}</button>}
+            <button className="btn sm primary" disabled={!picked.size || busy} onClick={retry}>{L(`Relancer ${picked.size || ''} route(s)`, `Run ${picked.size || ''} route(s) again`)}</button>
+          </div>
+
+          {shown.length === 0 && commands.length === 0 && <div className="empty-state">{L('Rien ne manque : toutes les routes ont été suivies et copiées.', 'Nothing missing: every route was followed and copied.')}</div>}
+
+          <ol className="fc-list">
+            {shown.map(c => (
+              <li key={c.key} className="fc-x">
+                <div className="fc-x-head">
+                  <span className="mono muted">#{c.order}</span>
+                  <b>{c.title}</b>
+                  {c.personal && <span className="fc-pill mute">{L('jamais copié (anti-hameçonnage)', 'never copied (anti-phishing)')}</span>}
+                  {rep && !c.personal && !c.page && <span className="fc-pill bad">{L('page absente de la réplique', 'no page in the replica')}</span>}
+                </div>
+                {c.path.length > 0 && <div className="fc-path mono">{c.path.join(' › ')}</div>}
+                {c.routes.length > 0 && (
+                  <ul className="fc-routes">
+                    {c.routes.map((r, i) => {
+                      const id = idOf(c, r)
+                      return (
+                        <li key={i}>
+                          {r.retry ? <input type="checkbox" checked={picked.has(id)} onChange={() => toggle(id, r.retry)} aria-label={L(`Relancer ${r.label}`, `Run ${r.label} again`)} /> : <span className="fc-nobox" />}
+                          <span className="fc-label">{r.kind === 'keyboard' ? '⌨ ' : ''}{r.label}</span>
+                          <Pill map={STATUS} value={r.status} title={r.error || r.alert || ''} />
+                          {r.target && <span className="fc-target muted">→ {r.target.title}</span>}
+                          {!r.retry && PROBLEM.has(r.status) && <span className="small muted">{L('chemin inconnu : relancez la capture', 'way unknown: run the capture again')}</span>}
+                          <span className="spacer" />
+                          <Pill map={REPLICA} value={r.replica} />
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+              </li>
+            ))}
+          </ol>
+
+          {commands.length > 0 && (
+            <div className="fc-x">
+              <div className="fc-x-head"><b>{L('Menu des commandes', 'Command menu')}</b></div>
+              <ul className="fc-routes">
+                {commands.map(c => {
+                  const id = idOf(null, c)
+                  return (
+                    <li key={c.command}>
+                      {c.retry ? <input type="checkbox" checked={picked.has(id)} onChange={() => toggle(id, c.retry)} aria-label={L(`Relancer ${c.command}`, `Run ${c.command} again`)} /> : <span className="fc-nobox" />}
+                      <span className="fc-label mono">{c.command}</span>
+                      <Pill map={STATUS} value={c.status} />
+                      {c.description && <span className="fc-target muted">{c.description}</span>}
+                      <span className="spacer" />
+                      <Pill map={REPLICA} value={c.replica} />
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  )
+}

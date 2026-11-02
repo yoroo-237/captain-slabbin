@@ -50,6 +50,15 @@ STEP_TIMEOUT = 120
 DEFAULT_CAPTURES = Path(__file__).with_name("captures")
 
 
+class RouteLost(Exception):
+    """Une route à relancer dont l'écran ou le bouton n'est plus retrouvé."""
+
+
+def label_of(action):
+    """Le libellé d'une action dans le journal : la commande ou le texte, [le bouton]."""
+    return f"[{action[3]}]" if action[0] in ("cb", "goto") else action[1]
+
+
 def stop_requested(args):
     """L'interface demande l'arrêt en créant ce fichier : la capture est alors écrite
     normalement, alors qu'un arrêt brutal du processus sous Windows perdrait la fin."""
@@ -519,7 +528,11 @@ class Explorer:
     async def go_back_to(self, data, label):
         """Le bot a remplacé l'écran qui portait ce bouton : on refait le chemin qui y
         mène (/start, puis les boutons), sans enregistrer ces écrans de passage."""
-        screen = self.origin.get(base64.b64encode(data).decode())
+        return await self.reach(self.origin.get(base64.b64encode(data).decode()), label, data)
+
+    async def reach(self, screen, label, data=None):
+        """Affiche l'écran `screen` et y trouve le bouton `label` : depuis le dernier
+        carrefour encore visible, sinon par le chemin complet."""
         path = self.paths.get(screen)
         if not path:
             return None
@@ -589,6 +602,19 @@ class Explorer:
         alert = None
         if action[0] in ("cmd", "text"):
             await self.client.send_message(self.bot, action[1])
+        elif action[0] == "goto":
+            _, screen, _, label = action
+            found = await self.reach(screen, label)
+            if not found:
+                raise RouteLost(label)
+            msg_id, data = found
+            self.seen.add(("cb", data))
+            self.origin[base64.b64encode(data).decode()] = screen
+            try:
+                answer = await self.client(functions.messages.GetBotCallbackAnswerRequest(peer=self.bot, msg_id=msg_id, data=data))
+            except errors.BotResponseTimeoutError:
+                return None, msg_id
+            return answer.message or (f"url: {answer.url}" if answer.url else None), msg_id
         else:
             _, msg_id, data, _label = action
             msg_id = await self.button_message(msg_id, data)
@@ -609,7 +635,7 @@ class Explorer:
         return alert, None
 
     async def step(self, action):
-        label = action[1] if action[0] != "cb" else f"[{action[3]}]"
+        label = label_of(action)
         error = alert = pressed = None
         for attempt in range(2):
             try:
@@ -618,6 +644,9 @@ class Explorer:
             except errors.FloodWaitError:
                 # Telegram impose une pause : elle se fait dans run(), hors du délai par action
                 raise
+            except RouteLost:
+                error = "RouteLost"
+                break
             except errors.RPCError as e:
                 # Bouton périmé, bot muet, message supprimé… : on note et on passe à la suite
                 error = type(e).__name__
@@ -631,8 +660,13 @@ class Explorer:
         await asyncio.sleep(self.args.wait)
 
         # Le chemin des écrans obtenus : celui de l'écran du bouton, plus ce bouton
+        start = None
         if action[0] == "cb":
-            base = self.paths.get(self.origin.get(base64.b64encode(action[2]).decode()))
+            start = self.origin.get(base64.b64encode(action[2]).decode())
+        elif action[0] == "goto":
+            start = action[1]
+        if start is not None or action[0] in ("cb", "goto"):
+            base = self.paths.get(start)
             path = base + [["cb", action[3]]] if base is not None else None
         else:
             path = [[action[0] if action[0] == "text" else "cmd", action[1]]]
@@ -650,13 +684,15 @@ class Explorer:
             if edited:
                 edited_key = await self.capture(edited, label, path)
                 keys.append(edited_key)
-        if action[0] == "cb" and not error:
+        if action[0] in ("cb", "goto") and not error:
             known = self.label_results.setdefault(self.norm(action[3]), {"played": 0, "screens": []})
             known["played"] += 1
             for k in keys:
                 if k not in known["screens"]:
                     known["screens"].append(k)
         step = {"action": label, "alert": alert, "error": error, "screens": keys}
+        if start:
+            step["from"] = start
         if edited_key and edited_key not in keys[:-1]:
             step["edited"] = edited_key
         self.steps.append(step)
@@ -698,7 +734,7 @@ class Explorer:
                     break
                 continue
             except asyncio.TimeoutError:
-                label = action[1] if action[0] != "cb" else f"[{action[3]}]"
+                label = label_of(action)
                 self.steps.append({"action": label, "alert": None, "error": "Timeout", "screens": []})
                 print(f"{len(self.steps):>4}  {label[:60]:<60} -> sans réponse après {STEP_TIMEOUT}s : passée")
                 continue
@@ -713,7 +749,7 @@ class Explorer:
                     break
                 continue
             except Exception as e:  # une erreur sur une action ne doit pas arrêter toute la capture
-                label = action[1] if action[0] != "cb" else f"[{action[3]}]"
+                label = label_of(action)
                 self.steps.append({"action": label, "alert": None, "error": type(e).__name__, "screens": []})
                 print(f"{len(self.steps):>4}  {label[:60]:<60} -> erreur {type(e).__name__} : {str(e)[:80]} (action passée)")
                 continue
@@ -739,6 +775,22 @@ class Explorer:
                 print(f"  … encore {left // 60} min de pause imposée")
         print("  pause terminée : le parcours reprend")
         return True
+
+    def add_retries(self, items):
+        """Les routes choisies dans la vérification : un bouton d'un écran (on retourne
+        sur cet écran puis on appuie), une commande ou un texte ; jouées en premier."""
+        added = 0
+        for item in reversed(items):
+            if item.get("screen") in self.screens and item.get("label"):
+                self.queue.appendleft(("goto", item["screen"], None, item["label"]))
+            elif str(item.get("cmd", "")).startswith("/"):
+                self.queue.appendleft(("cmd", item["cmd"]))
+            elif item.get("text"):
+                self.queue.appendleft(("text", item["text"]))
+            else:
+                continue
+            added += 1
+        print(f"{added} route(s) à relancer, jouées en premier.")
 
     async def reconnect(self, tries=RECONNECT_TRIES):
         """Attend le retour du réseau (environ 10 minutes au plus), sans rien rejouer."""
@@ -910,6 +962,7 @@ def parse_args():
     parser.add_argument("--max-per-prefix", type=int, default=0,
                         help="nombre max de commandes d'une même famille (/p1, /p2...)")
     parser.add_argument("--no-commands", action="store_true", help="ne pas envoyer les commandes trouvées dans les textes")
+    parser.add_argument("--retry", metavar="FICHIER", help="routes à relancer (JSON écrit par la vérification)")
     parser.add_argument("--no-join", action="store_true", help="ne pas rejoindre les canaux que le bot exige")
     parser.add_argument("--no-inline", action="store_true", help="ne pas lire le mode inline du bot")
     parser.add_argument("--no-media", action="store_true", help="ne pas télécharger les images et fichiers")
@@ -944,6 +997,8 @@ async def explore_bot(client, name, args):
     # Une capture existante est reprise : rien de ce qui a déjà été joué ne l'est à nouveau
     if not args.fresh:
         explorer.load_state()
+    if args.retry:
+        explorer.add_retries(json.loads(Path(args.retry).read_text(encoding="utf-8")))
     await explorer.read_profile()
     try:
         await explorer.run()

@@ -22,6 +22,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { prisma } from '../src/db.js';
 import { cmdName } from '../src/services/telegramCommands.js';
+import { keptScreens, isBack, commandOf, typedOf, pageKeys, targetOf as targetIn } from '../src/services/captureMap.js';
 import { captureMedia } from './capture-media.js';
 import { applyStyle } from '../src/services/telegram.service.js';
 import { currentTenant } from '../src/tenant.js';
@@ -37,27 +38,14 @@ const refreshBots = args.includes('--refresh-bots');
 if (!dir) { console.error('Usage: node scripts/import-bot-capture.js <capture folder> [--name "Style name"] [--apply-to <bot id>] [--dry]'); process.exit(1); }
 
 const { bot, screens: captured, profile = {} } = JSON.parse(await fs.readFile(path.join(dir, 'data.json'), 'utf8'));
-// Anti-phishing screens ("your secret phrase…") hold the capturing account's own
-// secret: never copied, every customer of the replica would see it
-const PERSONAL = /secret phrase|phrase secr[eè]te|scam ?bot|phishing/i;
-const screens = captured.filter(s => !PERSONAL.test(s.raw || s.html || ''));
+// Anti-phishing screens are never copied (see captureMap.js)
+const screens = keptScreens(captured);
 const personal = captured.length - screens.length;
 const name = (opt('--name') || `Réplique @${bot}`).slice(0, 60);
 const byKey = new Map(screens.map(s => [s.key, s]));
-const isBack = b => /⇇|⇆|^\W*back\b/i.test(b.text) || /^\/back_/.test(b.data || '');
-const commandOf = s => (s.sources || []).find(x => x.startsWith('/'));
 
-// Page keys: the command that opens the screen, else s_<screen key>; unique, 32 chars max
-const keyOf = new Map();
-const used = new Set();
-for (const s of [...screens].sort((a, b) => a.order - b.order)) {
-  const cmd = commandOf(s);
-  let key = cmd ? cmdName(cmd) : `s_${s.key.slice(0, 10)}`;
-  if (!key) key = `s_${s.key.slice(0, 10)}`;
-  for (let i = 2; used.has(key); i++) key = `${key.slice(0, 29)}_${i}`;
-  used.add(key);
-  keyOf.set(s.key, key);
-}
+// Page keys: the command that opens the screen, else s_<screen key>
+const keyOf = pageKeys(screens);
 // /start can send several messages: home is the one that carries the menu (most buttons)
 const startScreen = screens.filter(s => (s.sources || []).includes('/start'))
   .sort((a, b) => (b.buttons || []).flat().length - (a.buttons || []).flat().length || a.order - b.order)[0];
@@ -69,8 +57,6 @@ const menuScreen = screens.find(s => (s.sources || []).includes('/menu'))
 const menuKey = menuScreen && keyOf.get(menuScreen.key);
 // --merge-into copies these information pages (default: QT Market's)
 const only = new Set((opt('--pages') || 'about_qtetra,v_qtetra_refunds,v_qtetra_shipping,pgp_qtetra').split(',').map(cmdName));
-// Text a customer types (a reply-keyboard button) that opens a screen
-const typedOf = s => (s.sources || []).filter(x => !x.startsWith('/') && !x.startsWith('['));
 
 // Telethon's HTML → what the Bot API accepts: no custom emoji links, real newlines
 const clean = html => String(html || '')
@@ -78,13 +64,8 @@ const clean = html => String(html || '')
   .replace(/<br\s*\/?>/gi, '\n')
   .slice(0, 4000);
 
-// The screen a button opens: the nearest later screen that was reached by clicking
-// a button with that label ([label]), or by sending its text (reply keyboard)
-function targetOf(screen, button) {
-  const label = button.kind === 'keyboard' ? button.text : `[${button.text}]`;
-  const later = screens.filter(s => s.order > screen.order && (s.sources || []).includes(label));
-  return later.sort((a, b) => a.order - b.order)[0] || null;
-}
+// The screen a button opens (see captureMap.js)
+const targetOf = (screen, button) => targetIn(screens, screen, button);
 
 // Images, uploaded once each (across imports too: see capture-media.js), and only
 // those of the pages kept

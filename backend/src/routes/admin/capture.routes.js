@@ -14,6 +14,10 @@ r.use(requireAdmin);
 r.get('/state', (req, res) => res.json(ok(capture.state(req.user.sub))));
 r.get('/events', (req, res) => capture.subscribe(req.user.sub, req, res));
 r.get('/captures', async (req, res) => res.json(ok({ captures: await capture.listCaptures(req.user.sub), key: capture.filesKey(req.user.sub) })));
+// Fidelity check: each crossroad's routes, captured and copied into the replica; then
+// run again the routes picked
+r.get('/captures/:bot/check', async (req, res) => res.json(ok(await capture.checkFidelity(req.user.sub, req.params.bot, req.query.style))));
+r.post('/captures/:bot/retry', async (req, res) => res.status(202).json(ok(await capture.retryRoutes(req.user.sub, req.params.bot, req.body?.items))));
 r.delete('/captures/:bot', async (req, res) => { await capture.removeCapture(req.user.sub, req.params.bot); res.json(ok({ removed: true })); });
 
 // Each staff member's own Telegram: API keys, then sessions
