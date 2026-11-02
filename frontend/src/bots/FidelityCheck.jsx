@@ -43,9 +43,11 @@ const PROBLEM = new Set(['pending', 'failed', 'missing'])
 const isProblem = r => PROBLEM.has(r.status) || ['not_copied', 'broken', 'no_page', 'not_in_menu'].includes(r.replica)
 const idOf = (c, r) => `${c?.key || 'cmd'}|${r.label || r.command}`
 
-export default function FidelityCheck({ bot, busy, tick, onRetried }) {
+// `rebuild`: the style the routes run again are rebuilt into once done (the site's
+// update page); without it the capture is only completed
+export default function FidelityCheck({ bot, busy, tick, onRetried, rebuild }) {
   const { notify } = useUi()
-  const [style, setStyle] = useState('')
+  const [style, setStyle] = useState(rebuild ? String(rebuild) : '')
   const [report, setReport] = useState(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -71,7 +73,7 @@ export default function FidelityCheck({ bot, busy, tick, onRetried }) {
 
   async function retry() {
     try {
-      await adminFetch(`/admin/capture/captures/${encodeURIComponent(bot)}/retry`, { method: 'POST', body: JSON.stringify({ items: [...picked.values()] }) })
+      await adminFetch(`/admin/capture/captures/${encodeURIComponent(bot)}/retry`, { method: 'POST', body: JSON.stringify({ items: [...picked.values()], ...(rebuild ? { styleId: rebuild } : {}) }) })
       notify(L(`${picked.size} route(s) relancée(s) : suivez le journal plus haut.`, `${picked.size} route(s) run again: follow the journal above.`), 'info')
       setPicked(new Map())
       onRetried?.()
