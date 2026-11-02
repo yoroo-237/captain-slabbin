@@ -103,6 +103,47 @@ export default function App() {
   const cost = isSuper ? 0 : pricing?.reportCostTokens ?? 1
   const short = user && wallet && cost > 0 && wallet.tokens < cost
 
+  // Same form on the home page and in the super admin space
+  const reportCard = (
+    <section className="card">
+      <h2>{t.reportTitle}</h2>
+      <p className="cost">
+        {isSuper ? t.costSuper : cost > 0 ? t.costLine(cost) : t.costFree}
+        {user && wallet && cost > 0 && <span> · {t.balanceShort(wallet.tokens)}</span>}
+      </p>
+      {!user && (
+        <p className="msg info">{t.loginToReport} <a href="#login" className="link">{t.auth.login}</a></p>
+      )}
+      {short && (
+        <p className="msg error">{t.errors.insufficient_tokens} <a href="#wallet" className="link">{t.wallet.topUp}</a></p>
+      )}
+      <form onSubmit={submit}>
+        <label>
+          {t.target}
+          <input value={target} onChange={(e) => setTarget(e.target.value)} placeholder={t.targetHint} required />
+        </label>
+
+        <label>
+          {t.type}
+          <select value={type} onChange={(e) => setType(e.target.value)} required>
+            <option value="" disabled>{t.pickType}</option>
+            {TYPE_KEYS.map((k) => <option key={k} value={k}>{t.types[k]}</option>)}
+          </select>
+        </label>
+
+        <button className="primary" disabled={status.state === 'sending' || short}>
+          {status.state === 'sending' ? t.sending : user ? t.submitCost(cost) : t.loginAndReport}
+        </button>
+        {status.message && (
+          <p className={`msg ${status.state}`}>
+            {status.message}
+            {status.code === 'insufficient_tokens' && <> <a href="#wallet" className="link">{t.wallet.topUp}</a></>}
+          </p>
+        )}
+      </form>
+    </section>
+  )
+
   return (
     <>
     <header className="topbar">
@@ -114,6 +155,7 @@ export default function App() {
         <nav className="nav">
           {user ? (
             <>
+              <a href="#" className={`pill ${route === '' ? 'on' : ''}`}>{t.submit}</a>
               <a href="#wallet" className={`pill ${route === 'wallet' ? 'on' : ''}`}>
                 {wallet && !isSuper ? `${wallet.tokens} ${t.wallet.tokens}` : t.wallet.title}
               </a>
@@ -133,7 +175,7 @@ export default function App() {
     </header>
 
     <div className="page">
-      {route === 'admin' && <Admin t={t} lang={lang} user={user} />}
+      {route === 'admin' && <Admin t={t} lang={lang} user={user} reportCard={reportCard} />}
       {route === 'login' && (user ? <section className="card narrow"><p className="muted">{t.auth.signedInAs(user.username)}</p></section> : <Auth t={t} onDone={signedIn} />)}
       {route === 'wallet' && (user ? <Wallet t={t} lang={lang} wallet={wallet} reloadWallet={reloadWallet} exempt={isSuper} /> : <Auth t={t} onDone={signedIn} />)}
 
@@ -145,43 +187,7 @@ export default function App() {
           <p className="lead">{t.heroLead}</p>
         </section>
         <main>
-          <section className="card">
-            <h2>{t.reportTitle}</h2>
-            <p className="cost">
-              {isSuper ? t.costSuper : cost > 0 ? t.costLine(cost) : t.costFree}
-              {user && wallet && cost > 0 && <span> · {t.balanceShort(wallet.tokens)}</span>}
-            </p>
-            {!user && (
-              <p className="msg info">{t.loginToReport} <a href="#login" className="link">{t.auth.login}</a></p>
-            )}
-            {short && (
-              <p className="msg error">{t.errors.insufficient_tokens} <a href="#wallet" className="link">{t.wallet.topUp}</a></p>
-            )}
-            <form onSubmit={submit}>
-              <label>
-                {t.target}
-                <input value={target} onChange={(e) => setTarget(e.target.value)} placeholder={t.targetHint} required />
-              </label>
-
-              <label>
-                {t.type}
-                <select value={type} onChange={(e) => setType(e.target.value)} required>
-                  <option value="" disabled>{t.pickType}</option>
-                  {TYPE_KEYS.map((k) => <option key={k} value={k}>{t.types[k]}</option>)}
-                </select>
-              </label>
-
-              <button className="primary" disabled={status.state === 'sending' || short}>
-                {status.state === 'sending' ? t.sending : user ? t.submitCost(cost) : t.loginAndReport}
-              </button>
-              {status.message && (
-                <p className={`msg ${status.state}`}>
-                  {status.message}
-                  {status.code === 'insufficient_tokens' && <> <a href="#wallet" className="link">{t.wallet.topUp}</a></>}
-                </p>
-              )}
-            </form>
-          </section>
+          {reportCard}
 
           <section className="card">
             <h2>{t.reported}</h2>

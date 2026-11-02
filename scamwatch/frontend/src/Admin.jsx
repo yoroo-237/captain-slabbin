@@ -3,7 +3,7 @@ import { api, session, safeLink, fmtCrypto, fmtUsd } from './api.js'
 import { PasswordCard } from './Auth.jsx'
 
 const FILTERS = ['pending', 'confirmed', 'rejected', 'all']
-const TABS = ['moderation', 'wallet', 'whitelist', 'settings']
+const TABS = ['moderation', 'report', 'wallet', 'whitelist', 'settings']
 const RESERVE = ['BTC', 'LTC', 'DOGE', 'ETH', 'XMR']
 const SWEEPABLE = ['BTC', 'LTC', 'DOGE', 'ETH']
 
@@ -363,7 +363,8 @@ function Settings({ t }) {
   )
 }
 
-export default function Admin({ t, lang, user }) {
+// reportCard: the report form of the home page, so the super admin reports from here too
+export default function Admin({ t, lang, user, reportCard }) {
   const [tab, setTab] = useState('moderation')
 
   if (!user) return <section className="card narrow"><p className="muted">{t.admin.signInFirst}</p><a className="link" href="#login">{t.auth.login}</a></section>
@@ -375,6 +376,7 @@ export default function Admin({ t, lang, user }) {
         {TABS.map((x) => <button key={x} className={x === tab ? 'on' : ''} onClick={() => setTab(x)}>{t.admin.tabs[x]}</button>)}
       </div>
       {tab === 'moderation' && <Moderation t={t} lang={lang} />}
+      {tab === 'report' && <div className="narrow-wide">{reportCard}</div>}
       {tab === 'wallet' && <WalletAdmin t={t} lang={lang} />}
       {tab === 'whitelist' && <Whitelist t={t} lang={lang} />}
       {tab === 'settings' && <div className="admin"><Settings t={t} /><PasswordCard t={t} /></div>}

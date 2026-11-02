@@ -105,7 +105,7 @@ export const messages = {
     },
     admin: {
       title: 'Admin',
-      tabs: { moderation: 'Moderation', wallet: 'Wallet', whitelist: 'Whitelist', settings: 'Settings' },
+      tabs: { moderation: 'Moderation', report: 'Report', wallet: 'Wallet', whitelist: 'Whitelist', settings: 'Settings' },
       signInFirst: 'Sign in with the super admin account.',
       forbidden: 'This space is for the super admin only.',
       pick: 'Select an account to check its evidence.',
@@ -276,7 +276,7 @@ export const messages = {
     },
     admin: {
       title: 'Admin',
-      tabs: { moderation: 'Modération', wallet: 'Portefeuille', whitelist: 'Liste blanche', settings: 'Réglages' },
+      tabs: { moderation: 'Modération', report: 'Signaler', wallet: 'Portefeuille', whitelist: 'Liste blanche', settings: 'Réglages' },
       signInFirst: 'Connectez-vous avec le compte super admin.',
       forbidden: 'Cet espace est réservé au super admin.',
       pick: 'Choisissez un compte pour vérifier ses preuves.',
