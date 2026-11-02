@@ -6,9 +6,9 @@ Standalone project of this repository, with its own Railway project, served on i
 
 ## Features
 
-- Report form: account (@username, t.me link or numeric ID), description and type. No proof link
-  or screenshot field: the capture already records the evidence.
-- Automatic type detection (`backend/src/detect.js`), live preview, the user can override it.
+- Report form: account (@username, t.me link or numeric ID) and type, nothing else. No description,
+  proof link or screenshot field: the capture already records what happened.
+- `backend/src/detect.js` still guesses the type when another client sends a description without one.
 - A limited number of reports per user and account (1 by default, 0 = no limit). The API still
   accepts a proof link and screenshots from other clients (deduplicated, stored in Postgres).
 - The super admin has no cost and no limit.

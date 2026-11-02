@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { messages, TYPE_KEYS } from './i18n.js'
 import { api, session } from './api.js'
 import Admin from './Admin.jsx'
@@ -30,9 +30,7 @@ export default function App() {
   const [pricing, setPricing] = useState(null)
 
   const [target, setTarget] = useState('')
-  const [description, setDescription] = useState('')
-  const [type, setType] = useState('') // '' = automatic
-  const [detected, setDetected] = useState(null)
+  const [type, setType] = useState('')
   const [status, setStatus] = useState({ state: 'idle', message: '' })
 
   const [query, setQuery] = useState('')
@@ -83,21 +81,7 @@ export default function App() {
     return () => clearTimeout(id)
   }, [query])
 
-  // Debounced live detection
-  const seq = useRef(0)
-  useEffect(() => {
-    if (!description.trim()) return setDetected(null)
-    const mine = ++seq.current
-    const id = setTimeout(async () => {
-      try {
-        const r = await api('/api/detect', { method: 'POST', body: JSON.stringify({ description }) })
-        if (mine === seq.current) setDetected(r)
-      } catch {}
-    }, 300)
-    return () => clearTimeout(id)
-  }, [description])
-
-  // No link or screenshot field: the capture already records the evidence
+  // No description, link or screenshot field: the capture already records what happened
   const submit = async (e) => {
     e.preventDefault()
     if (!user) return go('login')
@@ -105,10 +89,10 @@ export default function App() {
     try {
       const r = await api('/api/reports', {
         method: 'POST',
-        body: JSON.stringify({ target, description, type: type || undefined, lang }),
+        body: JSON.stringify({ target, type, lang }),
       })
       setStatus({ state: 'ok', message: r.tokensSpent ? t.thanksPaid(r.tokensSpent) : t.thanks })
-      setTarget(''); setDescription(''); setType(''); setDetected(null)
+      setTarget(''); setType('')
       loadTargets(query); loadStats(); reloadWallet()
     } catch (err) {
       setStatus({ state: 'error', message: t.errors[err.code] || t.error, code: err.code })
@@ -180,21 +164,9 @@ export default function App() {
               </label>
 
               <label>
-                {t.description}
-                <textarea
-                  rows={4}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder={t.descriptionHint}
-                />
-              </label>
-
-              <label>
                 {t.type}
-                <select value={type} onChange={(e) => setType(e.target.value)}>
-                  <option value="">
-                    {t.auto}{detected ? ` (${t.detected}: ${t.types[detected.type]})` : ''}
-                  </option>
+                <select value={type} onChange={(e) => setType(e.target.value)} required>
+                  <option value="" disabled>{t.pickType}</option>
                   {TYPE_KEYS.map((k) => <option key={k} value={k}>{t.types[k]}</option>)}
                 </select>
               </label>

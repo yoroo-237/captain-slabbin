@@ -19,7 +19,7 @@ Plateforme de signalement des comptes Telegram frauduleux, avec portefeuille cry
 - **Solde en crypto, au cours du direct** : comme dans les boutiques, le client détient la crypto déposée. Sa valeur en USD suit le marché, et ses jetons aussi : `jetons = solde en USD / prix du jeton`.
 - **Paiement d'un signalement** : `jetons par signalement × prix du jeton`, débité en crypto au cours du moment. Le débit et l'enregistrement se font ensemble : un signalement refusé (doublon, compte protégé, erreur) ne coûte rien.
 - **Pas de commission** : 100 % de chaque dépôt revient au super admin (MKO). Un seul balayage par crypto, vers vos adresses de réserve.
-- **Preuves** : le formulaire ne demande ni lien ni capture d'écran, la capture enregistre déjà les preuves. Chaque utilisateur a une limite de signalements par compte (1 par défaut).
+- **Preuves** : le formulaire demande seulement le compte et le type. Ni description, ni lien, ni capture d'écran : la capture enregistre déjà ce qui s'est passé. Chaque utilisateur a une limite de signalements par compte (1 par défaut).
 - **Super admin** : aucun coût et aucune limite.
 - **Liste blanche** : les comptes et bots que vous y mettez ne peuvent pas être signalés et n'apparaissent pas dans la liste publique.
 
