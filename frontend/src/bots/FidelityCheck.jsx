@@ -24,6 +24,15 @@ const REPLICA = {
   not_copied: ['bad', () => L('absente de la réplique', 'not in the replica')],
   broken: ['bad', () => L('lien cassé', 'broken link')],
   no_page: ['bad', () => L('page absente', 'no page')],
+  not_in_menu: ['bad', () => L('absente du menu', 'not in the menu')],
+}
+// What differs between a screen and its page in the replica
+const ISSUE = {
+  page: () => L('page absente de la réplique', 'no page in the replica'),
+  text: () => L('texte différent', 'different text'),
+  image: () => L('image manquante', 'picture missing'),
+  keyboard: () => L('clavier manquant', 'keyboard missing'),
+  reply: () => L('réponse forcée manquante', 'forced reply missing'),
 }
 const Pill = ({ map, value, title }) => {
   if (!value || !map[value]) return null
@@ -31,7 +40,7 @@ const Pill = ({ map, value, title }) => {
   return <span className={`fc-pill ${tone}`} title={title || undefined}>{label()}</span>
 }
 const PROBLEM = new Set(['pending', 'failed', 'missing'])
-const isProblem = r => PROBLEM.has(r.status) || ['not_copied', 'broken', 'no_page'].includes(r.replica)
+const isProblem = r => PROBLEM.has(r.status) || ['not_copied', 'broken', 'no_page', 'not_in_menu'].includes(r.replica)
 const idOf = (c, r) => `${c?.key || 'cmd'}|${r.label || r.command}`
 
 export default function FidelityCheck({ bot, busy, tick, onRetried }) {
@@ -71,7 +80,7 @@ export default function FidelityCheck({ bot, busy, tick, onRetried }) {
 
   const s = report?.summary
   const rep = s?.replica
-  const shown = report ? report.crossroads.map(c => ({ ...c, routes: all ? c.routes : c.routes.filter(isProblem) })).filter(c => all || c.routes.length || (rep && !c.personal && !c.page)) : []
+  const shown = report ? report.crossroads.map(c => ({ ...c, routes: all ? c.routes : c.routes.filter(isProblem) })).filter(c => all || c.routes.length || c.issues?.length) : []
   const commands = report ? report.commands.filter(c => all || isProblem(c)) : []
 
   return (
@@ -88,20 +97,24 @@ export default function FidelityCheck({ bot, busy, tick, onRetried }) {
         </div>
       </div>
       <p className="small muted" style={{ marginTop: -8 }}>
-        {L('Chaque écran qui a des boutons est un carrefour. Pour chacune de ses routes : la capture l’a-t-elle suivie, et la réplique l’a-t-elle ? Cochez les routes à relancer : la capture revient au carrefour le plus proche encore affiché et appuie dessus.',
-          'Each screen with buttons is a crossroad. For each of its routes: did the capture follow it, and does the replica have it? Tick the routes to run again: the capture goes back to the nearest crossroad still shown and presses them.')}
+        {L('Chaque écran qui a des routes (boutons, textes du clavier, commandes écrites dans le texte) est un carrefour. Pour chaque route : la capture l’a-t-elle suivie, et la réplique l’a-t-elle ? Pour chaque écran : sa page dans la réplique a-t-elle le même texte, la même image, le même clavier ? Cochez les routes à relancer : la capture revient au carrefour le plus proche encore affiché.',
+          'Each screen with routes (buttons, keyboard texts, commands written in its text) is a crossroad. For each route: did the capture follow it, and does the replica have it? For each screen: does its page in the replica have the same text, picture and keyboard? Tick the routes to run again: the capture goes back to the nearest crossroad still shown.')}
       </p>
       {error && <div className="alert err">{error}</div>}
       {s && (
         <>
           <div className="fc-tiles">
             <div className={`fc-tile ${s.coverage >= 95 ? 'ok' : s.coverage >= 70 ? 'warn' : 'bad'}`}>
-              <b>{s.coverage}%</b><span>{L('routes couvertes', 'routes covered')}</span><small>{s.covered} / {s.routes} · {s.crossroads} {L('carrefours', 'crossroads')}</small>
+              <b>{s.coverage}%</b><span>{L('routes couvertes', 'routes covered')}</span><small>{s.covered} / {s.routes} · {s.crossroads} {L('carrefours', 'crossroads')} · {s.screens} {L('écrans', 'screens')}</small>
+              {s.textCommands > 0 && <small>{L(`dont ${s.textCommands} commandes écrites dans les textes`, `including ${s.textCommands} commands written in texts`)}</small>}
             </div>
             {rep
               ? <div className={`fc-tile ${rep.fidelity >= 95 ? 'ok' : rep.fidelity >= 70 ? 'warn' : 'bad'}`}>
                 <b>{rep.fidelity}%</b><span>{L('copié dans la réplique', 'copied in the replica')}</span>
-                <small>{rep.copied} {L('copiées', 'copied')} · {rep.notCopied} {L('absentes', 'missing')} · {rep.broken} {L('cassées', 'broken')}{rep.missingPages ? ` · ${rep.missingPages} ${L('pages absentes', 'pages missing')}` : ''}</small>
+                <small>{rep.copied} {L('routes copiées', 'routes copied')} · {rep.notCopied} {L('absentes', 'missing')} · {rep.broken} {L('cassées', 'broken')}</small>
+                <small>{[rep.missingPages && `${rep.missingPages} ${L('pages absentes', 'pages missing')}`, rep.content.text && `${rep.content.text} ${L('textes différents', 'different texts')}`,
+                  rep.content.image && `${rep.content.image} ${L('images manquantes', 'pictures missing')}`, rep.content.keyboard && `${rep.content.keyboard} ${L('claviers manquants', 'keyboards missing')}`,
+                  rep.content.reply && `${rep.content.reply} ${L('réponses forcées manquantes', 'forced replies missing')}`, !rep.home && L('pas de page d’accueil (/start)', 'no home page (/start)')].filter(Boolean).join(' · ') || L('écrans identiques', 'screens identical')}</small>
               </div>
               : <div className="fc-tile mute"><b>–</b><span>{L('aucune réplique de ce bot', 'no replica of this bot')}</span><small>{L('« Répliquer le bot » pour comparer', '“Replicate the bot” to compare')}</small></div>}
             <ul className="fc-counts">
@@ -130,7 +143,8 @@ export default function FidelityCheck({ bot, busy, tick, onRetried }) {
                   <span className="mono muted">#{c.order}</span>
                   <b>{c.title}</b>
                   {c.personal && <span className="fc-pill mute">{L('jamais copié (anti-hameçonnage)', 'never copied (anti-phishing)')}</span>}
-                  {rep && !c.personal && !c.page && <span className="fc-pill bad">{L('page absente de la réplique', 'no page in the replica')}</span>}
+                  {c.leaf && <span className="fc-pill mute">{L('écran final', 'end screen')}</span>}
+                  {(c.issues || []).map(i => <span key={i} className="fc-pill bad">{ISSUE[i]?.() || i}</span>)}
                 </div>
                 {c.path.length > 0 && <div className="fc-path mono">{c.path.join(' › ')}</div>}
                 {c.routes.length > 0 && (
@@ -140,7 +154,7 @@ export default function FidelityCheck({ bot, busy, tick, onRetried }) {
                       return (
                         <li key={i}>
                           {r.retry ? <input type="checkbox" checked={picked.has(id)} onChange={() => toggle(id, r.retry)} aria-label={L(`Relancer ${r.label}`, `Run ${r.label} again`)} /> : <span className="fc-nobox" />}
-                          <span className="fc-label">{r.kind === 'keyboard' ? '⌨ ' : ''}{r.label}</span>
+                          <span className={`fc-label${r.kind === 'command' ? ' mono' : ''}`}>{r.kind === 'keyboard' ? '⌨ ' : ''}{r.label}</span>
                           <Pill map={STATUS} value={r.status} title={r.error || r.alert || ''} />
                           {r.target && <span className="fc-target muted">→ {r.target.title}</span>}
                           {!r.retry && PROBLEM.has(r.status) && <span className="small muted">{L('chemin inconnu : relancez la capture', 'way unknown: run the capture again')}</span>}
