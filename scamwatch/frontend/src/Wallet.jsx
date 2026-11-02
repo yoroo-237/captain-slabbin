@@ -3,7 +3,8 @@ import { api, CURRENCIES, fmtCrypto, fmtUsd } from './api.js'
 import { PasswordCard } from './Auth.jsx'
 
 // Balance in crypto at the live price, tokens available, top-ups and history
-export default function Wallet({ t, lang, wallet, reloadWallet }) {
+// exempt: the super admin pays nothing, so no balance to show and nothing to top up
+export default function Wallet({ t, lang, wallet, reloadWallet, exempt }) {
   const [currency, setCurrency] = useState('BTC')
   const [wanted, setWanted] = useState('10')
   const [prices, setPrices] = useState({})
@@ -70,11 +71,11 @@ export default function Wallet({ t, lang, wallet, reloadWallet }) {
 
   return (
     <div className="wallet">
-      <section className="card balance">
+      <section className={`card balance ${exempt ? 'full' : ''}`}>
         <h2>{t.wallet.title}</h2>
-        <p className="big">{wallet ? wallet.tokens : '...'} <span>{t.wallet.tokens}</span></p>
+        <p className="big">{exempt ? '∞' : wallet ? wallet.tokens : '...'} <span>{t.wallet.tokens}</span></p>
         <p className="muted">
-          {wallet ? t.wallet.balanceLine(fmtUsd(wallet.balance), fmtUsd(wallet.tokenPriceUsd), wallet.reportCostTokens) : ''}
+          {exempt ? t.costSuper : wallet ? t.wallet.balanceLine(fmtUsd(wallet.balance), fmtUsd(wallet.tokenPriceUsd), wallet.reportCostTokens) : ''}
         </p>
         {wallet?.holdings?.length > 0 && (
           <ul className="holdings">
@@ -87,10 +88,10 @@ export default function Wallet({ t, lang, wallet, reloadWallet }) {
             ))}
           </ul>
         )}
-        <p className="hint">{t.wallet.liveHint}</p>
+        {!exempt && <p className="hint">{t.wallet.liveHint}</p>}
       </section>
 
-      <section className="card">
+      {!exempt && <section className="card">
         <h2>{t.wallet.topUp}</h2>
         <div className="tabs">
           {CURRENCIES.map((c) => (
@@ -125,7 +126,7 @@ export default function Wallet({ t, lang, wallet, reloadWallet }) {
         )}
         {msg && <p className={`msg ${msg.ok ? 'ok' : 'error'}`}>{msg.text}</p>}
         <p className="hint">{t.wallet.topUpHint}</p>
-      </section>
+      </section>}
 
       <section className="card full">
         <h2>{t.wallet.history}</h2>

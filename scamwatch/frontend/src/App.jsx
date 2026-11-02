@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { messages, TYPE_KEYS } from './i18n.js'
-import { api, session, readAsDataUrl, MAX_FILES, MAX_FILE_BYTES, IMAGE_TYPES } from './api.js'
+import { api, session } from './api.js'
 import Admin from './Admin.jsx'
 import Auth from './Auth.jsx'
 import Wallet from './Wallet.jsx'
@@ -31,9 +31,6 @@ export default function App() {
 
   const [target, setTarget] = useState('')
   const [description, setDescription] = useState('')
-  const [proofUrl, setProofUrl] = useState('')
-  const [files, setFiles] = useState([])
-  const [fileInputKey, setFileInputKey] = useState(0)
   const [type, setType] = useState('') // '' = automatic
   const [detected, setDetected] = useState(null)
   const [status, setStatus] = useState({ state: 'idle', message: '' })
@@ -89,70 +86,52 @@ export default function App() {
   // Debounced live detection
   const seq = useRef(0)
   useEffect(() => {
-    if (!description.trim() && !proofUrl.trim()) return setDetected(null)
+    if (!description.trim()) return setDetected(null)
     const mine = ++seq.current
     const id = setTimeout(async () => {
       try {
-        const r = await api('/api/detect', { method: 'POST', body: JSON.stringify({ description, proofUrl }) })
+        const r = await api('/api/detect', { method: 'POST', body: JSON.stringify({ description }) })
         if (mine === seq.current) setDetected(r)
       } catch {}
     }, 300)
     return () => clearTimeout(id)
-  }, [description, proofUrl])
+  }, [description])
 
-  const pickFiles = (e) => {
-    const picked = [...e.target.files]
-    const error =
-      picked.length > MAX_FILES ? 'too_many_files'
-      : picked.some((f) => !IMAGE_TYPES.includes(f.type)) ? 'invalid_file'
-      : picked.some((f) => f.size > MAX_FILE_BYTES) ? 'file_too_large'
-      : null
-    if (error) {
-      setFiles([]); setFileInputKey((k) => k + 1)
-      return setStatus({ state: 'error', message: t.errors[error] })
-    }
-    setFiles(picked)
-    setStatus({ state: 'idle', message: '' })
-  }
-
+  // No link or screenshot field: the capture already records the evidence
   const submit = async (e) => {
     e.preventDefault()
     if (!user) return go('login')
     setStatus({ state: 'sending', message: '' })
     try {
-      const encoded = await Promise.all(files.map(readAsDataUrl))
       const r = await api('/api/reports', {
         method: 'POST',
-        body: JSON.stringify({
-          target, description, proofUrl: proofUrl || undefined, type: type || undefined, lang,
-          files: encoded.length ? encoded : undefined,
-        }),
+        body: JSON.stringify({ target, description, type: type || undefined, lang }),
       })
       setStatus({ state: 'ok', message: r.tokensSpent ? t.thanksPaid(r.tokensSpent) : t.thanks })
-      setTarget(''); setDescription(''); setProofUrl(''); setType(''); setDetected(null)
-      setFiles([]); setFileInputKey((k) => k + 1)
+      setTarget(''); setDescription(''); setType(''); setDetected(null)
       loadTargets(query); loadStats(); reloadWallet()
     } catch (err) {
       setStatus({ state: 'error', message: t.errors[err.code] || t.error, code: err.code })
     }
   }
 
-  const cost = user?.role === 'superadmin' ? 0 : pricing?.reportCostTokens ?? 1
+  const isSuper = user?.role === 'superadmin'
+  const cost = isSuper ? 0 : pricing?.reportCostTokens ?? 1
   const short = user && wallet && cost > 0 && wallet.tokens < cost
 
   return (
     <>
     <header className="topbar">
       <div className="topbar-inner">
-        <div>
-          <h1><a href="#" className="home">{t.title}</a></h1>
-          <p className="tagline">{t.tagline}</p>
-        </div>
+        <a href="#" className="brand" aria-label={t.title}>
+          <span className="brand-mark" aria-hidden="true"><img src="/logo-mko-192.png" alt="" width="39" height="39" /></span>
+          <span>{t.title}<small>{t.brandSub}</small></span>
+        </a>
         <nav className="nav">
           {user ? (
             <>
               <a href="#wallet" className={`pill ${route === 'wallet' ? 'on' : ''}`}>
-                {wallet ? `${wallet.tokens} ${t.wallet.tokens}` : t.wallet.title}
+                {wallet && !isSuper ? `${wallet.tokens} ${t.wallet.tokens}` : t.wallet.title}
               </a>
               {user.role === 'superadmin' && <a href="#admin" className={`pill ${route === 'admin' ? 'on' : ''}`}>{t.admin.title}</a>}
               <button className="pill" onClick={logout} title={user.username}>{t.auth.logout}</button>
@@ -172,14 +151,20 @@ export default function App() {
     <div className="page">
       {route === 'admin' && <Admin t={t} lang={lang} user={user} />}
       {route === 'login' && (user ? <section className="card narrow"><p className="muted">{t.auth.signedInAs(user.username)}</p></section> : <Auth t={t} onDone={signedIn} />)}
-      {route === 'wallet' && (user ? <Wallet t={t} lang={lang} wallet={wallet} reloadWallet={reloadWallet} /> : <Auth t={t} onDone={signedIn} />)}
+      {route === 'wallet' && (user ? <Wallet t={t} lang={lang} wallet={wallet} reloadWallet={reloadWallet} exempt={isSuper} /> : <Auth t={t} onDone={signedIn} />)}
 
       {route === '' && (
+        <>
+        <section className="hero">
+          <span className="mono accent">{t.heroKicker}</span>
+          <h1>{t.heroA} <span className="serif accent">{t.heroB}</span></h1>
+          <p className="lead">{t.heroLead}</p>
+        </section>
         <main>
           <section className="card">
             <h2>{t.reportTitle}</h2>
             <p className="cost">
-              {cost > 0 ? t.costLine(cost) : t.costFree}
+              {isSuper ? t.costSuper : cost > 0 ? t.costLine(cost) : t.costFree}
               {user && wallet && cost > 0 && <span> · {t.balanceShort(wallet.tokens)}</span>}
             </p>
             {!user && (
@@ -205,17 +190,6 @@ export default function App() {
               </label>
 
               <label>
-                {t.proof}
-                <input value={proofUrl} onChange={(e) => setProofUrl(e.target.value)} placeholder="https://" />
-              </label>
-
-              <label>
-                {t.screenshots}
-                <input key={fileInputKey} type="file" accept={IMAGE_TYPES.join(',')} multiple onChange={pickFiles} />
-                <span className="hint">{files.length ? t.filesPicked(files.length) : t.screenshotsHint}</span>
-              </label>
-
-              <label>
                 {t.type}
                 <select value={type} onChange={(e) => setType(e.target.value)}>
                   <option value="">
@@ -224,8 +198,6 @@ export default function App() {
                   {TYPE_KEYS.map((k) => <option key={k} value={k}>{t.types[k]}</option>)}
                 </select>
               </label>
-
-              <p className="hint">{t.repeatRule}</p>
 
               <button className="primary" disabled={status.state === 'sending' || short}>
                 {status.state === 'sending' ? t.sending : user ? t.submitCost(cost) : t.loginAndReport}
@@ -262,6 +234,7 @@ export default function App() {
             </ul>
           </section>
         </main>
+        </>
       )}
     </div>
     </>

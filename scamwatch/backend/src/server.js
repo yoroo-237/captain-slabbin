@@ -105,7 +105,8 @@ app.post('/api/reports', requireUser, async (req, res) => {
     // Cas 1 : signalement SANS preuve (ni lien, ni capture d'écran).
     // Le nombre de signalements sans preuve autorisés par utilisateur et par compte est fixé
     // par le super admin (maxReportsNoProof, 0 = illimité).
-    if (!urlHash && decoded.files.length === 0 && settings.maxReportsNoProof > 0) {
+    // Le super admin n'a aucune limite ni aucun coût.
+    if (req.user.role !== 'superadmin' && !urlHash && decoded.files.length === 0 && settings.maxReportsNoProof > 0) {
       // On ne compte que les signalements sans preuve de cet utilisateur pour ce compte
       const sent = await prisma.report.count({
         where: { targetId: existing.id, userId: req.user.id, proofHash: null, evidence: { none: {} } },

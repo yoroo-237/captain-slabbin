@@ -19,7 +19,8 @@ Plateforme de signalement des comptes Telegram frauduleux, avec portefeuille cry
 - **Solde en crypto, au cours du direct** : comme dans les boutiques, le client détient la crypto déposée. Sa valeur en USD suit le marché, et ses jetons aussi : `jetons = solde en USD / prix du jeton`.
 - **Paiement d'un signalement** : `jetons par signalement × prix du jeton`, débité en crypto au cours du moment. Le débit et l'enregistrement se font ensemble : un signalement refusé (doublon, compte protégé, erreur) ne coûte rien.
 - **Pas de commission** : 100 % de chaque dépôt revient au super admin (MKO). Un seul balayage par crypto, vers vos adresses de réserve.
-- **Preuves** : un compte peut être re-signalé tant que chaque signalement apporte une preuve nouvelle (lien ou capture jamais envoyés pour ce compte). Sans preuve, une limite par utilisateur et par compte (1 par défaut).
+- **Preuves** : le formulaire ne demande ni lien ni capture d'écran, la capture enregistre déjà les preuves. Chaque utilisateur a une limite de signalements par compte (1 par défaut).
+- **Super admin** : aucun coût et aucune limite.
 - **Liste blanche** : les comptes et bots que vous y mettez ne peuvent pas être signalés et n'apparaissent pas dans la liste publique.
 
 ---
@@ -99,7 +100,7 @@ Ouvrez `https://scamwatch.captainslabbin.shop/api/health` : la réponse doit êt
 2. Onglet **Réglages** :
    - **Prix d'un jeton (USD)** : 1 $ par défaut ;
    - **Jetons par signalement** : 1 par défaut (0 = gratuit) ;
-   - **Signalements sans preuve par utilisateur et par compte** : 1 par défaut (0 = illimité) ;
+   - **Signalements par utilisateur et par compte** : 1 par défaut (0 = illimité) ;
    - **Durée de validité d'une adresse de dépôt** : 12 h par défaut.
 3. Onglet **Portefeuille** → **Adresses de réserve** : vos adresses BTC, LTC, DOGE, ETH, où partent les balayages. L'adresse **XMR** reçoit directement les dépôts Monero ; sans elle, la recharge XMR est indisponible.
 4. Onglet **Liste blanche** : ajoutez vos propres bots et comptes officiels (`@pseudo`, lien `t.me` ou ID numérique), avec une note facultative.
@@ -142,9 +143,10 @@ Un appel sans signature valide est refusé.
 - [ ] Un compte créé a 0 jeton, et un signalement est refusé avec un lien « Recharger ».
 - [ ] Après un dépôt, le solde en USD et le nombre de jetons s'affichent dans l'en-tête et dans **Portefeuille**.
 - [ ] Un signalement débite le bon nombre de jetons et apparaît dans l'**Historique**.
-- [ ] La même capture envoyée deux fois sur un compte est refusée, et rien n'est débité.
+- [ ] Un 2e signalement du même compte par le même utilisateur est refusé (limite à 1), et rien n'est débité.
+- [ ] Connecté en `MKO`, les signalements ne coûtent rien et ne sont pas limités.
 - [ ] Un compte de la liste blanche ne peut pas être signalé et n'apparaît pas dans la liste publique.
-- [ ] Dans **Modération**, les captures s'ouvrent, et Confirmer / Rejeter mettent à jour la liste publique (badge « Confirmé », compte rejeté masqué).
+- [ ] Dans **Modération**, Confirmer / Rejeter mettent à jour la liste publique (badge « Confirmé », compte rejeté masqué).
 - [ ] Après un redéploiement, la connexion `MKO` fonctionne toujours et les réglages sont conservés.
 
 ---

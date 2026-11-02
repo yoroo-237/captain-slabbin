@@ -1,7 +1,11 @@
 export const messages = {
   en: {
     title: 'ScamWatch',
-    tagline: 'Report scam, fake and abusive Telegram accounts.',
+    brandSub: 'Telegram reports',
+    heroKicker: '01 · Telegram',
+    heroA: 'Report the accounts that',
+    heroB: 'scam.',
+    heroLead: 'Scam, fake or abusive Telegram accounts: report them here. The list is public and free to browse.',
     reportTitle: 'Report an account',
     target: 'Account',
     targetHint: '@username, t.me link or numeric ID',
@@ -21,6 +25,7 @@ export const messages = {
     loginToReport: 'Reporting needs an account and tokens. Browsing the list is free.',
     costLine: (n) => `Each report costs ${n} token${n > 1 ? 's' : ''}.`,
     costFree: 'Reports are free right now.',
+    costSuper: 'Super admin: no cost, no limit.',
     balanceShort: (n) => `you have ${n}`,
     sending: 'Sending...',
     thanks: 'Report received. Thank you.',
@@ -29,7 +34,7 @@ export const messages = {
     errors: {
       invalid_target: 'Enter a valid @username, t.me link or numeric ID.',
       invalid_proof: 'The proof link must start with http:// or https://.',
-      already_reported: 'You reached the limit of reports without evidence for this account. Add a new link or new screenshots to report it again.',
+      already_reported: 'You reached the report limit for this account.',
       duplicate_proof: 'This evidence was already sent for this account. Add new evidence.',
       too_many_files: 'Up to 3 screenshots per report.',
       file_too_large: 'Each screenshot must be 3 MB or less.',
@@ -43,7 +48,7 @@ export const messages = {
     reported: 'Reported accounts',
     reports: 'reports',
     none: 'Nothing here yet.',
-    stats: (t, r) => `${t} accounts, ${r} reports`,
+    stats: (t, r) => `${t} account${t > 1 ? 's' : ''}, ${r} report${r > 1 ? 's' : ''}`,
     statuses: { pending: 'Pending', confirmed: 'Confirmed', rejected: 'Rejected' },
     types: {
       crypto_scam: 'Crypto scam',
@@ -150,13 +155,13 @@ export const messages = {
       fields: {
         tokenPriceUsd: 'Price of one token (USD)',
         reportCostTokens: 'Tokens per report',
-        maxReportsNoProof: 'Reports without evidence per user and account',
+        maxReportsNoProof: 'Reports per user and account',
         depositExpiryHours: 'Deposit address valid for (hours)',
       },
       fieldHints: {
         tokenPriceUsd: 'Tokens available = USD balance / this price.',
         reportCostTokens: '0 = reports are free.',
-        maxReportsNoProof: '0 = no limit. Reports with new evidence are always accepted.',
+        maxReportsNoProof: '0 = no limit. The super admin has no limit.',
         depositExpiryHours: 'From 1 to 168 hours.',
       },
       errors: {
@@ -175,7 +180,11 @@ export const messages = {
   },
   fr: {
     title: 'ScamWatch',
-    tagline: 'Signalez les comptes Telegram frauduleux, clones et abusifs.',
+    brandSub: 'Signalements Telegram',
+    heroKicker: '01 · Telegram',
+    heroA: 'Signalez les comptes qui',
+    heroB: 'arnaquent.',
+    heroLead: 'Comptes Telegram frauduleux, clones ou abusifs : signalez-les ici. La liste est publique et gratuite à consulter.',
     reportTitle: 'Signaler un compte',
     target: 'Compte',
     targetHint: '@pseudo, lien t.me ou ID numérique',
@@ -195,6 +204,7 @@ export const messages = {
     loginToReport: 'Signaler demande un compte et des jetons. La consultation de la liste est gratuite.',
     costLine: (n) => `Chaque signalement coûte ${n} jeton${n > 1 ? 's' : ''}.`,
     costFree: 'Les signalements sont gratuits en ce moment.',
+    costSuper: 'Super admin : aucun coût, aucune limite.',
     balanceShort: (n) => `vous en avez ${n}`,
     sending: 'Envoi...',
     thanks: 'Signalement reçu. Merci.',
@@ -203,7 +213,7 @@ export const messages = {
     errors: {
       invalid_target: 'Saisissez un @pseudo, un lien t.me ou un ID numérique valide.',
       invalid_proof: 'Le lien de preuve doit commencer par http:// ou https://.',
-      already_reported: 'Vous avez atteint la limite de signalements sans preuve pour ce compte. Ajoutez un nouveau lien ou de nouvelles captures pour le signaler à nouveau.',
+      already_reported: 'Vous avez atteint la limite de signalements pour ce compte.',
       duplicate_proof: 'Cette preuve a déjà été envoyée pour ce compte. Ajoutez une preuve nouvelle.',
       too_many_files: '3 captures maximum par signalement.',
       file_too_large: 'Chaque capture doit faire 3 Mo maximum.',
@@ -217,7 +227,7 @@ export const messages = {
     reported: 'Comptes signalés',
     reports: 'signalements',
     none: 'Rien pour l\'instant.',
-    stats: (t, r) => `${t} comptes, ${r} signalements`,
+    stats: (t, r) => `${t} compte${t > 1 ? 's' : ''}, ${r} signalement${r > 1 ? 's' : ''}`,
     statuses: { pending: 'En attente', confirmed: 'Confirmé', rejected: 'Rejeté' },
     types: {
       crypto_scam: 'Arnaque crypto',
@@ -324,13 +334,13 @@ export const messages = {
       fields: {
         tokenPriceUsd: 'Prix d\'un jeton (USD)',
         reportCostTokens: 'Jetons par signalement',
-        maxReportsNoProof: 'Signalements sans preuve par utilisateur et par compte',
+        maxReportsNoProof: 'Signalements par utilisateur et par compte',
         depositExpiryHours: 'Durée de validité d\'une adresse de dépôt (heures)',
       },
       fieldHints: {
         tokenPriceUsd: 'Jetons disponibles = solde en USD / ce prix.',
         reportCostTokens: '0 = signalements gratuits.',
-        maxReportsNoProof: '0 = illimité. Les signalements avec une preuve nouvelle sont toujours acceptés.',
+        maxReportsNoProof: '0 = illimité. Le super admin n\'a aucune limite.',
         depositExpiryHours: 'De 1 à 168 heures.',
       },
       errors: {

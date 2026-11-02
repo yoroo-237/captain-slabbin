@@ -6,13 +6,14 @@ Standalone project of this repository, with its own Railway project, served on i
 
 ## Features
 
-- Report form: account (@username, t.me link or numeric ID), description, optional proof link,
-  up to 3 screenshots (PNG, JPEG, WebP, 3 MB each, type checked from the bytes, stored in Postgres,
-  visible to the super admin only).
+- Report form: account (@username, t.me link or numeric ID), description and type. No proof link
+  or screenshot field: the capture already records the evidence.
 - Automatic type detection (`backend/src/detect.js`), live preview, the user can override it.
-- Repeated reports backed by evidence: an account can be reported again as long as each report
-  brings evidence never sent for it (links normalized, screenshots compared by SHA-256). Without
-  evidence, a limited number of reports per user and account (1 by default, 0 = no limit).
+- A limited number of reports per user and account (1 by default, 0 = no limit). The API still
+  accepts a proof link and screenshots from other clients (deduplicated, stored in Postgres).
+- The super admin has no cost and no limit.
+- Look: the design, logo and favicon of the portfolio (paper, charcoal, orange; Space Grotesk,
+  Instrument Serif, JetBrains Mono).
 - Public list and search, free and without account. Confirmed accounts get a badge and come first;
   rejected and whitelisted ones are hidden.
 
@@ -41,7 +42,7 @@ for one deploy puts the variable's password back.
 - Moderation: reports and screenshots per account, confirm, reject, back to pending, add to whitelist.
 - Wallet: funds received, reserve addresses, sweep per currency, deposits (manual credit for XMR).
 - Whitelist: accounts and bots that cannot be reported.
-- Settings: token price (USD), tokens per report, reports without evidence per user and account,
+- Settings: token price (USD), tokens per report, reports per user and account,
   deposit address validity.
 
 Not part of this project: automated sending of reports to Telegram.
