@@ -128,8 +128,8 @@ export default function App() {
   }
 
   // With proof: the server captures the account, the form follows the capture,
-  // shows it, then sends and pays the report with it
-  const sendWithProof = async () => {
+  // shows it, then sends and pays the report (or the batch) with it
+  const sendWithProof = async (count = 1, spreadMinutes = 0) => {
     setFlow({ mode: 'proof', at: 0, state: 'run', detail: t.flow.checking })
     try {
       const { captureId } = await api('/api/captures', { method: 'POST', body: JSON.stringify({ target }) })
@@ -150,7 +150,10 @@ export default function App() {
       step({ at: 2, detail: t.flow.typeFound(t.types[c.detectedType] || c.detectedType) })
       await sleep(700) // time to read the type before the payment step
       step({ at: 3, detail: t.flow.sending })
-      sent(await api('/api/reports', { method: 'POST', body: JSON.stringify({ target, lang, captureId }) }))
+      sent(await api('/api/reports', {
+        method: 'POST',
+        body: JSON.stringify({ target, lang, captureId, count, spreadMinutes: count > 1 ? spreadMinutes : 0 }),
+      }), count)
     } catch (err) { fail(err.code) }
   }
 
@@ -158,7 +161,7 @@ export default function App() {
     e?.preventDefault()
     if (!user) return go('login')
     setStatus({ state: 'idle', message: '' }); setProof(null)
-    return proofOn ? sendWithProof() : sendPlain(batch, snapSpread(spread))
+    return proofOn ? sendWithProof(batch, snapSpread(spread)) : sendPlain(batch, snapSpread(spread))
   }
 
   const isSuper = user?.role === 'superadmin'
@@ -204,8 +207,8 @@ export default function App() {
           </span>
         </label>
 
-        {/* Number of reports: 1 to MAX_BATCH on the same account, without proof only (a proof counts once) */}
-        {!proofOn && (
+        {/* Number of reports: 1 to MAX_BATCH on the same account; with proof, the batch shares the capture */}
+        {(
           <div className="spread">
             <span className="field-label">{t.batchCount}</span>
             <div className="stepper" role="group" aria-label={t.batchCount}>
@@ -218,7 +221,7 @@ export default function App() {
             </div>
           </div>
         )}
-        {!proofOn && batch > 1 && (
+        {batch > 1 && (
           // Period in minutes, by steps of SPREAD_STEP (0 = all at once)
           <div className="spread">
             <span className="field-label">{t.spreadLabel}</span>
@@ -236,11 +239,11 @@ export default function App() {
           </div>
         )}
 
-        {/* The only send button: with proof, one report; without, the number chosen above */}
-        <button className="primary" disabled={sending || (proofOn ? short : shortBatch)}>
+        {/* The only send button, for the number chosen above */}
+        <button className="primary" disabled={sending || shortBatch}>
           {sending ? t.flow.running
             : !user ? t.loginAndReport
-            : proofOn ? t.submitProof(cost)
+            : proofOn ? t.submitProof(batch, cost * batch)
             : batch > 1 ? t.batchSend(batch, cost * batch) : t.submitCost(cost)}
         </button>
         {flow && <Progress t={t} flow={flow} />}
@@ -253,8 +256,8 @@ export default function App() {
         )}
         {/* The proof could not be taken or is already known: the report can still go without it */}
         {status.state === 'error' && flow?.mode === 'proof' && (status.code?.startsWith('capture_') || status.code === 'duplicate_proof') && (
-          <button type="button" className="ghost" onClick={() => { setWithProof(false); setStatus({ state: 'idle', message: '' }); setProof(null); sendPlain() }}>
-            {t.flow.sendPlain(cost)}
+          <button type="button" className="ghost" onClick={() => { setWithProof(false); setStatus({ state: 'idle', message: '' }); setProof(null); sendPlain(batch, snapSpread(spread)) }}>
+            {t.flow.sendPlain(batch, cost * batch)}
           </button>
         )}
       </form>

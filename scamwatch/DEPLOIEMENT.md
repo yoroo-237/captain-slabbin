@@ -97,7 +97,8 @@ Le formulaire ne demande que le compte. Le serveur le regarde ensuite avec un co
 
 Le formulaire a une case **Joindre une preuve** et une barre de progression :
 - **Avec preuve** (case cochée) : vérification du compte, capture de la preuve, type, puis paiement et envoi. La capture est affichée sous la barre avant le paiement, et rien n'est débité si elle échoue (le bouton **Envoyer sans preuve** apparaît alors). Pas de limite par utilisateur, mais un même contenu ne compte qu'une fois par compte : si le compte n'a pas changé depuis la dernière preuve, le signalement est refusé et peut partir sans preuve.
-- **Sans preuve** : envoyé et payé tout de suite, dans la limite par utilisateur et par compte. Une capture en arrière-plan remplit ensuite le type (réutilisée pendant 24 h). L'envoi groupé et la répartition dans le temps (de 0 à 1440 minutes, par pas de 15) ne sont possibles que sans preuve.
+- **Sans preuve** : envoyé et payé tout de suite, dans la limite par utilisateur et par compte. Une capture en arrière-plan remplit ensuite le type (réutilisée pendant 24 h).
+- **Plusieurs signalements** : le nombre (et la répartition dans le temps, de 0 à 1440 minutes par pas de 15) se règle dans les deux cas. Avec preuve, tout le lot partage la même capture, qui ne peut ensuite plus resservir pour ce compte.
 
 Les captures se font une à la fois ; la barre indique combien attendent avant la vôtre.
 

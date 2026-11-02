@@ -36,6 +36,8 @@ model ScheduledReport {
   description  String    @default("")
   lang         String    @default("en")
   ipHash       String?
+  captureId    Int?      // batch with proof: the capture shared by the batch
+  proofHash    String?   // given to the report when it is sent ("cap:" + content hash + ":" + rank)
   dueAt        DateTime
   sentAt       DateTime?
   reportId     Int?      // report created when it was sent

@@ -126,7 +126,9 @@ app.get('/api/captures/:id/photo', requireUser, async (req, res) => {
 // evidence (link or screenshot) never sent for this account. Without evidence,
 // a limited number of reports per user and account (set in the super admin space).
 // Each report costs tokens, taken from the user's wallet.
-// count: 1 to MAX_BATCH reports sent at once, only without evidence (a proof counts once).
+// count: 1 to MAX_BATCH reports sent at once, without evidence or with a capture as proof:
+// the batch shares the capture, and that capture is the proof of this batch only.
+// A proof link or screenshots (other clients) still go with a single report.
 // spreadMinutes: the batch can be spread over a period, in steps of SPREAD_STEP minutes
 // (0 = all at once, up to MAX_SPREAD). The first report goes at once, the others one by one
 // at a regular interval; the total stays count.
@@ -138,7 +140,7 @@ app.post('/api/reports', requireUser, async (req, res) => {
 
   const count = Number(rawCount)
   if (!Number.isInteger(count) || count < 1 || count > MAX_BATCH) return res.status(400).json({ error: 'invalid_count' })
-  if (count > 1 && (proofUrl || captureId || (Array.isArray(files) && files.length))) return res.status(400).json({ error: 'invalid_count' })
+  if (count > 1 && (proofUrl || (Array.isArray(files) && files.length))) return res.status(400).json({ error: 'invalid_count' })
   const spreadMinutes = Number(rawSpread)
   if (!Number.isInteger(spreadMinutes) || spreadMinutes < 0 || spreadMinutes > MAX_SPREAD || spreadMinutes % SPREAD_STEP) return res.status(400).json({ error: 'invalid_spread' })
   // A single report has nothing to spread
@@ -190,7 +192,7 @@ app.post('/api/reports', requireUser, async (req, res) => {
     // y compris ceux d'un lot étalé qui attendent encore leur heure
     const sent = existing
       ? await prisma.report.count({ where: { targetId: existing.id, userId: req.user.id, proofHash: null, evidence: { none: {} } } })
-        + await prisma.scheduledReport.count({ where: { targetId: existing.id, userId: req.user.id, sentAt: null } })
+        + await prisma.scheduledReport.count({ where: { targetId: existing.id, userId: req.user.id, sentAt: null, proofHash: null } })
       : 0
     // Limite atteinte : refus avec 409 (Conflict)
     if (sent >= settings.maxReportsNoProof) return res.status(409).json({ error: 'already_reported' })
@@ -240,6 +242,9 @@ app.post('/api/reports', requireUser, async (req, res) => {
         update: { reportCount: { increment: immediate } },
         create: { ...target, reportCount: immediate },
       })
+      // Batch with proof: the first report holds the proof hash (a capture already sent is refused
+      // above), the others the same hash with their rank, so the unique index still applies
+      const proofOf = (rank) => (proof && rank > 1 ? `${urlHash}:${rank}` : urlHash)
       const reports = []
       for (let i = 0; i < immediate; i++) {
         reports.push(await tx.report.create({
@@ -250,7 +255,7 @@ app.post('/api/reports', requireUser, async (req, res) => {
             detectedType: detected.type,
             description: cleanDescription,
             proofUrl: cleanProof,
-            proofHash: urlHash,
+            proofHash: proofOf(i + 1),
             captureId: proof?.id ?? null,
             captured: !!proof,
             lang: lang === 'fr' ? 'fr' : 'en',
@@ -266,6 +271,7 @@ app.post('/api/reports', requireUser, async (req, res) => {
           data: {
             targetId: t.id, userId: req.user.id, type: finalType, detectedType: detected.type,
             description: cleanDescription, lang: lang === 'fr' ? 'fr' : 'en', ipHash,
+            captureId: proof?.id ?? null, proofHash: proof ? proofOf(immediate + i) : null,
             dueAt: new Date(start + i * intervalMs),
           },
         })
