@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { session, safeLink } from './api.js'
 
-// Screenshots need the session header, so they are fetched as blobs
-export function Screenshot({ id, alt, path = `/api/admin/evidence/${id}` }) {
+// Evidence needs the session header, so it is fetched as a blob
+function useBlob(path) {
   const [src, setSrc] = useState(null)
   useEffect(() => {
     let url
@@ -13,7 +13,21 @@ export function Screenshot({ id, alt, path = `/api/admin/evidence/${id}` }) {
       .catch(() => {})
     return () => { alive = false; if (url) URL.revokeObjectURL(url) }
   }, [path])
+  return src
+}
+
+export function Screenshot({ id, alt, path = `/api/admin/evidence/${id}` }) {
+  const src = useBlob(path)
   if (!src) return <span className="shot placeholder" />
+  return <a href={src} target="_blank" rel="noreferrer"><img className="shot" src={src} alt={alt} /></a>
+}
+
+// A report's media: screenshot, video or voice message, shown by its type
+export function Media({ id, mime, alt }) {
+  const src = useBlob(`/api/admin/evidence/${id}`)
+  if (!src) return <span className="shot placeholder" />
+  if (mime?.startsWith('video/')) return <video className="media" src={src} controls preload="metadata" />
+  if (mime?.startsWith('audio/')) return <audio className="media" src={src} controls preload="metadata" />
   return <a href={src} target="_blank" rel="noreferrer"><img className="shot" src={src} alt={alt} /></a>
 }
 

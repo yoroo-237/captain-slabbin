@@ -9,7 +9,7 @@ import cors from 'cors'
 import { prisma, getSettings, saveSettings } from './db.js'
 import { detectType } from './detect.js'
 import { parseTarget } from './target.js'
-import { decodeFiles, proofUrlHash } from './proof.js'
+import { decodeItems, hasProof, minWithProof } from './proof.js'
 import { authRouter, requireUser, requireSuper, bootstrapSuperadmin } from './auth.js'
 import { walletRouter, webhookRouter, adminWalletRouter, startWalletJobs } from './wallet.js'
 import { getHoldings, allocateUsd, debit, round2 } from './balance.js'
@@ -27,10 +27,10 @@ const MAX_REPORTS_LIMIT = 1000
 app.set('trust proxy', 1)
 app.use(cors())
 
-// Reports carry screenshots (base64), Alchemy needs the raw body for its signature,
-// every other route stays small
+// Reports carry media (base64, up to MAX_TOTAL_BYTES raw per send in proof.js),
+// Alchemy needs the raw body for its signature, every other route stays small
 const smallJson = express.json({ limit: '100kb' })
-const reportJson = express.json({ limit: '13mb' })
+const reportJson = express.json({ limit: '42mb' })
 const rawBody = express.raw({ type: '*/*', limit: '1mb' })
 app.use((req, res, next) => {
   if (req.path === '/api/reports') return reportJson(req, res, next)
@@ -137,24 +137,33 @@ app.get('/api/captures/:id/photo', requireUser, async (req, res) => {
 })
 
 // An account can be reported again and again, as long as each report brings
-// evidence (link or screenshot) never sent for this account. Without evidence,
-// a limited number of reports per user and account (set in the super admin space).
+// evidence never sent for this account. Without evidence, a limited number of reports
+// per user and account (set in the super admin space).
 // Each report costs tokens, taken from the user's wallet.
-// count: 1 to MAX_BATCH reports sent at once, without evidence or with a capture as proof:
-// the batch shares the capture, and that capture is the proof of this batch only.
-// A proof link or screenshots (other clients) still go with a single report.
+// items: one entry per report, 1 to MAX_BATCH, each with its own proof: a link (a forwarded
+// message's t.me link, for example) and/or media (screenshots, videos, voice messages).
+// No proof is shared: the same link or file in two reports is refused, and so is one this
+// account has already seen. In a batch, at least a third of the reports carry a proof.
+// captureId: a capture of the account taken for this send, the proof of the first report only.
+// Older clients send count, proofUrl and files: one report with them, the others without proof.
 // spreadMinutes: the batch can be spread over a period, in steps of SPREAD_STEP minutes
 // (0 = all at once, up to MAX_SPREAD). The first report goes at once, the others one by one
-// at a regular interval; the total stays count.
+// at a regular interval; the total stays the number of reports.
 const MAX_BATCH = 300
 const SPREAD_STEP = 15
 const MAX_SPREAD = 1440
 app.post('/api/reports', requireUser, async (req, res) => {
-  const { target: rawTarget, description = '', proofUrl, lang, files, captureId, count: rawCount = 1, spreadMinutes: rawSpread = 0 } = req.body || {}
+  const body = req.body || {}
+  const { target: rawTarget, description = '', lang, captureId, spreadMinutes: rawSpread = 0 } = body
 
-  const count = Number(rawCount)
-  if (!Number.isInteger(count) || count < 1 || count > MAX_BATCH) return res.status(400).json({ error: 'invalid_count' })
-  if (count > 1 && (proofUrl || (Array.isArray(files) && files.length))) return res.status(400).json({ error: 'invalid_count' })
+  let rawItems = body.items
+  if (!Array.isArray(rawItems)) {
+    const legacy = Number(body.count ?? 1)
+    if (!Number.isInteger(legacy) || legacy < 1 || legacy > MAX_BATCH) return res.status(400).json({ error: 'invalid_count' })
+    rawItems = Array.from({ length: legacy }, (_, i) => (i === 0 ? { proofUrl: body.proofUrl, files: body.files } : {}))
+  }
+  const count = rawItems.length
+  if (count < 1 || count > MAX_BATCH) return res.status(400).json({ error: 'invalid_count' })
   const spreadMinutes = Number(rawSpread)
   if (!Number.isInteger(spreadMinutes) || spreadMinutes < 0 || spreadMinutes > MAX_SPREAD || spreadMinutes % SPREAD_STEP) return res.status(400).json({ error: 'invalid_spread' })
   // A single report has nothing to spread
@@ -166,12 +175,12 @@ app.post('/api/reports', requireUser, async (req, res) => {
   if (!target) return res.status(400).json({ error: 'invalid_target' })
   if (await isWhitelisted(target)) return res.status(403).json({ error: 'protected_account' })
 
-  const decoded = decodeFiles(files)
-  if (decoded.error) return res.status(400).json({ error: decoded.error })
+  // Proofs of each report: links and media checked, none shared between two reports
+  const decoded = decodeItems(rawItems)
+  if (decoded.error) return res.status(decoded.error === 'duplicate_proof' ? 409 : 400).json({ error: decoded.error })
+  const items = decoded.items
 
   const cleanDescription = String(description).trim().slice(0, 2000)
-  const cleanProof = proofUrl ? String(proofUrl).trim().slice(0, 500) : null
-  if (cleanProof && !/^https?:\/\//i.test(cleanProof)) return res.status(400).json({ error: 'invalid_proof' })
   // Le compte signalé est identifié par son @username s'il en a un, sinon par son ID Telegram numérique
   const where = whereTarget(target)
   // Ce compte a-t-il déjà été signalé au moins une fois ? (on ne récupère que l'id, rien d'autre)
@@ -188,30 +197,39 @@ app.post('/api/reports', requireUser, async (req, res) => {
     if (proof.finishedAt < new Date(Date.now() - PROOF_VALID_MS)) return res.status(400).json({ error: 'capture_expired' })
   }
 
-  const urlHash = proof ? `cap:${proof.contentHash}` : proofUrlHash(cleanProof)
+  // The capture is the first report's proof, in place of a link
+  if (proof) {
+    if (items[0].urlHash) return res.status(400).json({ error: 'invalid_proof' })
+    items[0] = { ...items[0], urlHash: `cap:${proof.contentHash}` }
+  }
+  // Batch: at least a third of the reports (rounded up) carry their own proof
+  const withProof = items.filter(hasProof).length
+  if (withProof < minWithProof(count)) return res.status(400).json({ error: 'proof_required', needed: minWithProof(count) })
+  const noProof = count - withProof
+
   const ipHash = hashIp(req.ip)
   // The type comes from the capture of the account: the proof's at once, otherwise filled in
   // once the background capture is done. Until then: what the description says, if a client sent one, otherwise "other".
-  const detected = proof ? { type: proof.detectedType || 'other' } : detectType(cleanDescription, cleanProof || '')
+  const detected = proof ? { type: proof.detectedType || 'other' } : detectType(cleanDescription, items[0].proofUrl || '')
   const finalType = detected.type
   const settings = await getSettings()
 
   // Cas 1 : signalement SANS preuve (ni lien, ni capture d'écran).
   // Le nombre de signalements sans preuve autorisés par utilisateur et par compte est fixé
-  // par le super admin (maxReportsNoProof, 0 = illimité). Un envoi de plusieurs signalements
-  // (count) compte pour autant, y compris sur un compte encore jamais signalé.
+  // par le super admin (maxReportsNoProof, 0 = illimité). Dans un lot, seuls les signalements
+  // sans preuve (noProof) comptent, y compris sur un compte encore jamais signalé.
   // Le super admin n'a aucune limite ni aucun coût.
-  if (req.user.role !== 'superadmin' && !urlHash && decoded.files.length === 0 && settings.maxReportsNoProof > 0) {
+  if (req.user.role !== 'superadmin' && noProof > 0 && settings.maxReportsNoProof > 0) {
     // On ne compte que les signalements sans preuve de cet utilisateur pour ce compte,
     // y compris ceux d'un lot étalé qui attendent encore leur heure
     const sent = existing
       ? await prisma.report.count({ where: { targetId: existing.id, userId: req.user.id, proofHash: null, evidence: { none: {} } } })
-        + await prisma.scheduledReport.count({ where: { targetId: existing.id, userId: req.user.id, sentAt: null, proofHash: null } })
+        + await prisma.scheduledReport.count({ where: { targetId: existing.id, userId: req.user.id, sentAt: null, proofHash: null, evidence: { none: {} } } })
       : 0
     // Limite atteinte : refus avec 409 (Conflict)
     if (sent >= settings.maxReportsNoProof) return res.status(409).json({ error: 'already_reported' })
-    // Il reste de la place, mais pas pour tout le lot demandé
-    if (sent + count > settings.maxReportsNoProof) {
+    // Il reste de la place, mais pas pour tous les signalements sans preuve du lot
+    if (sent + noProof > settings.maxReportsNoProof) {
       return res.status(409).json({ error: 'report_limit', remaining: settings.maxReportsNoProof - sent })
     }
   }
@@ -219,18 +237,23 @@ app.post('/api/reports', requireUser, async (req, res) => {
   // Les contrôles de preuve déjà vue ne servent que si le compte est déjà connu :
   // pour un compte nouveau, aucun signalement antérieur ne peut entrer en conflit
   if (existing) {
-    // Cas 2 : signalement AVEC preuve. On l'accepte même si la personne a déjà signalé,
-    // à condition que la preuve soit nouvelle pour ce compte.
-    // seenUrl : ce même lien (comparé via son empreinte urlHash) a-t-il déjà été envoyé pour ce compte ?
-    // Le "urlHash &&" court-circuite : pas de lien = pas de requête, seenUrl vaut alors null/false.
-    const seenUrl = urlHash && await prisma.report.findFirst({ where: { targetId: existing.id, proofHash: urlHash }, select: { id: true } })
-    // seenFile : une des captures envoyées (comparées par leur empreinte SHA-256, donc au contenu exact)
-    // existe-t-elle déjà pour ce compte ? Même court-circuit si aucune capture.
-    const seenFile = decoded.files.length > 0 && await prisma.evidence.findFirst({
-      where: { targetId: existing.id, sha256: { in: decoded.files.map((f) => f.sha256) } },
+    // Cas 2 : signalements AVEC preuve. On les accepte même si la personne a déjà signalé,
+    // à condition que chaque preuve soit nouvelle pour ce compte.
+    // seenUrl : un de ces liens ou captures (comparés via leur empreinte) a-t-il déjà été envoyé
+    // pour ce compte, ou est-il réservé par un signalement étalé qui attend son heure ?
+    const hashes = items.map((it) => it.urlHash).filter(Boolean)
+    const seenUrl = hashes.length > 0 && (
+      await prisma.report.findFirst({ where: { targetId: existing.id, proofHash: { in: hashes } }, select: { id: true } })
+      || await prisma.scheduledReport.findFirst({ where: { targetId: existing.id, sentAt: null, proofHash: { in: hashes } }, select: { id: true } })
+    )
+    // seenFile : un des médias envoyés (comparés par leur empreinte SHA-256, donc au contenu exact)
+    // existe-t-il déjà pour ce compte ? Les médias réservés par un signalement étalé comptent aussi.
+    const shas = items.flatMap((it) => it.files.map((f) => f.sha256))
+    const seenFile = shas.length > 0 && await prisma.evidence.findFirst({
+      where: { targetId: existing.id, sha256: { in: shas } },
       select: { id: true },
     })
-    // Une seule preuve déjà vue suffit à refuser tout le signalement
+    // Une seule preuve déjà vue suffit à refuser tout l'envoi
     if (seenUrl || seenFile) return res.status(409).json({ error: 'duplicate_proof' })
   }
 
@@ -256,11 +279,10 @@ app.post('/api/reports', requireUser, async (req, res) => {
         update: { reportCount: { increment: immediate } },
         create: { ...target, reportCount: immediate },
       })
-      // Batch with proof: the first report holds the proof hash (a capture already sent is refused
-      // above), the others the same hash with their rank, so the unique index still applies
-      const proofOf = (rank) => (proof && rank > 1 ? `${urlHash}:${rank}` : urlHash)
+      // Each report with its own proof; the capture belongs to the first one only
       const reports = []
       for (let i = 0; i < immediate; i++) {
+        const item = items[i]
         reports.push(await tx.report.create({
           data: {
             targetId: t.id,
@@ -268,24 +290,27 @@ app.post('/api/reports', requireUser, async (req, res) => {
             type: finalType,
             detectedType: detected.type,
             description: cleanDescription,
-            proofUrl: cleanProof,
-            proofHash: proofOf(i + 1),
-            captureId: proof?.id ?? null,
+            proofUrl: item.proofUrl,
+            proofHash: item.urlHash,
+            captureId: i === 0 ? proof?.id ?? null : null,
             captured: !!proof,
             lang: lang === 'fr' ? 'fr' : 'en',
             ipHash,
-            evidence: { create: decoded.files.map((f) => ({ ...f, targetId: t.id })) },
+            evidence: { create: item.files.map((f) => ({ ...f, targetId: t.id })) },
           },
         }))
       }
-      // The rest of a spread batch: one every intervalMs, sent by scheduled.js
+      // The rest of a spread batch: one every intervalMs, sent by scheduled.js. Their proofs
+      // are saved now, so no other report can take them before they go.
       const start = Date.now()
       for (let i = 1; i <= later; i++) {
+        const item = items[immediate + i - 1]
         await tx.scheduledReport.create({
           data: {
             targetId: t.id, userId: req.user.id, type: finalType, detectedType: detected.type,
             description: cleanDescription, lang: lang === 'fr' ? 'fr' : 'en', ipHash,
-            captureId: proof?.id ?? null, proofHash: proof ? proofOf(immediate + i) : null,
+            proofUrl: item.proofUrl, proofHash: item.urlHash,
+            evidence: { create: item.files.map((f) => ({ ...f, targetId: t.id })) },
             dueAt: new Date(start + i * intervalMs),
           },
         })
@@ -314,7 +339,7 @@ app.post('/api/reports', requireUser, async (req, res) => {
   res.status(201).json({
     ok: true, targetId: saved.id, reportCount: saved.reportCount, tokensSpent: tokens, count,
     scheduled: later, intervalMinutes: Math.round(intervalMs / 6_000) / 10,
-    type: finalType, withProof: !!proof,
+    type: finalType, withProof: !!proof, proofs: withProof,
     capturing: !typed && captureEnabled(),
   })
 })

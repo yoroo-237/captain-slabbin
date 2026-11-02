@@ -21,10 +21,12 @@ export async function sendDueReports(onSent = () => {}) {
         data: {
           targetId: s.targetId, userId: s.userId, type: s.type, detectedType: s.detectedType,
           description: s.description, lang: s.lang, ipHash: s.ipHash,
-          // Batch with proof: the shared capture, the type is already the capture's
-          captureId: s.captureId, proofHash: s.proofHash, captured: !!s.captureId,
+          // Its own proof, reserved when the batch was paid: a capture (the type is already
+          // the capture's), a link and/or media
+          captureId: s.captureId, proofUrl: s.proofUrl, proofHash: s.proofHash, captured: !!s.captureId,
         },
       })
+      await tx.evidence.updateMany({ where: { scheduledId: s.id }, data: { reportId: report.id, scheduledId: null } })
       await tx.target.update({ where: { id: s.targetId }, data: { reportCount: { increment: 1 } } })
       await tx.scheduledReport.update({ where: { id: s.id }, data: { reportId: report.id } })
       return true

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, session, safeLink, fmtCrypto, fmtUsd } from './api.js'
 import { PasswordCard } from './Auth.jsx'
-import { Screenshot, Transcript } from './Proof.jsx'
+import { Screenshot, Media, Transcript } from './Proof.jsx'
 
 const FILTERS = ['pending', 'confirmed', 'rejected', 'all']
 const TABS = ['moderation', 'report', 'wallet', 'whitelist', 'settings']
@@ -139,7 +139,7 @@ function Moderation({ t, lang }) {
                     : <span className="muted">{r.proofUrl}</span>)}
                   {r.evidence.length > 0 && (
                     <div className="shots">
-                      {r.evidence.map((ev) => <Screenshot key={ev.id} id={ev.id} alt={t.admin.screenshot} />)}
+                      {r.evidence.map((ev) => <Media key={ev.id} id={ev.id} mime={ev.mime} alt={t.admin.screenshot} />)}
                     </div>
                   )}
                 </li>

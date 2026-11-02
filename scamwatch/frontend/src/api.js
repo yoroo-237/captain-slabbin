@@ -38,6 +38,13 @@ export const MAX_SPREAD = 1440
 export const MAX_FILES = 3
 export const MAX_FILE_BYTES = 3 * 1024 * 1024
 export const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp']
+// Size limit per file by kind, and for all the files of one send
+export const MAX_BYTES = { image: MAX_FILE_BYTES, audio: 10 * 1024 * 1024, video: 20 * 1024 * 1024 }
+export const MAX_TOTAL_BYTES = 30 * 1024 * 1024
+// Screenshots, videos and voice messages (Telegram voice notes are .ogg / .oga)
+export const MEDIA_ACCEPT = 'image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime,audio/ogg,audio/mpeg,audio/mp4,.ogg,.oga,.opus'
+// In a batch, at least a third of the reports (rounded up) carry a proof
+export const minWithProof = (count) => (count > 1 ? Math.ceil(count / 3) : 0)
 
 export const readAsDataUrl = (file) =>
   new Promise((resolve, reject) => {

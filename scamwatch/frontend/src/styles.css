@@ -257,6 +257,18 @@ form .msg { margin-top: 0; }
 .stepper input::-webkit-inner-spin-button, .stepper input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 form > .spread { margin-top: 4px; }
 
+/* Proof of each report: media and/or a message link */
+.proof-slots { display: grid; gap: 10px; }
+.proof-slot { margin: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; display: grid; gap: 8px; min-width: 0; }
+.proof-slot.on { border-color: var(--ok); }
+.proof-slot legend { padding: 0 6px; font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+.proof-slot .hint { word-break: break-word; }
+.proof-slot .link { justify-self: start; }
+.proof-slots .hint.warn { color: var(--orange); }
+.media { display: block; max-width: 100%; border-radius: 12px; }
+video.media { width: 320px; max-height: 240px; background: var(--ink); }
+audio.media { width: 320px; }
+
 /* With or without proof: a checkbox card, the text in sans (not the mono caps of labels) */
 label.check {
   display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; cursor: pointer;

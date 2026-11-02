@@ -1,10 +1,28 @@
 import { useEffect, useState } from 'react'
 import { messages } from './i18n.js'
-import { api, session, MAX_BATCH, SPREAD_STEP, MAX_SPREAD } from './api.js'
+import {
+  api, session, readAsDataUrl, minWithProof,
+  MAX_BATCH, SPREAD_STEP, MAX_SPREAD, MAX_FILES, MAX_BYTES, MAX_TOTAL_BYTES, MEDIA_ACCEPT,
+} from './api.js'
 import Admin from './Admin.jsx'
 import Auth from './Auth.jsx'
 import Wallet from './Wallet.jsx'
 import { Progress, ProofPreview } from './Proof.jsx'
+
+// Proof of each report of a send: media files and/or a message link, never shared
+const emptyItems = () => Array.from({ length: MAX_BATCH }, () => ({ files: [], link: '' }))
+const itemHasProof = (item, i, capture) => item.files.length > 0 || !!item.link.trim() || (i === 0 && capture)
+// Files checked before sending (the server checks the bytes again): kind and size
+const fileError = (files) => {
+  if (files.length > MAX_FILES) return 'too_many_files'
+  for (const f of files) {
+    const kind = f.type.split('/')[0]
+    const limit = MAX_BYTES[kind] ?? (/\.(ogg|oga|opus)$/i.test(f.name) ? MAX_BYTES.audio : null)
+    if (!limit) return 'invalid_file'
+    if (f.size > limit) return 'file_too_large'
+  }
+  return null
+}
 
 const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms))
 const CAPTURE_POLL_MS = 1500
@@ -44,6 +62,7 @@ export default function App() {
   const [batch, setBatch] = useState(1)
   const [spread, setSpread] = useState(0)
   const [withProof, setWithProof] = useState(true)
+  const [items, setItems] = useState(emptyItems)
   const [flow, setFlow] = useState(null) // progress of the report being sent
   const [proof, setProof] = useState(null) // capture shown under the bar
 
@@ -111,9 +130,23 @@ export default function App() {
     setStatus({ state: 'ok', message: done })
     setTarget('')
     // Back to one report at once, so the next send is never a batch by accident
-    setBatch(1); setSpread(0)
+    setBatch(1); setSpread(0); setItems(emptyItems())
     loadTargets(query); loadStats(); reloadWallet()
   }
+
+  const setItem = (i, patch) => setItems((all) => all.map((it, j) => (j === i ? { ...it, ...patch } : it)))
+  const pickFiles = (i, list) => {
+    const files = [...list]
+    const code = fileError(files)
+    if (code) return setStatus({ state: 'error', message: t.errors[code] || t.error, code })
+    setStatus({ state: 'idle', message: '' })
+    setItem(i, { files })
+  }
+  // One entry per report: its own media (base64) and link
+  const payloadItems = (count) => Promise.all(items.slice(0, count).map(async (it) => ({
+    proofUrl: it.link.trim() || undefined,
+    files: await Promise.all(it.files.map(readAsDataUrl)),
+  })))
 
   // Without proof: sent and paid at once, the type comes later from a capture in the background.
   // count: 1 from the main button, 1 to MAX_BATCH from the batch button
@@ -123,7 +156,7 @@ export default function App() {
     try {
       const r = await api('/api/reports', {
         method: 'POST',
-        body: JSON.stringify({ target, lang, count, spreadMinutes: count > 1 ? spreadMinutes : 0 }),
+        body: JSON.stringify({ target, lang, items: await payloadItems(count), spreadMinutes: count > 1 ? spreadMinutes : 0 }),
       })
       sent(r, count)
     } catch (err) { fail(err.code) }
@@ -154,7 +187,7 @@ export default function App() {
       step({ at: 3, detail: t.flow.sending })
       sent(await api('/api/reports', {
         method: 'POST',
-        body: JSON.stringify({ target, lang, captureId, count, spreadMinutes: count > 1 ? spreadMinutes : 0 }),
+        body: JSON.stringify({ target, lang, captureId, items: await payloadItems(count), spreadMinutes: count > 1 ? spreadMinutes : 0 }),
       }), count)
     } catch (err) { fail(err.code) }
   }
@@ -174,6 +207,12 @@ export default function App() {
   const proofAvailable = !!pricing?.proofCapture
   const proofOn = withProof && proofAvailable
   const limit = pricing?.maxReportsNoProof ?? 1
+  // Each report its own proof; in a batch at least a third carry one, within the size limit
+  const used = items.slice(0, batch)
+  const proofsNeeded = minWithProof(batch)
+  const proofsGiven = used.filter((it, i) => itemHasProof(it, i, proofOn)).length
+  const proofMissing = proofsGiven < proofsNeeded
+  const tooHeavy = used.reduce((sum, it) => sum + it.files.reduce((s, f) => s + f.size, 0), 0) > MAX_TOTAL_BYTES
 
   // Same form on the home page and in the super admin space
   const reportCard = (
@@ -209,7 +248,7 @@ export default function App() {
           </span>
         </label>
 
-        {/* Number of reports: 1 to MAX_BATCH on the same account; with proof, the batch shares the capture */}
+        {/* Number of reports: 1 to MAX_BATCH on the same account, each with its own proof below */}
         {(
           <div className="spread">
             <span className="field-label">{t.batchCount}</span>
@@ -223,6 +262,34 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {/* The proof of each report: media and/or the link of a forwarded message, never shared */}
+        <div className="proof-slots">
+          {used.map((it, i) => (
+            <fieldset key={i} className={`proof-slot ${itemHasProof(it, i, proofOn) ? 'on' : ''}`} disabled={sending}>
+              <legend>{batch > 1 ? t.proofSlot(i + 1) : t.proofSlotOne}</legend>
+              {i === 0 && proofOn && <small className="hint">{t.proofSlotCapture}</small>}
+              <label className="file">
+                <span>{t.proofFiles}</span>
+                <input type="file" multiple accept={MEDIA_ACCEPT} onChange={(e) => { pickFiles(i, e.target.files); e.target.value = '' }} />
+                <small className="hint">{it.files.length ? t.proofFilesPicked(it.files.map((f) => f.name)) : t.proofFilesHint}</small>
+              </label>
+              {it.files.length > 0 && <button type="button" className="link" onClick={() => setItem(i, { files: [] })}>{t.proofFilesClear}</button>}
+              {/* With the capture, the first report's proof is the capture, not a link */}
+              {!(i === 0 && proofOn) && (
+                <label>
+                  <span>{t.proofLink}</span>
+                  <input type="url" value={it.link} placeholder="https://t.me/…" onChange={(e) => setItem(i, { link: e.target.value })} />
+                </label>
+              )}
+            </fieldset>
+          ))}
+          {batch > 1 && (
+            <p className={`hint ${proofMissing ? 'warn' : ''}`}>{t.proofNeeded(proofsNeeded, batch, proofsGiven)}</p>
+          )}
+          {tooHeavy && <p className="hint warn">{t.errors.files_too_large}</p>}
+        </div>
+
         {batch > 1 && (
           // Period in minutes, by steps of SPREAD_STEP (0 = all at once)
           <div className="spread">
@@ -242,7 +309,7 @@ export default function App() {
         )}
 
         {/* The only send button, for the number chosen above */}
-        <button className="primary" disabled={sending || shortBatch}>
+        <button className="primary" disabled={sending || shortBatch || proofMissing || tooHeavy}>
           {sending ? t.flow.running
             : !user ? t.loginAndReport
             : proofOn ? t.submitProof(batch, cost * batch)

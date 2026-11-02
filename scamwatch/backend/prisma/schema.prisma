@@ -36,12 +36,14 @@ model ScheduledReport {
   description  String    @default("")
   lang         String    @default("en")
   ipHash       String?
-  captureId    Int?      // batch with proof: the capture shared by the batch
-  proofHash    String?   // given to the report when it is sent ("cap:" + content hash + ":" + rank)
+  captureId    Int?      // capture taken as the proof of this report (one report per capture)
+  proofUrl     String?
+  proofHash    String?   // given to the report when it is sent, reserved until then
   dueAt        DateTime
   sentAt       DateTime?
   reportId     Int?      // report created when it was sent
   createdAt    DateTime  @default(now())
+  evidence     Evidence[] // its own media, moved to the report when it is sent
 
   @@index([sentAt, dueAt])
   @@index([targetId, userId])
@@ -143,18 +145,21 @@ model WhitelistEntry {
 // Screenshot attached to a report, stored in the database (Railway disks are not kept).
 // Only visible to the admin.
 model Evidence {
-  id        Int      @id @default(autoincrement())
-  reportId  Int
-  report    Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
-  targetId  Int      // copied from the report: one screenshot counts once per account
-  mime      String
-  size      Int
-  sha256    String
-  data      Bytes
-  createdAt DateTime @default(now())
+  id          Int              @id @default(autoincrement())
+  reportId    Int?             // set once the report exists
+  report      Report?          @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  scheduledId Int?             // report of a spread batch still waiting: the media is reserved for it
+  scheduled   ScheduledReport? @relation(fields: [scheduledId], references: [id], onDelete: Cascade)
+  targetId    Int              // copied from the report: one file counts once per account
+  mime        String           // image/*, video/* or audio/*
+  size        Int
+  sha256      String
+  data        Bytes
+  createdAt   DateTime         @default(now())
 
   @@unique([targetId, sha256])
   @@index([reportId])
+  @@index([scheduledId])
 }
 
 // ─── ACCOUNTS & WALLET ───────────────────────────────────────────────────────
