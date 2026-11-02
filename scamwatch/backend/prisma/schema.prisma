@@ -102,6 +102,12 @@ model Setting {
   depositExpiryHours Int      @default(12)
   reserveAddresses   Json     @default("{}") // { BTC, LTC, DOGE, ETH }: where the super admin sweeps deposits
   xmrAddress         String?  // XMR deposits go straight to this address, confirmed by hand
+  // Telegram account of the captures, connected from Admin → Settings (telegram.js)
+  tgApiId            Int?
+  tgApiHash          String?
+  tgSession          String?  // encrypted (AES-256-GCM, key derived from JWT_SECRET)
+  tgAccount          String?  // name shown in the admin
+  tgConnectedAt      DateTime?
   updatedAt          DateTime @updatedAt
 }
 

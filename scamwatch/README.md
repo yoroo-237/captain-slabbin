@@ -16,8 +16,11 @@ Standalone project of this repository, with its own Railway project, served on i
     then sends `POST /api/reports` with its `captureId`. Paid only once the proof is in. The same
     content counts once per account (`proofHash` = `cap:` + content hash); no per-user limit.
   - Without proof: sent and paid at once, a background capture (reused for 24 h) fills the type.
-    Batches and spreading are only for reports without proof.
-  - Without `TG_API_ID` / `TG_API_HASH` / `TG_SESSION`, the checkbox is off and reports keep the type "other".
+    Batches and spreading (0 to 1440 minutes, steps of 15) are only for reports without proof.
+  - The Telegram account is connected from Admin → Settings (API ID, API hash, phone, code, 2FA
+    password; `capture/connect.py`). No environment variable: the session is stored in Postgres,
+    encrypted with a key derived from `JWT_SECRET`. Until it is connected, the checkbox is off and
+    reports keep the type "other".
 - Reports without proof: a limited number per user and account (1 by default, 0 = no limit). The API
   still accepts a proof link and screenshots from other clients (deduplicated, stored in Postgres).
 - The super admin has no cost and no limit.
@@ -100,7 +103,6 @@ Tests: `cd backend && npm test`
 | `ALCHEMY_API_KEY` | ETH checks and sweeps |
 | `ALCHEMY_WEBHOOK_ID`, `ALCHEMY_AUTH_TOKEN`, `ALCHEMY_SIGNING_KEY` | optional: ETH webhook to `https://scamwatch.captainslabbin.shop/api/webhooks/alchemy` |
 | `PUBLIC_URL` | `https://scamwatch.captainslabbin.shop`, for BlockCypher webhooks (optional, polling works without) |
-| `TG_API_ID`, `TG_API_HASH`, `TG_SESSION` | dedicated Telegram account for captures; the session comes from `python capture/login.py` |
 
 4. Settings → Networking → Custom Domain: `scamwatch.captainslabbin.shop`, CNAME at the registrar.
 5. Sign in at `https://scamwatch.captainslabbin.shop/#admin`, set the reserve addresses and the token price.

@@ -308,3 +308,14 @@ label.check small { color: var(--muted); font-size: 12.5px; line-height: 1.45; }
 .proof { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: grid; gap: 10px; background: var(--card); }
 .proof > .mono { color: var(--orange); }
 .proof .texts { max-height: 180px; }
+
+/* Spread period: minutes by steps of 15 */
+form > .spread { display: grid; gap: 6px; justify-items: start; }
+.field-label { color: var(--muted); font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; }
+.stepper input.wide { width: 60px; }
+.stepper .unit { font-family: var(--f-mono); font-size: 12px; color: var(--muted); padding-right: 6px; }
+
+/* Settings: cards stacked in the second column */
+.stack { display: grid; gap: 16px; align-content: start; min-width: 0; }
+.card > .hint { margin-bottom: 14px; }
+.tg-connected { display: grid; gap: 12px; justify-items: start; }

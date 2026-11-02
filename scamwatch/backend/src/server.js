@@ -16,6 +16,7 @@ import { getHoldings, allocateUsd, debit, round2 } from './balance.js'
 import { getCachedUsdPrices } from './price.js'
 import { requestCapture, proofCapture, recapture, queuedAhead, captureEnabled, resumeCaptures, PROOF_VALID_MS } from './capture.js'
 import { startScheduledReports } from './scheduled.js'
+import { adminTelegramRouter, loadTelegram } from './telegram.js'
 
 const app = express()
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -126,10 +127,12 @@ app.get('/api/captures/:id/photo', requireUser, async (req, res) => {
 // a limited number of reports per user and account (set in the super admin space).
 // Each report costs tokens, taken from the user's wallet.
 // count: 1 to MAX_BATCH reports sent at once, only without evidence (a proof counts once).
-// spreadMinutes: the batch can be spread over a period. The first report goes at once,
-// the others one by one at a regular interval; the total stays count.
+// spreadMinutes: the batch can be spread over a period, in steps of SPREAD_STEP minutes
+// (0 = all at once, up to MAX_SPREAD). The first report goes at once, the others one by one
+// at a regular interval; the total stays count.
 const MAX_BATCH = 300
-const SPREAD_MINUTES = [0, 60, 360, 1440]
+const SPREAD_STEP = 15
+const MAX_SPREAD = 1440
 app.post('/api/reports', requireUser, async (req, res) => {
   const { target: rawTarget, description = '', proofUrl, lang, files, captureId, count: rawCount = 1, spreadMinutes: rawSpread = 0 } = req.body || {}
 
@@ -137,7 +140,7 @@ app.post('/api/reports', requireUser, async (req, res) => {
   if (!Number.isInteger(count) || count < 1 || count > MAX_BATCH) return res.status(400).json({ error: 'invalid_count' })
   if (count > 1 && (proofUrl || captureId || (Array.isArray(files) && files.length))) return res.status(400).json({ error: 'invalid_count' })
   const spreadMinutes = Number(rawSpread)
-  if (!SPREAD_MINUTES.includes(spreadMinutes)) return res.status(400).json({ error: 'invalid_spread' })
+  if (!Number.isInteger(spreadMinutes) || spreadMinutes < 0 || spreadMinutes > MAX_SPREAD || spreadMinutes % SPREAD_STEP) return res.status(400).json({ error: 'invalid_spread' })
   // A single report has nothing to spread
   const later = count > 1 && spreadMinutes > 0 ? count - 1 : 0
   const immediate = count - later
@@ -290,7 +293,7 @@ app.post('/api/reports', requireUser, async (req, res) => {
   const typed = proof ? true : await requestCapture(saved.id)
   res.status(201).json({
     ok: true, targetId: saved.id, reportCount: saved.reportCount, tokensSpent: tokens, count,
-    scheduled: later, intervalMinutes: Math.round(intervalMs / 60_000),
+    scheduled: later, intervalMinutes: Math.round(intervalMs / 6_000) / 10,
     type: finalType, withProof: !!proof,
     capturing: !typed && captureEnabled(),
   })
@@ -342,6 +345,8 @@ app.get('/api/stats', async (_req, res) => {
 
 app.use('/api/admin/wallet', adminWalletRouter())
 app.use('/api/admin', requireSuper)
+// Waiting reports get their capture as soon as the account is connected
+app.use('/api/admin/telegram', adminTelegramRouter(() => resumeCaptures().catch((err) => console.error('[capture] resume failed:', err.message))))
 
 app.get('/api/admin/targets', async (req, res) => {
   const status = STATUSES.includes(req.query.status) ? req.query.status : undefined
@@ -501,6 +506,8 @@ bootstrapSuperadmin()
   .finally(() => {
     startWalletJobs()
     startScheduledReports((targetId) => requestCapture(targetId).catch(() => {}))
-    resumeCaptures().catch((err) => console.error('[capture] resume failed:', err.message))
+    loadTelegram()
+      .then(resumeCaptures)
+      .catch((err) => console.error('[capture] resume failed:', err.message))
     app.listen(port, () => console.log(`scamwatch api on :${port}`))
   })

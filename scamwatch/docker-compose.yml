@@ -33,9 +33,6 @@ services:
       BLOCKCYPHER_TOKEN: ${BLOCKCYPHER_TOKEN:-}
       ALCHEMY_API_KEY: ${ALCHEMY_API_KEY:-}
       ALCHEMY_SIGNING_KEY: ${ALCHEMY_SIGNING_KEY:-}
-      TG_API_ID: ${TG_API_ID:-}
-      TG_API_HASH: ${TG_API_HASH:-}
-      TG_SESSION: ${TG_SESSION:-}
       PORT: 4100
     ports:
       - "${APP_PORT:-4100}:4100"

@@ -74,8 +74,6 @@ Certaines valeurs viennent du `.env` de la plateforme bots, d'autres **doivent**
 | `ALCHEMY_API_KEY` | clé d'une app Alchemy Ethereum Mainnet | **oui**, la même clé convient |
 | `ALCHEMY_WEBHOOK_ID`, `ALCHEMY_SIGNING_KEY` | facultatif : webhook ETH propre à ScamWatch (voir 3.2) | **non** : un webhook est lié à une seule adresse |
 | `ALCHEMY_AUTH_TOKEN` | jeton Notify du compte (`alcht_…`), utile seulement avec le webhook | oui |
-| `TG_API_ID`, `TG_API_HASH` | clés API du compte Telegram **dédié à ScamWatch** (voir 1.5) | **non**, compte dédié |
-| `TG_SESSION` | session de ce compte, produite par `capture/login.py` (voir 1.5) | **non**, nouvelle |
 
 Ne définissez pas `PORT` : Railway le fournit. ScamWatch n'utilise ni Cloudinary, ni `FRONTEND_URL`, ni `JWT_REFRESH_SECRET`, ni `TELEGRAM_*`, ni `XMR_ADDRESS` (l'adresse XMR se règle dans l'admin, voir 2.3).
 
@@ -99,23 +97,18 @@ Le formulaire ne demande que le compte. Le serveur le regarde ensuite avec un co
 
 Le formulaire a une case **Joindre une preuve** et une barre de progression :
 - **Avec preuve** (case cochée) : vérification du compte, capture de la preuve, type, puis paiement et envoi. La capture est affichée sous la barre avant le paiement, et rien n'est débité si elle échoue (le bouton **Envoyer sans preuve** apparaît alors). Pas de limite par utilisateur, mais un même contenu ne compte qu'une fois par compte : si le compte n'a pas changé depuis la dernière preuve, le signalement est refusé et peut partir sans preuve.
-- **Sans preuve** : envoyé et payé tout de suite, dans la limite par utilisateur et par compte. Une capture en arrière-plan remplit ensuite le type (réutilisée pendant 24 h). L'envoi groupé et la répartition dans le temps ne sont possibles que sans preuve.
+- **Sans preuve** : envoyé et payé tout de suite, dans la limite par utilisateur et par compte. Une capture en arrière-plan remplit ensuite le type (réutilisée pendant 24 h). L'envoi groupé et la répartition dans le temps (de 0 à 1440 minutes, par pas de 15) ne sont possibles que sans preuve.
 
 Les captures se font une à la fois ; la barre indique combien attendent avant la vôtre.
 
 Mise en place (une fois) :
 1. Créez un compte Telegram **réservé à ScamWatch** (un numéro à part). Si Telegram le limite, vos autres comptes ne sont pas touchés.
 2. Sur https://my.telegram.org → **API development tools**, créez une application : notez `api_id` et `api_hash`.
-3. Sur votre PC, depuis le dossier `scamwatch\capture` :
-   ```
-   cd M:\Travail\mario\scamwatch\capture
-   pip install -r requirements.txt
-   python login.py
-   ```
-   Saisissez `api_id`, `api_hash`, le numéro, puis le code reçu dans Telegram (et le mot de passe 2FA s'il y en a un). La dernière ligne affichée est la session.
-4. Dans Railway, renseignez `TG_API_ID`, `TG_API_HASH` et `TG_SESSION` (la session **est un mot de passe** : quiconque la détient est connecté à ce compte), puis redéployez.
+3. Dans **Admin → Réglages → Compte Telegram de capture** : saisissez l'API ID, l'API hash et le numéro (format international), cliquez **Recevoir le code**, puis saisissez le code reçu dans l'application Telegram (et le mot de passe de double authentification s'il y en a un).
 
-Sans ces variables, les signalements sont acceptés mais gardent le type « Autre » ; le log affiche `[capture] TG_API_ID / TG_API_HASH / TG_SESSION not set`. Dès qu'elles sont renseignées, les comptes en attente sont capturés au démarrage suivant. Dans **Admin → Modération**, chaque compte montre sa capture, et **Relancer la capture** en refait une.
+Aucune variable d'environnement : la session est enregistrée dans la base, chiffrée avec une clé tirée de `JWT_SECRET`. Si `JWT_SECRET` change, il faut reconnecter le compte. Le bouton **Déconnecter** ferme aussi la session côté Telegram.
+
+Tant qu'aucun compte n'est connecté, les signalements sont acceptés mais gardent le type « Autre », et la case **Joindre une preuve** est grisée. Dès la connexion, les comptes en attente sont capturés. Dans **Admin → Modération**, chaque compte montre sa capture, et **Relancer la capture** en refait une.
 
 ---
 

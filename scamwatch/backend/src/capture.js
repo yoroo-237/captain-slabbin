@@ -9,44 +9,30 @@
 // created when it is queued, so its progress can be followed by its id.
 
 import crypto from 'node:crypto'
-import { spawn } from 'node:child_process'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { prisma } from './db.js'
 import { detectType } from './detect.js'
+import { runPython, captureDir } from './python.js'
+import { telegramCreds } from './telegram.js'
 
-const here = path.dirname(fileURLToPath(import.meta.url))
-const SCRIPT = process.env.CAPTURE_SCRIPT || path.resolve(here, '../../capture/capture.py')
-const PYTHON = process.env.CAPTURE_PYTHON || (process.platform === 'win32' ? 'python' : 'python3')
+const SCRIPT = process.env.CAPTURE_SCRIPT || path.join(captureDir, 'capture.py')
 const TIMEOUT_MS = 120_000
 const REUSE_MS = 24 * 3600_000 // type of a report without proof
 const PROOF_REUSE_MS = 10 * 60_000 // a proof is a fresh look at the account
 export const PROOF_VALID_MS = 60 * 60_000 // a finished proof must be sent within this time
 const MAX_PHOTO = 2 * 1024 * 1024
 
-export const captureEnabled = () => !!(process.env.TG_API_ID && process.env.TG_API_HASH && process.env.TG_SESSION)
+// The Telegram account is connected from Admin → Settings
+export const captureEnabled = () => !!telegramCreds()
 
 const queue = [] // capture ids, oldest first
 let running = false
 let current = null
 
-function runScript(ref) {
-  return new Promise((resolve) => {
-    const child = spawn(PYTHON, [SCRIPT, ref], { env: { ...process.env, PYTHONIOENCODING: 'utf-8' } })
-    let stdout = ''
-    let stderr = ''
-    const timer = setTimeout(() => { child.kill(); resolve({ error: 'timeout' }) }, TIMEOUT_MS)
-    child.stdout.on('data', (d) => { stdout += d })
-    child.stderr.on('data', (d) => { stderr += d })
-    child.on('error', () => { clearTimeout(timer); resolve({ error: 'crashed' }) })
-    child.on('close', () => {
-      clearTimeout(timer)
-      try { resolve(JSON.parse(stdout)) } catch {
-        console.error('[capture] script output unreadable:', stderr.slice(-500))
-        resolve({ error: 'crashed' })
-      }
-    })
-  })
+const runScript = (ref) => {
+  const c = telegramCreds()
+  if (!c) return Promise.resolve({ error: 'not_configured' })
+  return runPython(SCRIPT, [ref], { env: { TG_API_ID: String(c.apiId), TG_API_HASH: c.apiHash, TG_SESSION: c.session }, timeoutMs: TIMEOUT_MS })
 }
 
 // Every text the capture gathered, for the type detection
@@ -160,7 +146,7 @@ export const queuedAhead = (captureId) => {
 export async function resumeCaptures() {
   if (!captureEnabled()) {
     await prisma.capture.updateMany({ where: { status: 'pending' }, data: { status: 'failed', error: 'not_configured', finishedAt: new Date() } })
-    return console.warn('[capture] TG_API_ID / TG_API_HASH / TG_SESSION not set: reports keep the type "other", no proof capture')
+    return console.warn('[capture] no Telegram account connected (Admin → Settings): reports keep the type "other", no proof capture')
   }
   const pending = await prisma.capture.findMany({ where: { status: 'pending' }, orderBy: { id: 'asc' }, select: { id: true } })
   for (const { id } of pending) if (!queue.includes(id)) queue.push(id)

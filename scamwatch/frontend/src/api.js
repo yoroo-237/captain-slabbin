@@ -30,8 +30,9 @@ export const api = async (url, options = {}) => {
 
 // Must match MAX_BATCH in backend/src/server.js
 export const MAX_BATCH = 300
-// Must match SPREAD_MINUTES in backend/src/server.js (0 = all at once)
-export const SPREAD_MINUTES = [0, 60, 360, 1440]
+// Must match SPREAD_STEP and MAX_SPREAD in backend/src/server.js (minutes, 0 = all at once)
+export const SPREAD_STEP = 15
+export const MAX_SPREAD = 1440
 
 // Must match backend/src/proof.js
 export const MAX_FILES = 3

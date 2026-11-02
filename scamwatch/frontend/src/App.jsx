@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { messages } from './i18n.js'
-import { api, session, MAX_BATCH, SPREAD_MINUTES } from './api.js'
+import { api, session, MAX_BATCH, SPREAD_STEP, MAX_SPREAD } from './api.js'
 import Admin from './Admin.jsx'
 import Auth from './Auth.jsx'
 import Wallet from './Wallet.jsx'
@@ -9,6 +9,9 @@ import { Progress, ProofPreview } from './Proof.jsx'
 const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms))
 const CAPTURE_POLL_MS = 1500
 const CAPTURE_WAIT_MS = 5 * 60_000
+// Spread period: always a multiple of SPREAD_STEP minutes, the nearest one
+const snapSpread = (m) => Math.min(MAX_SPREAD, Math.max(0, Math.round(m / SPREAD_STEP) * SPREAD_STEP))
+const fmtMinutes = (m) => (Number.isInteger(m) ? String(m) : m.toFixed(1))
 
 const initialLang = () => {
   try {
@@ -220,20 +223,28 @@ export default function App() {
             disabled={sending || shortBatch}
             onClick={(e) => {
               if (!user) return go('login')
-              if (e.currentTarget.form.reportValidity()) { setStatus({ state: 'idle', message: '' }); setProof(null); sendPlain(batch, spread) }
+              if (e.currentTarget.form.reportValidity()) { setStatus({ state: 'idle', message: '' }); setProof(null); sendPlain(batch, snapSpread(spread)) }
             }}
           >
             {user ? t.batchSend(batch, cost * batch) : t.loginAndReport}
           </button>
         </div>}
         {!proofOn && batch > 1 && (
-          <label className="spread">
-            {t.spreadLabel}
-            <select value={spread} onChange={(e) => setSpread(Number(e.target.value))}>
-              {SPREAD_MINUTES.map((m) => <option key={m} value={m}>{t.spreadOptions[m]}</option>)}
-            </select>
-            {spread > 0 && <span className="hint">{t.spreadHint(batch, Math.round(spread / batch))}</span>}
-          </label>
+          // Period in minutes, by steps of SPREAD_STEP (0 = all at once)
+          <div className="spread">
+            <span className="field-label">{t.spreadLabel}</span>
+            <div className="stepper" role="group" aria-label={t.spreadLabel}>
+              <button type="button" onClick={() => setSpread((m) => Math.max(0, snapSpread(m) - SPREAD_STEP))} disabled={spread <= 0} aria-label={t.spreadLess}>−</button>
+              <input
+                className="wide" type="number" min="0" max={MAX_SPREAD} step={SPREAD_STEP} inputMode="numeric" value={spread} aria-label={t.spreadLabel}
+                onChange={(e) => setSpread(Math.min(MAX_SPREAD, Math.max(0, Math.trunc(Number(e.target.value)) || 0)))}
+                onBlur={() => setSpread(snapSpread)}
+              />
+              <span className="unit">min</span>
+              <button type="button" onClick={() => setSpread((m) => Math.min(MAX_SPREAD, snapSpread(m) + SPREAD_STEP))} disabled={spread >= MAX_SPREAD} aria-label={t.spreadMore}>+</button>
+            </div>
+            <span className="hint">{snapSpread(spread) > 0 ? t.spreadHint(batch, snapSpread(spread), fmtMinutes(snapSpread(spread) / batch)) : t.spreadNow}</span>
+          </div>
         )}
         {flow && <Progress t={t} flow={flow} />}
         {proof && <ProofPreview t={t} lang={lang} capture={proof} />}

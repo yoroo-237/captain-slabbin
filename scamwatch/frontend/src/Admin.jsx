@@ -414,6 +414,89 @@ function Settings({ t }) {
   )
 }
 
+// Telegram account of the captures: API keys and phone, then the code Telegram sends,
+// then the two-step password if the account has one. The server keeps the session.
+function TelegramCard({ t, lang }) {
+  const [info, setInfo] = useState(null)
+  const [step, setStep] = useState('creds') // creds | code | password
+  const [form, setForm] = useState({ apiId: '', apiHash: '', phone: '', code: '', password: '' })
+  const [msg, setMsg] = useState(null)
+  const [busy, setBusy] = useState(false)
+
+  const load = () => api('/api/admin/telegram').then((r) => { setInfo(r); if (r.apiId) setForm((f) => ({ ...f, apiId: f.apiId || String(r.apiId) })) }).catch(() => {})
+  useEffect(() => { load() }, [])
+
+  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value })
+  const call = async (url, body, next) => {
+    setBusy(true); setMsg(null)
+    try {
+      const r = await api(url, { method: 'POST', body: JSON.stringify(body) })
+      if (r.needPassword) setStep('password')
+      else if (r.account) { setMsg({ ok: true, text: t.admin.tg.done }); setStep('creds'); setForm((f) => ({ ...f, code: '', password: '' })); load() }
+      else setStep(next)
+    } catch (err) {
+      setMsg({ ok: false, text: t.admin.errors[err.code] || t.error })
+    } finally { setBusy(false) }
+  }
+  const submit = (e) => {
+    e.preventDefault()
+    if (step === 'creds') return call('/api/admin/telegram/code', { apiId: form.apiId, apiHash: form.apiHash, phone: form.phone }, 'code')
+    if (step === 'code') return call('/api/admin/telegram/verify', { code: form.code })
+    return call('/api/admin/telegram/password', { password: form.password })
+  }
+  const disconnect = async () => {
+    if (!window.confirm(t.admin.tg.confirmDisconnect)) return
+    setBusy(true); setMsg(null)
+    try { await api('/api/admin/telegram', { method: 'DELETE' }); await load() } catch {} finally { setBusy(false) }
+  }
+
+  if (!info) return <section className="card"><p className="muted">...</p></section>
+  return (
+    <section className="card">
+      <h2>{t.admin.tg.title}</h2>
+      <p className="hint">{t.admin.tg.intro}</p>
+      {info.connected ? (
+        <div className="tg-connected">
+          <p className="msg ok">
+            {t.admin.tg.connected(info.account)}
+            {info.connectedAt && <> · {t.admin.tg.since(new Date(info.connectedAt).toLocaleDateString(lang))}</>}
+          </p>
+          <button className="ghost" disabled={busy} onClick={disconnect}>{t.admin.tg.disconnect}</button>
+        </div>
+      ) : (
+        <form onSubmit={submit}>
+          {info.unreadable && <p className="msg error">{t.admin.tg.unreadable}</p>}
+          {step === 'creds' && (
+            <>
+              <p className="hint">{t.admin.tg.help}</p>
+              <label>{t.admin.tg.apiId}<input value={form.apiId} onChange={set('apiId')} inputMode="numeric" required autoComplete="off" /></label>
+              <label>{t.admin.tg.apiHash}<input value={form.apiHash} onChange={set('apiHash')} required autoComplete="off" spellCheck="false" /></label>
+              <label>
+                {t.admin.tg.phone}
+                <input value={form.phone} onChange={set('phone')} type="tel" placeholder="+33612345678" required autoComplete="off" />
+                <span className="hint">{t.admin.tg.phoneHint}</span>
+              </label>
+            </>
+          )}
+          {step === 'code' && (
+            <label>
+              {t.admin.tg.code}
+              <input value={form.code} onChange={set('code')} inputMode="numeric" autoComplete="one-time-code" required autoFocus />
+              <span className="hint">{t.admin.tg.codeHint}</span>
+            </label>
+          )}
+          {step === 'password' && (
+            <label>{t.admin.tg.password}<input type="password" value={form.password} onChange={set('password')} autoComplete="off" required autoFocus /></label>
+          )}
+          <button className="primary" disabled={busy}>{busy ? '...' : step === 'creds' ? t.admin.tg.sendCode : t.admin.tg.verify}</button>
+          {step !== 'creds' && <button type="button" className="ghost" disabled={busy} onClick={() => { setStep('creds'); setMsg(null) }}>{t.admin.tg.restart}</button>}
+        </form>
+      )}
+      {msg && <p className={`msg ${msg.ok ? 'ok' : 'error'}`}>{msg.text}</p>}
+    </section>
+  )
+}
+
 // reportCard: the report form of the home page, so the super admin reports from here too
 export default function Admin({ t, lang, user, reportCard }) {
   const [tab, setTab] = useState('moderation')
@@ -430,7 +513,12 @@ export default function Admin({ t, lang, user, reportCard }) {
       {tab === 'report' && <div className="narrow-wide">{reportCard}</div>}
       {tab === 'wallet' && <WalletAdmin t={t} lang={lang} />}
       {tab === 'whitelist' && <Whitelist t={t} lang={lang} />}
-      {tab === 'settings' && <div className="admin"><Settings t={t} /><PasswordCard t={t} /></div>}
+      {tab === 'settings' && (
+        <div className="admin">
+          <Settings t={t} />
+          <div className="stack"><TelegramCard t={t} lang={lang} /><PasswordCard t={t} /></div>
+        </div>
+      )}
     </>
   )
 }

@@ -5,7 +5,8 @@ name, bio and photo; for a bot, the screen it answers to /start; for a channel o
 a group, its latest public messages. Regular users are never messaged.
 
 Usage: python capture.py <username or numeric id>
-Needs TG_API_ID, TG_API_HASH and TG_SESSION (a StringSession made by login.py).
+Reads TG_API_ID, TG_API_HASH and TG_SESSION from its environment: the server passes the account
+connected in Admin → Settings (connect.py), they are not variables to set.
 Prints one JSON object on stdout: the capture, or {"error": "<code>"}.
 """
 import asyncio
