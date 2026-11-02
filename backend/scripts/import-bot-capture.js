@@ -24,6 +24,7 @@ import { prisma } from '../src/db.js';
 import { cmdName } from '../src/services/telegramCommands.js';
 import { keptScreens, isBack, commandOf, typedOf, pageKeys, buildGraph } from '../src/services/captureMap.js';
 import { extractInvoiceTemplate } from '../src/services/replicaInvoice.js';
+import { reviewCapture } from '../src/services/captureReview.js';
 import { captureMedia } from './capture-media.js';
 import { applyStyle } from '../src/services/telegram.service.js';
 import { currentTenant } from '../src/tenant.js';
@@ -239,15 +240,19 @@ const catalogSource = (catalogArg === null ? derivedSource : catalogArg.toLowerC
 // editor); cartPay renders the real order into it, and falls back to the standard
 // invoice when there is none.
 const invoice = extractInvoiceTemplate(screens);
+// Personal / sensitive info the user should review and replace (scanned on all
+// captured screens, incl. anti-phishing ones, and the profile)
+const review = reviewCapture({ screens: captured, profile });
 const look = {
   layout: 'commands', siteLinks: false, upperTitles: false, home,
   pages: await withImages(pages),
   replica: true,
   ...(catalogSource ? { catalog: catalogSource } : {}),
   ...(invoice ? { invoice } : {}),
+  ...(review.length ? { review } : {}),
   ...(Object.keys(styleProfile).length ? { profile: styleProfile } : {}),
 };
-console.log(`Replica "${name}": ${look.pages.length} pages, home ${home || '(none)'}, ${commands.length} commands, catalog ${catalogSource || '(shop\'s own)'}${invoice ? ', invoice template (draft — refine it in the editor)' : ''}${personal ? `, ${personal} anti-phishing screen(s) left out` : ''}. Identity: ${styleProfile.name || '(name not captured)'}${styleProfile.photo ? ' + photo' : ''}.`);
+console.log(`Replica "${name}": ${look.pages.length} pages, home ${home || '(none)'}, ${commands.length} commands, catalog ${catalogSource || '(shop\'s own)'}${invoice ? ', invoice template (draft — refine it in the editor)' : ''}${review.length ? `, ${review.length} item(s) to review (personal info)` : ''}${personal ? `, ${personal} anti-phishing screen(s) left out` : ''}. Identity: ${styleProfile.name || '(name not captured)'}${styleProfile.photo ? ' + photo' : ''}.`);
 if (dry) { await applied({ id: 0 }); console.log('Dry run: nothing written.'); process.exit(0); }
 const existing = await prisma.botStyle.findFirst({ where: { name }, orderBy: { tenantId: 'desc' } });
 const mine = existing && (!currentTenant() || existing.tenantId === currentTenant()) ? existing : null;
