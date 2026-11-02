@@ -158,7 +158,7 @@ export default function App() {
     e?.preventDefault()
     if (!user) return go('login')
     setStatus({ state: 'idle', message: '' }); setProof(null)
-    return proofOn ? sendWithProof() : sendPlain()
+    return proofOn ? sendWithProof() : sendPlain(batch, snapSpread(spread))
   }
 
   const isSuper = user?.role === 'superadmin'
@@ -204,48 +204,45 @@ export default function App() {
           </span>
         </label>
 
-        <button className="primary" disabled={sending || short}>
-          {sending ? t.flow.running : !user ? t.loginAndReport : proofOn ? t.submitProof(cost) : t.submitCost(cost)}
-        </button>
-        {/* Batch: 1 to MAX_BATCH reports on the same account, without proof only (a proof counts once) */}
-        {!proofOn && <div className="batch">
-          <div className="stepper" role="group" aria-label={t.batchCount}>
-            <button type="button" onClick={() => setBatch((n) => Math.max(1, n - 1))} disabled={batch <= 1} aria-label={t.batchLess}>−</button>
-            <input
-              type="number" min="1" max={MAX_BATCH} step="1" inputMode="numeric" value={batch} aria-label={t.batchCount}
-              onChange={(e) => setBatch(Math.min(MAX_BATCH, Math.max(1, Math.trunc(Number(e.target.value)) || 1)))}
-            />
-            <button type="button" onClick={() => setBatch((n) => Math.min(MAX_BATCH, n + 1))} disabled={batch >= MAX_BATCH} aria-label={t.batchMore}>+</button>
+        {/* Number of reports: 1 to MAX_BATCH on the same account, without proof only (a proof counts once) */}
+        {!proofOn && (
+          <div className="spread">
+            <span className="field-label">{t.batchCount}</span>
+            <div className="stepper" role="group" aria-label={t.batchCount}>
+              <button type="button" onClick={() => setBatch((n) => Math.max(1, n - 1))} disabled={batch <= 1 || sending} aria-label={t.batchLess}>−</button>
+              <input
+                type="number" min="1" max={MAX_BATCH} step="1" inputMode="numeric" value={batch} aria-label={t.batchCount} disabled={sending}
+                onChange={(e) => setBatch(Math.min(MAX_BATCH, Math.max(1, Math.trunc(Number(e.target.value)) || 1)))}
+              />
+              <button type="button" onClick={() => setBatch((n) => Math.min(MAX_BATCH, n + 1))} disabled={batch >= MAX_BATCH || sending} aria-label={t.batchMore}>+</button>
+            </div>
           </div>
-          <button
-            type="button"
-            className="ghost"
-            disabled={sending || shortBatch}
-            onClick={(e) => {
-              if (!user) return go('login')
-              if (e.currentTarget.form.reportValidity()) { setStatus({ state: 'idle', message: '' }); setProof(null); sendPlain(batch, snapSpread(spread)) }
-            }}
-          >
-            {user ? t.batchSend(batch, cost * batch) : t.loginAndReport}
-          </button>
-        </div>}
+        )}
         {!proofOn && batch > 1 && (
           // Period in minutes, by steps of SPREAD_STEP (0 = all at once)
           <div className="spread">
             <span className="field-label">{t.spreadLabel}</span>
             <div className="stepper" role="group" aria-label={t.spreadLabel}>
-              <button type="button" onClick={() => setSpread((m) => Math.max(0, snapSpread(m) - SPREAD_STEP))} disabled={spread <= 0} aria-label={t.spreadLess}>−</button>
+              <button type="button" onClick={() => setSpread((m) => Math.max(0, snapSpread(m) - SPREAD_STEP))} disabled={spread <= 0 || sending} aria-label={t.spreadLess}>−</button>
               <input
-                className="wide" type="number" min="0" max={MAX_SPREAD} step={SPREAD_STEP} inputMode="numeric" value={spread} aria-label={t.spreadLabel}
+                className="wide" type="number" min="0" max={MAX_SPREAD} step={SPREAD_STEP} inputMode="numeric" value={spread} aria-label={t.spreadLabel} disabled={sending}
                 onChange={(e) => setSpread(Math.min(MAX_SPREAD, Math.max(0, Math.trunc(Number(e.target.value)) || 0)))}
                 onBlur={() => setSpread(snapSpread)}
               />
               <span className="unit">min</span>
-              <button type="button" onClick={() => setSpread((m) => Math.min(MAX_SPREAD, snapSpread(m) + SPREAD_STEP))} disabled={spread >= MAX_SPREAD} aria-label={t.spreadMore}>+</button>
+              <button type="button" onClick={() => setSpread((m) => Math.min(MAX_SPREAD, snapSpread(m) + SPREAD_STEP))} disabled={spread >= MAX_SPREAD || sending} aria-label={t.spreadMore}>+</button>
             </div>
             <span className="hint">{snapSpread(spread) > 0 ? t.spreadHint(batch, snapSpread(spread), fmtMinutes(snapSpread(spread) / batch)) : t.spreadNow}</span>
           </div>
         )}
+
+        {/* The only send button: with proof, one report; without, the number chosen above */}
+        <button className="primary" disabled={sending || (proofOn ? short : shortBatch)}>
+          {sending ? t.flow.running
+            : !user ? t.loginAndReport
+            : proofOn ? t.submitProof(cost)
+            : batch > 1 ? t.batchSend(batch, cost * batch) : t.submitCost(cost)}
+        </button>
         {flow && <Progress t={t} flow={flow} />}
         {proof && <ProofPreview t={t} lang={lang} capture={proof} />}
         {status.message && (
