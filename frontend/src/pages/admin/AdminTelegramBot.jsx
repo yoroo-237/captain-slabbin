@@ -518,6 +518,23 @@ function StyleEditor({ initial, defaults, shelves: allShelves, busy, act, onClos
     <div className="admin-card">
       <h2 className="admin-card-title">{initial.id ? `Style: ${initial.name}` : 'New style'}</h2>
       <p style={{ ...muted, marginTop: 0 }}>Grey text is the shop's default, used when a field is empty. Texts take Telegram formatting: &lt;b&gt;bold&lt;/b&gt;, &lt;i&gt;italic&lt;/i&gt;, &lt;a href="…"&gt;link&lt;/a&gt;.</p>
+
+      {look.review?.length > 0 && (
+        <div className="admin-card" style={{ background: '#fff7e6', border: '1px solid #f0c36d', padding: 12, margin: '12px 0' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+            <b>Personal info to review ({look.review.length})</b>
+            <button type="button" className="admin-btn admin-btn-secondary admin-btn-sm" onClick={() => set(['review'], undefined)}>Mark reviewed</button>
+          </div>
+          <p style={{ ...muted, margin: '6px 0' }}>Copied from the original bot. Replace it with your own in the fields and pages below, then mark it reviewed.</p>
+          <ul style={{ margin: 0, paddingLeft: 18, maxHeight: 180, overflow: 'auto' }}>
+            {look.review.map((r, i) => (
+              <li key={i} style={{ fontSize: '0.85rem', marginBottom: 2 }}>
+                <code>{r.kind}</code> {r.value ? <b>{r.value}</b> : null} <span style={muted}>— {r.suggestion} ({r.where})</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div className="admin-form-group">
         <label className="admin-label">Style name</label>
         <input className="admin-input" value={name} onChange={e => setName(e.target.value)} />
@@ -585,6 +602,22 @@ function StyleEditor({ initial, defaults, shelves: allShelves, busy, act, onClos
           </details>
           {LAYOUT_TEXT_FIELDS.map(([k, l]) => field(['texts', k], l, { area: true }))}
           <div style={muted}>The menu board shows "Menu intro (customer)" first, then the custom order, previous orders, every shelf and every page that has a menu label.</div>
+
+          <details style={{ margin: '10px 0' }}>
+            <summary style={{ cursor: 'pointer', fontWeight: 700 }}>Final invoice (the original's layout)</summary>
+            <div style={muted}>
+              Rendered after an order with the real amounts. Tokens: {'{items} {total} {subtotal} {shipping} {voucher} {order} {paid} {wallet}'}.
+              Each cart line uses the pattern below with {'{qty} {name} {line_total} {price} {option}'}. Leave the template empty to use the shop's standard invoice.
+            </div>
+            {field(['invoice', 'template'], 'Invoice template', { area: true })}
+            {field(['invoice', 'item'], 'One cart line (pattern)')}
+            {look.invoice?.source && (
+              <div className="admin-form-group">
+                <label className="admin-label">Original invoice (reference — not sent)</label>
+                <pre style={{ whiteSpace: 'pre-wrap', background: '#f6f6f6', padding: 8, fontSize: '0.8rem', maxHeight: 200, overflow: 'auto', margin: 0 }}>{look.invoice.source}</pre>
+              </div>
+            )}
+          </details>
         </>
       )}
 
