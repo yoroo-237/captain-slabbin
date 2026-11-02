@@ -20,6 +20,29 @@ model Target {
   updatedAt   DateTime @updatedAt
   reports     Report[]
   captures    Capture[]
+  scheduled   ScheduledReport[]
+}
+
+// Report of a batch spread over time: paid with the batch, created at dueAt.
+// The batch total never changes, only when each report arrives.
+model ScheduledReport {
+  id           Int       @id @default(autoincrement())
+  targetId     Int
+  target       Target    @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  userId       Int
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type         String
+  detectedType String
+  description  String    @default("")
+  lang         String    @default("en")
+  ipHash       String?
+  dueAt        DateTime
+  sentAt       DateTime?
+  reportId     Int?      // report created when it was sent
+  createdAt    DateTime  @default(now())
+
+  @@index([sentAt, dueAt])
+  @@index([targetId, userId])
 }
 
 // What the server saw of the account (capture/capture.py): the report type comes from it.
@@ -117,6 +140,7 @@ model User {
   deposits     Deposit[]
   transactions Transaction[]
   reports      Report[]
+  scheduled    ScheduledReport[]
 }
 
 // Crypto quantity a user holds per currency. The USD balance is amount × live price,

@@ -15,6 +15,7 @@ import { walletRouter, webhookRouter, adminWalletRouter, startWalletJobs } from 
 import { getHoldings, allocateUsd, debit, round2 } from './balance.js'
 import { getCachedUsdPrices } from './price.js'
 import { requestCapture, recapture, captureQueued, captureEnabled, resumeCaptures } from './capture.js'
+import { startScheduledReports } from './scheduled.js'
 
 const app = express()
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -77,13 +78,22 @@ app.get('/api/pricing', async (_req, res) => {
 // a limited number of reports per user and account (set in the super admin space).
 // Each report costs tokens, taken from the user's wallet.
 // count: 1 to MAX_BATCH reports sent at once, only without evidence (a proof counts once).
-const MAX_BATCH = 3
+// spreadMinutes: the batch can be spread over a period. The first report goes at once,
+// the others one by one at a regular interval; the total stays count.
+const MAX_BATCH = 300
+const SPREAD_MINUTES = [0, 60, 360, 1440]
 app.post('/api/reports', requireUser, async (req, res) => {
-  const { target: rawTarget, description = '', proofUrl, lang, files, count: rawCount = 1 } = req.body || {}
+  const { target: rawTarget, description = '', proofUrl, lang, files, count: rawCount = 1, spreadMinutes: rawSpread = 0 } = req.body || {}
 
   const count = Number(rawCount)
   if (!Number.isInteger(count) || count < 1 || count > MAX_BATCH) return res.status(400).json({ error: 'invalid_count' })
   if (count > 1 && (proofUrl || (Array.isArray(files) && files.length))) return res.status(400).json({ error: 'invalid_count' })
+  const spreadMinutes = Number(rawSpread)
+  if (!SPREAD_MINUTES.includes(spreadMinutes)) return res.status(400).json({ error: 'invalid_spread' })
+  // A single report has nothing to spread
+  const later = count > 1 && spreadMinutes > 0 ? count - 1 : 0
+  const immediate = count - later
+  const intervalMs = later ? (spreadMinutes * 60_000) / count : 0
 
   const target = parseTarget(rawTarget)
   if (!target) return res.status(400).json({ error: 'invalid_target' })
@@ -114,9 +124,11 @@ app.post('/api/reports', requireUser, async (req, res) => {
   // (count) compte pour autant, y compris sur un compte encore jamais signalé.
   // Le super admin n'a aucune limite ni aucun coût.
   if (req.user.role !== 'superadmin' && !urlHash && decoded.files.length === 0 && settings.maxReportsNoProof > 0) {
-    // On ne compte que les signalements sans preuve de cet utilisateur pour ce compte
+    // On ne compte que les signalements sans preuve de cet utilisateur pour ce compte,
+    // y compris ceux d'un lot étalé qui attendent encore leur heure
     const sent = existing
       ? await prisma.report.count({ where: { targetId: existing.id, userId: req.user.id, proofHash: null, evidence: { none: {} } } })
+        + await prisma.scheduledReport.count({ where: { targetId: existing.id, userId: req.user.id, sentAt: null } })
       : 0
     // Limite atteinte : refus avec 409 (Conflict)
     if (sent >= settings.maxReportsNoProof) return res.status(409).json({ error: 'already_reported' })
@@ -163,11 +175,11 @@ app.post('/api/reports', requireUser, async (req, res) => {
 
       const t = await tx.target.upsert({
         where,
-        update: { reportCount: { increment: count } },
-        create: { ...target, reportCount: count },
+        update: { reportCount: { increment: immediate } },
+        create: { ...target, reportCount: immediate },
       })
       const reports = []
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i < immediate; i++) {
         reports.push(await tx.report.create({
           data: {
             targetId: t.id,
@@ -183,6 +195,17 @@ app.post('/api/reports', requireUser, async (req, res) => {
           },
         }))
       }
+      // The rest of a spread batch: one every intervalMs, sent by scheduled.js
+      const start = Date.now()
+      for (let i = 1; i <= later; i++) {
+        await tx.scheduledReport.create({
+          data: {
+            targetId: t.id, userId: req.user.id, type: finalType, detectedType: detected.type,
+            description: cleanDescription, lang: lang === 'fr' ? 'fr' : 'en', ipHash,
+            dueAt: new Date(start + i * intervalMs),
+          },
+        })
+      }
       // One payment for the whole batch, linked to its first report
       if (payments.length) {
         const name = target.username ? '@' + target.username : target.tgId
@@ -194,16 +217,19 @@ app.post('/api/reports', requireUser, async (req, res) => {
         })
       }
       return t
-    })
+    }, { maxWait: 5_000, timeout: 150_000 }) // debits and reports can take a while on a busy database
   } catch (err) {
     // Same evidence sent twice at the same moment: the unique index refuses the second one
     if (err.code === 'P2002') return res.status(409).json({ error: 'duplicate_proof' })
+    // Transaction too slow or not started in time: nothing was saved nor debited
+    if (err.code === 'P2028') return res.status(503).json({ error: 'try_again' })
     throw err
   }
 
   const typed = await requestCapture(saved.id)
   res.status(201).json({
     ok: true, targetId: saved.id, reportCount: saved.reportCount, tokensSpent: tokens, count,
+    scheduled: later, intervalMinutes: Math.round(intervalMs / 60_000),
     capturing: !typed && captureEnabled(),
   })
 })
@@ -411,6 +437,7 @@ bootstrapSuperadmin()
   .catch((err) => console.error('[auth] super admin not created:', err.message))
   .finally(() => {
     startWalletJobs()
+    startScheduledReports((targetId) => requestCapture(targetId).catch(() => {}))
     resumeCaptures().catch((err) => console.error('[capture] resume failed:', err.message))
     app.listen(port, () => console.log(`scamwatch api on :${port}`))
   })

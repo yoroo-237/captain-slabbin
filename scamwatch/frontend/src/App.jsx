@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { messages } from './i18n.js'
-import { api, session, MAX_BATCH } from './api.js'
+import { api, session, MAX_BATCH, SPREAD_MINUTES } from './api.js'
 import Admin from './Admin.jsx'
 import Auth from './Auth.jsx'
 import Wallet from './Wallet.jsx'
@@ -32,6 +32,7 @@ export default function App() {
   const [target, setTarget] = useState('')
   const [status, setStatus] = useState({ state: 'idle', message: '' })
   const [batch, setBatch] = useState(1)
+  const [spread, setSpread] = useState(0)
 
   const [query, setQuery] = useState('')
   const [targets, setTargets] = useState([])
@@ -83,18 +84,23 @@ export default function App() {
 
   // Only the account: the server captures it and gives the report its type
   // count: 1 from the main button, 1 to MAX_BATCH from the batch button
-  const submit = async (e, count = 1) => {
+  // spreadMinutes: the batch spread over a period (first report now, the others at a regular interval)
+  const submit = async (e, count = 1, spreadMinutes = 0) => {
     e?.preventDefault()
     if (!user) return go('login')
     setStatus({ state: 'sending', message: '' })
     try {
       const r = await api('/api/reports', {
         method: 'POST',
-        body: JSON.stringify({ target, lang, count }),
+        body: JSON.stringify({ target, lang, count, spreadMinutes: count > 1 ? spreadMinutes : 0 }),
       })
-      const done = count > 1 ? t.thanksBatch(count, r.tokensSpent) : r.tokensSpent ? t.thanksPaid(r.tokensSpent) : t.thanks
+      const done = r.scheduled
+        ? t.thanksSpread(count, r.scheduled, r.intervalMinutes, r.tokensSpent)
+        : count > 1 ? t.thanksBatch(count, r.tokensSpent) : r.tokensSpent ? t.thanksPaid(r.tokensSpent) : t.thanks
       setStatus({ state: 'ok', message: r.capturing ? `${done} ${t.capturing}` : done })
       setTarget('')
+      // Back to one report at once, so the next send is never a batch by accident
+      setBatch(1); setSpread(0)
       loadTargets(query); loadStats(); reloadWallet()
     } catch (err) {
       setStatus({ state: 'error', message: t.errors[err.code] || t.error, code: err.code })
@@ -136,18 +142,30 @@ export default function App() {
         <div className="batch">
           <div className="stepper" role="group" aria-label={t.batchCount}>
             <button type="button" onClick={() => setBatch((n) => Math.max(1, n - 1))} disabled={batch <= 1} aria-label={t.batchLess}>−</button>
-            <output aria-live="polite">{batch}</output>
+            <input
+              type="number" min="1" max={MAX_BATCH} step="1" inputMode="numeric" value={batch} aria-label={t.batchCount}
+              onChange={(e) => setBatch(Math.min(MAX_BATCH, Math.max(1, Math.trunc(Number(e.target.value)) || 1)))}
+            />
             <button type="button" onClick={() => setBatch((n) => Math.min(MAX_BATCH, n + 1))} disabled={batch >= MAX_BATCH} aria-label={t.batchMore}>+</button>
           </div>
           <button
             type="button"
             className="ghost"
             disabled={sending || shortBatch}
-            onClick={(e) => { if (e.currentTarget.form.reportValidity()) submit(null, batch) }}
+            onClick={(e) => { if (e.currentTarget.form.reportValidity()) submit(null, batch, spread) }}
           >
             {user ? t.batchSend(batch, cost * batch) : t.loginAndReport}
           </button>
         </div>
+        {batch > 1 && (
+          <label className="spread">
+            {t.spreadLabel}
+            <select value={spread} onChange={(e) => setSpread(Number(e.target.value))}>
+              {SPREAD_MINUTES.map((m) => <option key={m} value={m}>{t.spreadOptions[m]}</option>)}
+            </select>
+            {spread > 0 && <span className="hint">{t.spreadHint(batch, Math.round(spread / batch))}</span>}
+          </label>
+        )}
         {status.message && (
           <p className={`msg ${status.state}`}>
             {status.message}
