@@ -10,7 +10,7 @@ const SWEEPABLE = ['BTC', 'LTC', 'DOGE', 'ETH']
 const name = (x) => (x.username ? `@${x.username}` : `ID ${x.tgId}`)
 
 // Screenshots need the session header, so they are fetched as blobs
-function Screenshot({ id, alt, path = `/api/admin/evidence/${id}` }) {
+export function Screenshot({ id, alt, path = `/api/admin/evidence/${id}` }) {
   const [src, setSrc] = useState(null)
   useEffect(() => {
     let url
@@ -145,7 +145,10 @@ function Moderation({ t, lang }) {
               {selected.reports.map((r) => (
                 <li key={r.id}>
                   <div className="row muted">
-                    <span>{r.captured ? t.types[r.type] || r.type : t.admin.waitingType}{r.user ? ` · ${r.user.username}` : ''}</span>
+                    <span>
+                      {r.captured ? t.types[r.type] || r.type : t.admin.waitingType}{r.user ? ` · ${r.user.username}` : ''}
+                      {' '}<span className={`badge ${r.captureId ? 'confirmed' : ''}`}>{r.captureId ? t.admin.withProof(r.captureId) : t.admin.noProof}</span>
+                    </span>
                     <span>{date(r.createdAt)}</span>
                   </div>
                   {r.description && <p className="desc">{r.description}</p>}

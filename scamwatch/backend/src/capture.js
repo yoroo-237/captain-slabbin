@@ -1,9 +1,14 @@
 // Capture of reported accounts: the server looks at the account with the ScamWatch
 // Telegram account (capture/capture.py) and the report type comes from what it saw.
-// Reports are accepted at once; captures run in the background, one at a time
-// (Telegram limits the pace), and fill the type of every report still waiting.
-// A capture younger than REUSE_MS is reused instead of asking Telegram again.
+// Two uses:
+// - report with proof: the form asks for a capture, follows it, then sends the report
+//   with it (proofCapture). The capture is the proof and gives the type.
+// - report without proof: the report is accepted at once and a capture in the background
+//   fills the type of every report still waiting (requestCapture).
+// Captures run one at a time (Telegram limits the pace). Each one is a Capture row
+// created when it is queued, so its progress can be followed by its id.
 
+import crypto from 'node:crypto'
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -14,12 +19,14 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 const SCRIPT = process.env.CAPTURE_SCRIPT || path.resolve(here, '../../capture/capture.py')
 const PYTHON = process.env.CAPTURE_PYTHON || (process.platform === 'win32' ? 'python' : 'python3')
 const TIMEOUT_MS = 120_000
-const REUSE_MS = 24 * 3600_000
+const REUSE_MS = 24 * 3600_000 // type of a report without proof
+const PROOF_REUSE_MS = 10 * 60_000 // a proof is a fresh look at the account
+export const PROOF_VALID_MS = 60 * 60_000 // a finished proof must be sent within this time
 const MAX_PHOTO = 2 * 1024 * 1024
 
 export const captureEnabled = () => !!(process.env.TG_API_ID && process.env.TG_API_HASH && process.env.TG_SESSION)
 
-const queue = []
+const queue = [] // capture ids, oldest first
 let running = false
 let current = null
 
@@ -45,17 +52,22 @@ function runScript(ref) {
 // Every text the capture gathered, for the type detection
 const textOf = (c) => [c.title, c.about, ...(Array.isArray(c.texts) ? c.texts : [])].filter(Boolean).join('\n')
 
+// Same account content = same hash, whenever it was captured
+const hashOf = (d) => crypto.createHash('sha256').update(JSON.stringify([
+  d.kind, d.title, d.about, d.texts, d.photo ? crypto.createHash('sha256').update(d.photo).digest('hex') : null,
+])).digest('hex')
+
 // Gives the capture's type to the reports of this account that do not have one yet
 async function applyCapture(capture) {
   const type = capture.detectedType || 'other'
   await prisma.report.updateMany({ where: { targetId: capture.targetId, captured: false }, data: { type, detectedType: type, captured: true } })
 }
 
-async function captureTarget(targetId) {
-  const target = await prisma.target.findUnique({ where: { id: targetId } })
-  if (!target) return
+async function runCapture(captureId) {
+  const row = await prisma.capture.findUnique({ where: { id: captureId }, include: { target: true } })
+  if (!row || row.status !== 'pending') return
+  const { target } = row
   const ref = target.username || target.tgId
-  const row = await prisma.capture.create({ data: { targetId } })
   const r = await runScript(ref)
 
   if (r.error) {
@@ -73,13 +85,18 @@ async function captureTarget(targetId) {
     texts, photo: photo && photo.length <= MAX_PHOTO ? photo : null, finishedAt: new Date(),
   }
   data.detectedType = detectType(textOf(data)).type
-  const done = await prisma.capture.update({ where: { id: row.id }, data })
+  data.contentHash = hashOf(data)
 
   // The capture tells what the account really is, and its numeric ID never changes
   const update = { kind: data.kind || target.kind }
   if (r.id && !target.tgId && !(await prisma.target.findUnique({ where: { tgId: String(r.id) }, select: { id: true } }))) update.tgId = String(r.id)
-  await prisma.target.update({ where: { id: targetId }, data: update })
-  await applyCapture(done)
+  // All at once: a capture seen "done" always has its type on the reports
+  const type = data.detectedType || 'other'
+  await prisma.$transaction([
+    prisma.capture.update({ where: { id: row.id }, data }),
+    prisma.target.update({ where: { id: target.id }, data: update }),
+    prisma.report.updateMany({ where: { targetId: target.id, captured: false }, data: { type, detectedType: type, captured: true } }),
+  ])
 }
 
 async function work() {
@@ -88,12 +105,21 @@ async function work() {
   try {
     while (queue.length) {
       current = queue.shift()
-      try { await captureTarget(current) } catch (err) { console.error('[capture]', err.message) }
+      try { await runCapture(current) } catch (err) { console.error('[capture]', err.message) }
     }
   } finally { running = false; current = null }
 }
 
-// Called after each report. Returns true when a recent capture already gave the type.
+// Queues a capture of the account, or returns the one already waiting
+async function enqueue(targetId) {
+  const pending = await prisma.capture.findFirst({ where: { targetId, status: 'pending' }, orderBy: { id: 'desc' }, select: { id: true } })
+  const id = pending?.id ?? (await prisma.capture.create({ data: { targetId } })).id
+  if (!queue.includes(id) && current !== id) queue.push(id)
+  work()
+  return id
+}
+
+// Report without proof, after it is saved. Returns true when a recent capture already gave the type.
 export async function requestCapture(targetId) {
   const recent = await prisma.capture.findFirst({
     where: { targetId, status: 'done', finishedAt: { gte: new Date(Date.now() - REUSE_MS) } },
@@ -101,26 +127,45 @@ export async function requestCapture(targetId) {
   })
   if (recent) { await applyCapture(recent); return true }
   if (!captureEnabled()) return false
-  if (!queue.includes(targetId)) queue.push(targetId)
-  work()
+  await enqueue(targetId)
   return false
 }
 
+// Report with proof, before it is sent: a capture of a few minutes ago is reused,
+// otherwise a new one is queued. Returns the capture id to follow.
+export async function proofCapture(targetId) {
+  const recent = await prisma.capture.findFirst({
+    where: { targetId, status: 'done', finishedAt: { gte: new Date(Date.now() - PROOF_REUSE_MS) } },
+    orderBy: { finishedAt: 'desc' }, select: { id: true },
+  })
+  return recent ? recent.id : enqueue(targetId)
+}
+
 // The super admin asks for a fresh capture (account changed, previous capture failed)
-export function recapture(targetId) {
+export async function recapture(targetId) {
   if (!captureEnabled()) return false
-  if (!queue.includes(targetId)) queue.push(targetId)
-  work()
+  await enqueue(targetId)
   return true
 }
 
-export const captureQueued = (targetId) => queue.includes(targetId) || current === targetId
+// Captures waiting before this one (0 = running now or next)
+export const queuedAhead = (captureId) => {
+  if (current === captureId) return 0
+  const i = queue.indexOf(captureId)
+  return i < 0 ? 0 : i + (current ? 1 : 0)
+}
 
-// At start, accounts whose reports still wait for a type go back in the queue
+// At start: captures cut by the restart go back in the queue, and accounts whose reports
+// still wait for a type get one
 export async function resumeCaptures() {
-  await prisma.capture.updateMany({ where: { status: 'pending' }, data: { status: 'failed', error: 'interrupted', finishedAt: new Date() } })
-  if (!captureEnabled()) return console.warn('[capture] TG_API_ID / TG_API_HASH / TG_SESSION not set: reports keep the type "other"')
+  if (!captureEnabled()) {
+    await prisma.capture.updateMany({ where: { status: 'pending' }, data: { status: 'failed', error: 'not_configured', finishedAt: new Date() } })
+    return console.warn('[capture] TG_API_ID / TG_API_HASH / TG_SESSION not set: reports keep the type "other", no proof capture')
+  }
+  const pending = await prisma.capture.findMany({ where: { status: 'pending' }, orderBy: { id: 'asc' }, select: { id: true } })
+  for (const { id } of pending) if (!queue.includes(id)) queue.push(id)
+  work()
   const waiting = await prisma.report.findMany({ where: { captured: false }, distinct: ['targetId'], select: { targetId: true } })
   for (const { targetId } of waiting) await requestCapture(targetId)
-  if (waiting.length) console.log(`[capture] ${waiting.length} account(s) queued`)
+  if (pending.length || waiting.length) console.log(`[capture] ${pending.length} capture(s) resumed, ${waiting.length} account(s) waiting for a type`)
 }

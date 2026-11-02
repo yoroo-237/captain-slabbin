@@ -6,14 +6,20 @@ Standalone project of this repository, with its own Railway project, served on i
 
 ## Features
 
-- Report form: the account only (@username, t.me link or numeric ID).
+- Report form: the account (@username, t.me link or numeric ID), an "Attach a proof" checkbox and
+  a progress bar (account check, proof capture, type, payment and sending).
 - Capture (`capture/capture.py`, Telethon, a Telegram account dedicated to ScamWatch): name, bio
   and photo; a bot's answer to `/start`; a public channel or group's latest messages. Regular users
-  are never messaged. It runs in the background, one at a time, and `backend/src/detect.js` gives
-  every report of the account its type from what was captured. A capture under 24 h is reused.
-  Without `TG_API_ID` / `TG_API_HASH` / `TG_SESSION`, reports keep the type "other".
-- A limited number of reports per user and account (1 by default, 0 = no limit). The API still
-  accepts a proof link and screenshots from other clients (deduplicated, stored in Postgres).
+  are never messaged. Captures run one at a time; `backend/src/detect.js` gives the type from what
+  was captured.
+  - With proof: `POST /api/captures`, the form follows `GET /api/captures/:id`, shows the capture,
+    then sends `POST /api/reports` with its `captureId`. Paid only once the proof is in. The same
+    content counts once per account (`proofHash` = `cap:` + content hash); no per-user limit.
+  - Without proof: sent and paid at once, a background capture (reused for 24 h) fills the type.
+    Batches and spreading are only for reports without proof.
+  - Without `TG_API_ID` / `TG_API_HASH` / `TG_SESSION`, the checkbox is off and reports keep the type "other".
+- Reports without proof: a limited number per user and account (1 by default, 0 = no limit). The API
+  still accepts a proof link and screenshots from other clients (deduplicated, stored in Postgres).
 - The super admin has no cost and no limit.
 - Look: the design, logo and favicon of the portfolio (paper, charcoal, orange; Space Grotesk,
   Instrument Serif, JetBrains Mono).

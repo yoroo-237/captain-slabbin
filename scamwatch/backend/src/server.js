@@ -14,7 +14,7 @@ import { authRouter, requireUser, requireSuper, bootstrapSuperadmin } from './au
 import { walletRouter, webhookRouter, adminWalletRouter, startWalletJobs } from './wallet.js'
 import { getHoldings, allocateUsd, debit, round2 } from './balance.js'
 import { getCachedUsdPrices } from './price.js'
-import { requestCapture, recapture, captureQueued, captureEnabled, resumeCaptures } from './capture.js'
+import { requestCapture, proofCapture, recapture, queuedAhead, captureEnabled, resumeCaptures, PROOF_VALID_MS } from './capture.js'
 import { startScheduledReports } from './scheduled.js'
 
 const app = express()
@@ -70,7 +70,55 @@ app.post('/api/detect', (req, res) => {
 // Price of a report, shown before sending
 app.get('/api/pricing', async (_req, res) => {
   const s = await getSettings()
-  res.json({ tokenPriceUsd: s.tokenPriceUsd, reportCostTokens: s.reportCostTokens })
+  res.json({ tokenPriceUsd: s.tokenPriceUsd, reportCostTokens: s.reportCostTokens, maxReportsNoProof: s.maxReportsNoProof, proofCapture: captureEnabled() })
+})
+
+// Report with proof, step 1: the server captures the account, the form follows the
+// capture (GET below) and then sends the report with its id.
+// One capture asked at a time per user, and at most PROOF_PER_HOUR per hour.
+const PROOF_PER_HOUR = 20
+const proofAsks = new Map() // userId -> [timestamps]
+app.post('/api/captures', requireUser, async (req, res) => {
+  const target = parseTarget(req.body?.target)
+  if (!target) return res.status(400).json({ error: 'invalid_target' })
+  if (await isWhitelisted(target)) return res.status(403).json({ error: 'protected_account' })
+  if (!captureEnabled()) return res.status(503).json({ error: 'capture_not_configured' })
+
+  const now = Date.now()
+  const asks = (proofAsks.get(req.user.id) || []).filter((t) => t > now - 3600_000)
+  if (req.user.role !== 'superadmin' && asks.length >= PROOF_PER_HOUR) return res.status(429).json({ error: 'too_many_captures' })
+  proofAsks.set(req.user.id, [...asks, now])
+
+  // The account is known from now on, it shows in the lists only once reported (reportCount > 0)
+  const t = await prisma.target.upsert({ where: whereTarget(target), update: {}, create: { ...target } })
+  res.status(201).json({ captureId: await proofCapture(t.id) })
+})
+
+// What the form shows of the capture: the account's public profile, no photo bytes
+app.get('/api/captures/:id', requireUser, async (req, res) => {
+  const id = Number(req.params.id)
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'invalid_id' })
+  const c = await prisma.capture.findUnique({
+    where: { id },
+    select: { id: true, status: true, error: true, kind: true, title: true, about: true, texts: true, detectedType: true, finishedAt: true, photo: true },
+  })
+  if (!c) return res.status(404).json({ error: 'not_found' })
+  const texts = Array.isArray(c.texts) ? c.texts : []
+  res.json({
+    id: c.id, status: c.status, error: c.error, kind: c.kind, title: c.title, about: c.about.slice(0, 300),
+    texts: texts.slice(0, 3).map((x) => String(x).slice(0, 200)), textCount: texts.length,
+    detectedType: c.detectedType, finishedAt: c.finishedAt, hasPhoto: !!c.photo,
+    ahead: c.status === 'pending' ? queuedAhead(c.id) : 0,
+  })
+})
+
+app.get('/api/captures/:id/photo', requireUser, async (req, res) => {
+  const id = Number(req.params.id)
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'invalid_id' })
+  const c = await prisma.capture.findUnique({ where: { id }, select: { photo: true } })
+  if (!c?.photo) return res.status(404).json({ error: 'not_found' })
+  res.set({ 'Content-Type': 'image/jpeg', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, max-age=3600' })
+  res.send(Buffer.from(c.photo))
 })
 
 // An account can be reported again and again, as long as each report brings
@@ -83,11 +131,11 @@ app.get('/api/pricing', async (_req, res) => {
 const MAX_BATCH = 300
 const SPREAD_MINUTES = [0, 60, 360, 1440]
 app.post('/api/reports', requireUser, async (req, res) => {
-  const { target: rawTarget, description = '', proofUrl, lang, files, count: rawCount = 1, spreadMinutes: rawSpread = 0 } = req.body || {}
+  const { target: rawTarget, description = '', proofUrl, lang, files, captureId, count: rawCount = 1, spreadMinutes: rawSpread = 0 } = req.body || {}
 
   const count = Number(rawCount)
   if (!Number.isInteger(count) || count < 1 || count > MAX_BATCH) return res.status(400).json({ error: 'invalid_count' })
-  if (count > 1 && (proofUrl || (Array.isArray(files) && files.length))) return res.status(400).json({ error: 'invalid_count' })
+  if (count > 1 && (proofUrl || captureId || (Array.isArray(files) && files.length))) return res.status(400).json({ error: 'invalid_count' })
   const spreadMinutes = Number(rawSpread)
   if (!SPREAD_MINUTES.includes(spreadMinutes)) return res.status(400).json({ error: 'invalid_spread' })
   // A single report has nothing to spread
@@ -105,18 +153,29 @@ app.post('/api/reports', requireUser, async (req, res) => {
   const cleanDescription = String(description).trim().slice(0, 2000)
   const cleanProof = proofUrl ? String(proofUrl).trim().slice(0, 500) : null
   if (cleanProof && !/^https?:\/\//i.test(cleanProof)) return res.status(400).json({ error: 'invalid_proof' })
-  const urlHash = proofUrlHash(cleanProof)
-  const ipHash = hashIp(req.ip)
-  // The type comes from the capture of the account, filled in once it is done.
-  // Until then: what the description says, if a client sent one, otherwise "other".
-  const detected = detectType(cleanDescription, cleanProof || '')
-  const finalType = detected.type
-  const settings = await getSettings()
-
   // Le compte signalé est identifié par son @username s'il en a un, sinon par son ID Telegram numérique
   const where = whereTarget(target)
   // Ce compte a-t-il déjà été signalé au moins une fois ? (on ne récupère que l'id, rien d'autre)
   const existing = await prisma.target.findUnique({ where, select: { id: true } })
+
+  // Report with proof: the capture taken for it (POST /api/captures) must be finished,
+  // of this account and recent. Its content counts once per account, like a proof link.
+  let proof = null
+  if (captureId !== undefined && captureId !== null) {
+    proof = Number.isInteger(Number(captureId)) && await prisma.capture.findUnique({
+      where: { id: Number(captureId) }, select: { id: true, targetId: true, status: true, detectedType: true, contentHash: true, finishedAt: true },
+    })
+    if (!proof || proof.targetId !== existing?.id || proof.status !== 'done' || !proof.contentHash) return res.status(400).json({ error: 'invalid_capture' })
+    if (proof.finishedAt < new Date(Date.now() - PROOF_VALID_MS)) return res.status(400).json({ error: 'capture_expired' })
+  }
+
+  const urlHash = proof ? `cap:${proof.contentHash}` : proofUrlHash(cleanProof)
+  const ipHash = hashIp(req.ip)
+  // The type comes from the capture of the account: the proof's at once, otherwise filled in
+  // once the background capture is done. Until then: what the description says, if a client sent one, otherwise "other".
+  const detected = proof ? { type: proof.detectedType || 'other' } : detectType(cleanDescription, cleanProof || '')
+  const finalType = detected.type
+  const settings = await getSettings()
 
   // Cas 1 : signalement SANS preuve (ni lien, ni capture d'écran).
   // Le nombre de signalements sans preuve autorisés par utilisateur et par compte est fixé
@@ -189,6 +248,8 @@ app.post('/api/reports', requireUser, async (req, res) => {
             description: cleanDescription,
             proofUrl: cleanProof,
             proofHash: urlHash,
+            captureId: proof?.id ?? null,
+            captured: !!proof,
             lang: lang === 'fr' ? 'fr' : 'en',
             ipHash,
             evidence: { create: decoded.files.map((f) => ({ ...f, targetId: t.id })) },
@@ -226,10 +287,11 @@ app.post('/api/reports', requireUser, async (req, res) => {
     throw err
   }
 
-  const typed = await requestCapture(saved.id)
+  const typed = proof ? true : await requestCapture(saved.id)
   res.status(201).json({
     ok: true, targetId: saved.id, reportCount: saved.reportCount, tokensSpent: tokens, count,
     scheduled: later, intervalMinutes: Math.round(intervalMs / 60_000),
+    type: finalType, withProof: !!proof,
     capturing: !typed && captureEnabled(),
   })
 })
@@ -239,7 +301,7 @@ app.get('/api/targets', async (req, res) => {
   const q = String(req.query.q || '').trim().replace(/^@/, '').toLowerCase()
   const search = q ? { OR: [{ username: { contains: q } }, { tgId: q }] } : {}
   const targets = await prisma.target.findMany({
-    where: { ...search, ...(await notWhitelisted()), status: { not: 'rejected' } },
+    where: { ...search, ...(await notWhitelisted()), status: { not: 'rejected' }, reportCount: { gt: 0 } },
     // 'confirmed' sorts before 'pending' alphabetically
     orderBy: [{ status: 'asc' }, { reportCount: 'desc' }],
     take: 50,
@@ -253,7 +315,7 @@ app.get('/api/targets/:id', async (req, res) => {
   if (!Number.isInteger(id)) return res.status(400).json({ error: 'invalid_id' })
 
   const target = await prisma.target.findUnique({ where: { id } })
-  if (!target || target.status === 'rejected' || await isWhitelisted(target)) return res.status(404).json({ error: 'not_found' })
+  if (!target || !target.reportCount || target.status === 'rejected' || await isWhitelisted(target)) return res.status(404).json({ error: 'not_found' })
 
   const byType = await prisma.report.groupBy({ by: ['type'], where: { targetId: id }, _count: true })
   const recent = await prisma.report.findMany({
@@ -271,7 +333,8 @@ app.get('/api/targets/:id', async (req, res) => {
 })
 
 app.get('/api/stats', async (_req, res) => {
-  const [targets, reports] = await Promise.all([prisma.target.count(), prisma.report.count()])
+  // Accounts only captured for a proof that was never sent are not counted
+  const [targets, reports] = await Promise.all([prisma.target.count({ where: { reportCount: { gt: 0 } } }), prisma.report.count()])
   res.json({ targets, reports })
 })
 
@@ -284,7 +347,7 @@ app.get('/api/admin/targets', async (req, res) => {
   const status = STATUSES.includes(req.query.status) ? req.query.status : undefined
   const q = String(req.query.q || '').trim().replace(/^@/, '').toLowerCase()
   const targets = await prisma.target.findMany({
-    where: { status, ...(q ? { OR: [{ username: { contains: q } }, { tgId: q }] } : {}) },
+    where: { status, reportCount: { gt: 0 }, ...(q ? { OR: [{ username: { contains: q } }, { tgId: q }] } : {}) },
     orderBy: { updatedAt: 'desc' },
     take: 100,
     select: { id: true, username: true, tgId: true, kind: true, status: true, reportCount: true, updatedAt: true },
@@ -304,7 +367,7 @@ app.get('/api/admin/targets/:id', async (req, res) => {
     orderBy: { createdAt: 'desc' },
     take: 200,
     select: {
-      id: true, type: true, detectedType: true, captured: true, description: true, proofUrl: true, lang: true, createdAt: true,
+      id: true, type: true, detectedType: true, captured: true, captureId: true, description: true, proofUrl: true, lang: true, createdAt: true,
       user: { select: { username: true } },
       evidence: { select: { id: true, mime: true, size: true } },
     },
@@ -317,7 +380,7 @@ app.get('/api/admin/targets/:id', async (req, res) => {
   res.json({
     ...target, whitelisted: await isWhitelisted(target), reports,
     capture: capture && { ...capture, photo: undefined, hasPhoto: !!capture.photo },
-    capturing: captureQueued(id), captureEnabled: captureEnabled(),
+    capturing: capture?.status === 'pending', captureEnabled: captureEnabled(),
   })
 })
 
@@ -334,7 +397,7 @@ app.post('/api/admin/targets/:id/capture', async (req, res) => {
   const id = Number(req.params.id)
   if (!Number.isInteger(id)) return res.status(400).json({ error: 'invalid_id' })
   if (!(await prisma.target.findUnique({ where: { id }, select: { id: true } }))) return res.status(404).json({ error: 'not_found' })
-  if (!recapture(id)) return res.status(503).json({ error: 'capture_not_configured' })
+  if (!(await recapture(id))) return res.status(503).json({ error: 'capture_not_configured' })
   res.json({ ok: true })
 })
 

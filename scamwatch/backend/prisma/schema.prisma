@@ -58,8 +58,10 @@ model Capture {
   texts        Json      @default("[]") // bot answer to /start, or latest channel / group messages
   photo        Bytes?
   detectedType String?
+  contentHash  String?   // what was seen (sha256): the same content is one proof only, once per account
   createdAt    DateTime  @default(now())
   finishedAt   DateTime?
+  reports      Report[]  // reports that sent this capture as their proof
 
   @@index([targetId, createdAt])
   @@index([status])
@@ -76,7 +78,9 @@ model Report {
   captured     Boolean      @default(false) // type taken from a finished capture
   description  String       @default("")
   proofUrl     String?
-  proofHash    String?      // normalized proof link hash: one link counts once per account
+  proofHash    String?      // normalized proof link hash, or "cap:" + capture content hash: one proof counts once per account
+  captureId    Int?         // report with proof: the capture taken for it
+  capture      Capture?     @relation(fields: [captureId], references: [id], onDelete: SetNull)
   lang         String       @default("en")
   ipHash       String?      // hashed IP, kept for abuse checks
   createdAt    DateTime     @default(now())

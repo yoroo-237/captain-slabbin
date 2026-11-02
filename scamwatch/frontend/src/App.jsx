@@ -4,6 +4,11 @@ import { api, session, MAX_BATCH, SPREAD_MINUTES } from './api.js'
 import Admin from './Admin.jsx'
 import Auth from './Auth.jsx'
 import Wallet from './Wallet.jsx'
+import { Progress, ProofPreview } from './Proof.jsx'
+
+const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms))
+const CAPTURE_POLL_MS = 1500
+const CAPTURE_WAIT_MS = 5 * 60_000
 
 const initialLang = () => {
   try {
@@ -33,6 +38,9 @@ export default function App() {
   const [status, setStatus] = useState({ state: 'idle', message: '' })
   const [batch, setBatch] = useState(1)
   const [spread, setSpread] = useState(0)
+  const [withProof, setWithProof] = useState(true)
+  const [flow, setFlow] = useState(null) // progress of the report being sent
+  const [proof, setProof] = useState(null) // capture shown under the bar
 
   const [query, setQuery] = useState('')
   const [targets, setTargets] = useState([])
@@ -85,33 +93,79 @@ export default function App() {
   // Only the account: the server captures it and gives the report its type
   // count: 1 from the main button, 1 to MAX_BATCH from the batch button
   // spreadMinutes: the batch spread over a period (first report now, the others at a regular interval)
-  const submit = async (e, count = 1, spreadMinutes = 0) => {
-    e?.preventDefault()
-    if (!user) return go('login')
-    setStatus({ state: 'sending', message: '' })
+  const step = (patch) => setFlow((f) => ({ ...f, ...patch }))
+  const fail = (code) => {
+    step({ state: 'error', detail: '' })
+    setStatus({ state: 'error', message: t.errors[code] || t.error, code })
+  }
+  const sent = (r, count = 1) => {
+    const done = r.scheduled
+      ? t.thanksSpread(count, r.scheduled, r.intervalMinutes, r.tokensSpent)
+      : count > 1 ? t.thanksBatch(count, r.tokensSpent) : r.tokensSpent ? t.thanksPaid(r.tokensSpent) : t.thanks
+    step({ state: 'ok', detail: r.withProof ? t.flow.sentWithProof(t.types[r.type] || r.type) : r.capturing ? t.capturing : '' })
+    setStatus({ state: 'ok', message: done })
+    setTarget('')
+    // Back to one report at once, so the next send is never a batch by accident
+    setBatch(1); setSpread(0)
+    loadTargets(query); loadStats(); reloadWallet()
+  }
+
+  // Without proof: sent and paid at once, the type comes later from a capture in the background.
+  // count: 1 from the main button, 1 to MAX_BATCH from the batch button
+  // spreadMinutes: the batch spread over a period (first report now, the others at a regular interval)
+  const sendPlain = async (count = 1, spreadMinutes = 0) => {
+    setFlow({ mode: 'plain', at: 0, state: 'run', detail: t.flow.sending })
     try {
       const r = await api('/api/reports', {
         method: 'POST',
         body: JSON.stringify({ target, lang, count, spreadMinutes: count > 1 ? spreadMinutes : 0 }),
       })
-      const done = r.scheduled
-        ? t.thanksSpread(count, r.scheduled, r.intervalMinutes, r.tokensSpent)
-        : count > 1 ? t.thanksBatch(count, r.tokensSpent) : r.tokensSpent ? t.thanksPaid(r.tokensSpent) : t.thanks
-      setStatus({ state: 'ok', message: r.capturing ? `${done} ${t.capturing}` : done })
-      setTarget('')
-      // Back to one report at once, so the next send is never a batch by accident
-      setBatch(1); setSpread(0)
-      loadTargets(query); loadStats(); reloadWallet()
-    } catch (err) {
-      setStatus({ state: 'error', message: t.errors[err.code] || t.error, code: err.code })
-    }
+      sent(r, count)
+    } catch (err) { fail(err.code) }
+  }
+
+  // With proof: the server captures the account, the form follows the capture,
+  // shows it, then sends and pays the report with it
+  const sendWithProof = async () => {
+    setFlow({ mode: 'proof', at: 0, state: 'run', detail: t.flow.checking })
+    try {
+      const { captureId } = await api('/api/captures', { method: 'POST', body: JSON.stringify({ target }) })
+      const start = Date.now()
+      let c
+      for (;;) {
+        c = await api(`/api/captures/${captureId}`)
+        if (c.status !== 'pending') break
+        step({ at: 1, detail: c.ahead > 0 ? t.flow.queued(c.ahead) : t.flow.capturing })
+        if (Date.now() - start > CAPTURE_WAIT_MS) return fail('capture_slow')
+        await sleep(CAPTURE_POLL_MS)
+      }
+      if (c.status === 'failed') {
+        step({ at: 1 })
+        return fail(`capture_${c.error}`)
+      }
+      setProof(c)
+      step({ at: 2, detail: t.flow.typeFound(t.types[c.detectedType] || c.detectedType) })
+      await sleep(700) // time to read the type before the payment step
+      step({ at: 3, detail: t.flow.sending })
+      sent(await api('/api/reports', { method: 'POST', body: JSON.stringify({ target, lang, captureId }) }))
+    } catch (err) { fail(err.code) }
+  }
+
+  const submit = (e) => {
+    e?.preventDefault()
+    if (!user) return go('login')
+    setStatus({ state: 'idle', message: '' }); setProof(null)
+    return proofOn ? sendWithProof() : sendPlain()
   }
 
   const isSuper = user?.role === 'superadmin'
   const cost = isSuper ? 0 : pricing?.reportCostTokens ?? 1
   const short = user && wallet && cost > 0 && wallet.tokens < cost
   const shortBatch = user && wallet && cost > 0 && wallet.tokens < cost * batch
-  const sending = status.state === 'sending'
+  const sending = flow?.state === 'run'
+  const proofAvailable = !!pricing?.proofCapture
+  const proofOn = withProof && proofAvailable
+  const limit = pricing?.maxReportsNoProof ?? 1
 
   // Same form on the home page and in the super admin space
   const reportCard = (
@@ -130,16 +184,28 @@ export default function App() {
       <form onSubmit={submit}>
         <label>
           {t.target}
-          <input value={target} onChange={(e) => setTarget(e.target.value)} placeholder={t.targetHint} required />
+          <input
+            value={target} placeholder={t.targetHint} required disabled={sending}
+            onChange={(e) => { setTarget(e.target.value); if (flow?.state !== 'run') { setFlow(null); setProof(null); setStatus({ state: 'idle', message: '' }) } }}
+          />
         </label>
 
-        <p className="hint">{t.captureHint}</p>
+        {/* With or without proof: the proof is a capture of the account taken now, before payment */}
+        <label className="check">
+          <input type="checkbox" checked={proofOn} disabled={!proofAvailable || sending} onChange={(e) => setWithProof(e.target.checked)} />
+          <span>
+            <b>{t.withProof}</b>
+            <small>
+              {!proofAvailable ? t.proofOff : proofOn ? t.withProofHint : t.noProofHint(isSuper ? 0 : limit)}
+            </small>
+          </span>
+        </label>
 
-        <button className="primary" disabled={status.state === 'sending' || short}>
-          {status.state === 'sending' ? t.sending : user ? t.submitCost(cost) : t.loginAndReport}
+        <button className="primary" disabled={sending || short}>
+          {sending ? t.flow.running : !user ? t.loginAndReport : proofOn ? t.submitProof(cost) : t.submitCost(cost)}
         </button>
-        {/* Batch: 1 to MAX_BATCH reports on the same account, the server checks the limit */}
-        <div className="batch">
+        {/* Batch: 1 to MAX_BATCH reports on the same account, without proof only (a proof counts once) */}
+        {!proofOn && <div className="batch">
           <div className="stepper" role="group" aria-label={t.batchCount}>
             <button type="button" onClick={() => setBatch((n) => Math.max(1, n - 1))} disabled={batch <= 1} aria-label={t.batchLess}>−</button>
             <input
@@ -152,12 +218,15 @@ export default function App() {
             type="button"
             className="ghost"
             disabled={sending || shortBatch}
-            onClick={(e) => { if (e.currentTarget.form.reportValidity()) submit(null, batch, spread) }}
+            onClick={(e) => {
+              if (!user) return go('login')
+              if (e.currentTarget.form.reportValidity()) { setStatus({ state: 'idle', message: '' }); setProof(null); sendPlain(batch, spread) }
+            }}
           >
             {user ? t.batchSend(batch, cost * batch) : t.loginAndReport}
           </button>
-        </div>
-        {batch > 1 && (
+        </div>}
+        {!proofOn && batch > 1 && (
           <label className="spread">
             {t.spreadLabel}
             <select value={spread} onChange={(e) => setSpread(Number(e.target.value))}>
@@ -166,11 +235,19 @@ export default function App() {
             {spread > 0 && <span className="hint">{t.spreadHint(batch, Math.round(spread / batch))}</span>}
           </label>
         )}
+        {flow && <Progress t={t} flow={flow} />}
+        {proof && <ProofPreview t={t} lang={lang} capture={proof} />}
         {status.message && (
           <p className={`msg ${status.state}`}>
             {status.message}
             {status.code === 'insufficient_tokens' && <> <a href="#wallet" className="link">{t.wallet.topUp}</a></>}
           </p>
+        )}
+        {/* The proof could not be taken or is already known: the report can still go without it */}
+        {status.state === 'error' && flow?.mode === 'proof' && (status.code?.startsWith('capture_') || status.code === 'duplicate_proof') && (
+          <button type="button" className="ghost" onClick={() => { setWithProof(false); setStatus({ state: 'idle', message: '' }); setProof(null); sendPlain() }}>
+            {t.flow.sendPlain(cost)}
+          </button>
         )}
       </form>
     </section>

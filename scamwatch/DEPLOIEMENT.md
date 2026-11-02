@@ -19,7 +19,7 @@ Plateforme de signalement des comptes Telegram frauduleux, avec portefeuille cry
 - **Solde en crypto, au cours du direct** : comme dans les boutiques, le client détient la crypto déposée. Sa valeur en USD suit le marché, et ses jetons aussi : `jetons = solde en USD / prix du jeton`.
 - **Paiement d'un signalement** : `jetons par signalement × prix du jeton`, débité en crypto au cours du moment. Le débit et l'enregistrement se font ensemble : un signalement refusé (doublon, compte protégé, erreur) ne coûte rien.
 - **Pas de commission** : 100 % de chaque dépôt revient au super admin (MKO). Un seul balayage par crypto, vers vos adresses de réserve.
-- **Preuves et type** : le formulaire demande seulement le compte. Le serveur capture le compte (profil, bio, photo, ce qu'il publie ou répond) et attribue le type d'après cette capture (voir 1.5). Chaque utilisateur a une limite de signalements par compte (1 par défaut).
+- **Preuves et type** : le formulaire demande le compte et propose de joindre une preuve. La preuve est une capture du compte faite par le serveur (profil, bio, photo, ce qu'il publie ou répond), et le type vient de cette capture (voir 1.5). Sans preuve, chaque utilisateur a une limite de signalements par compte (1 par défaut).
 - **Super admin** : aucun coût et aucune limite.
 - **Liste blanche** : les comptes et bots que vous y mettez ne peuvent pas être signalés et n'apparaissent pas dans la liste publique.
 
@@ -97,7 +97,11 @@ Ouvrez `https://scamwatch.captainslabbin.shop/api/health` : la réponse doit êt
 ### 1.5 Capture des comptes (type du signalement)
 Le formulaire ne demande que le compte. Le serveur le regarde ensuite avec un compte Telegram dédié à ScamWatch : nom, bio et photo ; pour un bot, l'écran qu'il affiche à `/start` ; pour un canal ou un groupe public, ses derniers messages. Le type (arnaque crypto, clone, spam, usurpation, hameçonnage, autre) est attribué d'après ce texte. Un simple utilisateur ne reçoit jamais de message.
 
-Le signalement est enregistré et payé tout de suite. La capture se fait en arrière-plan, une à la fois, et remplit le type de tous les signalements du compte. Une capture de moins de 24 h est réutilisée.
+Le formulaire a une case **Joindre une preuve** et une barre de progression :
+- **Avec preuve** (case cochée) : vérification du compte, capture de la preuve, type, puis paiement et envoi. La capture est affichée sous la barre avant le paiement, et rien n'est débité si elle échoue (le bouton **Envoyer sans preuve** apparaît alors). Pas de limite par utilisateur, mais un même contenu ne compte qu'une fois par compte : si le compte n'a pas changé depuis la dernière preuve, le signalement est refusé et peut partir sans preuve.
+- **Sans preuve** : envoyé et payé tout de suite, dans la limite par utilisateur et par compte. Une capture en arrière-plan remplit ensuite le type (réutilisée pendant 24 h). L'envoi groupé et la répartition dans le temps ne sont possibles que sans preuve.
+
+Les captures se font une à la fois ; la barre indique combien attendent avant la vôtre.
 
 Mise en place (une fois) :
 1. Créez un compte Telegram **réservé à ScamWatch** (un numéro à part). Si Telegram le limite, vos autres comptes ne sont pas touchés.
@@ -167,6 +171,7 @@ Un appel sans signature valide est refusé.
 - [ ] Un 2e signalement du même compte par le même utilisateur est refusé (limite à 1), et rien n'est débité.
 - [ ] Connecté en `MKO`, les signalements ne coûtent rien et ne sont pas limités.
 - [ ] Un signalement d'un bot public apparaît dans **Modération** avec sa capture (photo, bio, écran `/start`) et un type, en moins d'une minute.
+- [ ] Un signalement **avec preuve** : la barre avance jusqu'au bout, la preuve capturée s'affiche, et le signalement porte le badge « preuve » dans **Modération**.
 - [ ] Un compte de la liste blanche ne peut pas être signalé et n'apparaît pas dans la liste publique.
 - [ ] Dans **Modération**, Confirmer / Rejeter mettent à jour la liste publique (badge « Confirmé », compte rejeté masqué).
 - [ ] Après un redéploiement, la connexion `MKO` fonctionne toujours et les réglages sont conservés.
