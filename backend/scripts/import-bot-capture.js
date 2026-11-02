@@ -3,10 +3,10 @@
 //   node scripts/import-bot-capture.js <capture folder> [--name "Réplique @bot"] [--apply-to <bot id>] [--dry]
 //   node scripts/import-bot-capture.js <capture folder> --merge-into "QT Market" [--pages a,b,c] [--apply-to <bot id>] [--dry]
 //
-// The first form is a replica of the captured bot: its screens as pages, browsed
-// without an account like the original, its command menu, its /start screen as
-// home. Never its identity: the bot it is applied to (--apply-to) keeps its own
-// name, descriptions and photo, and anti-phishing screens are left out.
+// The first form is a replica of the captured bot (one of the user's own bots): its
+// screens as pages, browsed like the original, its command menu, its /start screen as
+// home, and its identity — name, descriptions and photo — applied to the bot it goes
+// to (--apply-to). Anti-phishing screens are left out.
 // The second form keeps the shop's catalog and payments: it only copies the
 // information pages (--pages, command names) and the welcome/menu pictures into an existing style, whose shelves,
 // products and checkout stay the shop's own.
@@ -22,7 +22,10 @@ import fs from 'fs/promises';
 import path from 'path';
 import { prisma } from '../src/db.js';
 import { cmdName } from '../src/services/telegramCommands.js';
-import { keptScreens, isBack, commandOf, typedOf, pageKeys, targetOf as targetIn } from '../src/services/captureMap.js';
+import { keptScreens, isBack, commandOf, typedOf, pageKeys, buildGraph } from '../src/services/captureMap.js';
+import { extractInvoiceTemplate } from '../src/services/replicaInvoice.js';
+import { reviewCapture } from '../src/services/captureReview.js';
+import { mergeReplicaLook } from '../src/services/replicaMerge.js';
 import { captureMedia } from './capture-media.js';
 import { applyStyle } from '../src/services/telegram.service.js';
 import { currentTenant } from '../src/tenant.js';
@@ -37,7 +40,7 @@ const applyTo = Number(opt('--apply-to')) || null;
 const refreshBots = args.includes('--refresh-bots');
 if (!dir) { console.error('Usage: node scripts/import-bot-capture.js <capture folder> [--name "Style name"] [--apply-to <bot id>] [--dry]'); process.exit(1); }
 
-const { bot, screens: captured, profile = {} } = JSON.parse(await fs.readFile(path.join(dir, 'data.json'), 'utf8'));
+const { bot, screens: captured, steps = [], profile = {} } = JSON.parse(await fs.readFile(path.join(dir, 'data.json'), 'utf8'));
 // Anti-phishing screens are never copied (see captureMap.js)
 const screens = keptScreens(captured);
 const personal = captured.length - screens.length;
@@ -64,8 +67,10 @@ const clean = html => String(html || '')
   .replace(/<br\s*\/?>/gi, '\n')
   .slice(0, 4000);
 
-// The screen a button opens (see captureMap.js)
-const targetOf = (screen, button) => targetIn(screens, screen, button);
+// The screen a button opens, from the real navigation graph of the capture
+// (its `steps`); falls back to the label heuristic for captures without steps.
+const graph = buildGraph(screens, steps);
+const targetOf = (screen, button) => graph.target(screen, button);
 
 // Images, uploaded once each (across imports too: see capture-media.js), and only
 // those of the pages kept
@@ -154,7 +159,7 @@ async function applied(style) {
   if (!target) return;
   if (dry) { console.log(`Would apply the style to @${target.username}.`); return; }
   await applyStyle(target.id, style.id);
-  console.log(`Style applied to @${target.username}: screens and commands (the bot keeps its own name and photo).`);
+  console.log(`Style applied to @${target.username}: screens, commands, name, descriptions and photo.`);
 }
 
 if (mergeInto) {
@@ -213,23 +218,54 @@ const pageCommands = [...new Set((offered.length ? offered : screens.map(command
 const commands = (profile.commands?.length ? profile.commands : pageCommands)
   .map(c => ({ command: cmdName(c.command).slice(0, 32), description: String(c.description || c.command).slice(0, 256) }))
   .filter(c => /^[a-z0-9_]{1,32}$/.test(c.command));
+// The captured identity: the original's name, descriptions, photo and command menu.
+// These are the user's own bots, so the replica mirrors them. The profile photo is
+// uploaded like any other image; shortDescription is the bot's bio ("about"),
+// description the text shown before /start.
+const profilePhoto = profile.photo ? await imageUrl(profile.photo) : '';
+const styleProfile = {
+  ...(profile.name ? { name: String(profile.name).slice(0, 64) } : {}),
+  ...(profile.about ? { shortDescription: String(profile.about).slice(0, 120) } : {}),
+  ...(profile.description ? { description: String(profile.description).slice(0, 512) } : {}),
+  ...(profilePhoto ? { photo: profilePhoto } : {}),
+  ...(commands.length ? { commands } : {}),
+};
+// The catalog the replica sells: the products imported from this same bot (same
+// source tag as the `catalog` import, derived from the bot name by default). The
+// shop engine serves the cart, checkout and orders scoped to this source. Pass
+// --catalog "" to keep it unset (the shop's own catalog).
+const derivedSource = String(bot).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
+const catalogArg = args.includes('--catalog') ? String(opt('--catalog') || '') : null;
+const catalogSource = (catalogArg === null ? derivedSource : catalogArg.toLowerCase().replace(/[^a-z0-9]/g, '')).slice(0, 20);
+// The final invoice in the original's own layout (a draft the user refines in the
+// editor); cartPay renders the real order into it, and falls back to the standard
+// invoice when there is none.
+const invoice = extractInvoiceTemplate(screens);
+// Personal / sensitive info the user should review and replace (scanned on all
+// captured screens, incl. anti-phishing ones, and the profile)
+const review = reviewCapture({ screens: captured, profile });
 const look = {
   layout: 'commands', siteLinks: false, upperTitles: false, home,
   pages: await withImages(pages),
-  // Screens and commands only: the bot it is applied to keeps its own name,
-  // descriptions and photo (a copied identity would pass for the other seller)
   replica: true,
-  ...(commands.length ? { profile: { commands } } : {}),
+  ...(catalogSource ? { catalog: catalogSource } : {}),
+  ...(invoice ? { invoice } : {}),
+  ...(review.length ? { review } : {}),
+  ...(Object.keys(styleProfile).length ? { profile: styleProfile } : {}),
 };
-console.log(`Replica "${name}": ${look.pages.length} pages, home ${home || '(none)'}, ${commands.length} commands${personal ? `, ${personal} anti-phishing screen(s) left out` : ''}. The bot keeps its own name and photo.`);
+console.log(`Replica "${name}": ${look.pages.length} pages, home ${home || '(none)'}, ${commands.length} commands, catalog ${catalogSource || '(shop\'s own)'}${invoice ? ', invoice template (draft — refine it in the editor)' : ''}${review.length ? `, ${review.length} item(s) to review (personal info)` : ''}${personal ? `, ${personal} anti-phishing screen(s) left out` : ''}. Identity: ${styleProfile.name || '(name not captured)'}${styleProfile.photo ? ' + photo' : ''}.`);
 if (dry) { await applied({ id: 0 }); console.log('Dry run: nothing written.'); process.exit(0); }
 const existing = await prisma.botStyle.findFirst({ where: { name }, orderBy: { tenantId: 'desc' } });
 const mine = existing && (!currentTenant() || existing.tenantId === currentTenant()) ? existing : null;
-const data = { name, look, source: `@${bot}`, capture: { bot, profile } };
+// Re-importing keeps the user's hand edits (3-way merge on the last import's fingerprint);
+// --overwrite rebuilds from the capture, dropping edits.
+const overwrite = args.includes('--overwrite');
+const mergedLook = mergeReplicaLook(mine && !overwrite ? (mine.look || {}) : {}, look);
+const data = { name, look: mergedLook, source: `@${bot}`, capture: { bot, profile } };
 const style = mine
   ? await prisma.botStyle.update({ where: { id: mine.id }, data })
   : await prisma.botStyle.create({ data });
-console.log(`Style "${name}" ${mine ? 'updated' : 'created'} (id ${style.id}).`);
+console.log(`Style "${name}" ${mine ? (overwrite ? 'rebuilt (edits dropped)' : 'updated (your edits kept)') : 'created'} (id ${style.id}).`);
 await applied(style);
 if (refreshBots) {
   const using = await prisma.telegramBot.findMany({ where: { styleId: style.id }, select: { id: true, username: true } });

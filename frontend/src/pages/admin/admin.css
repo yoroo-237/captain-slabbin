@@ -717,3 +717,22 @@
 .admin-dialog { max-width: 420px; padding: 24px; }
 .admin-dialog-text { margin: 0; color: #1a1a2e; font-size: 0.95rem; line-height: 1.55; white-space: pre-line; }
 .admin-dialog .admin-modal-actions { margin-top: 22px; }
+
+/* The bots-platform simulator and fidelity check are embedded in this dashboard
+   (AdminCaptures) inside a .bp block. They are themed by CSS variables; here we
+   remap those variables to the dashboard's own look (Inter, blue accent, white
+   surfaces) so the simulation respects the admin style instead of the warm
+   bots-platform theme. */
+.bp.bp-in-admin {
+  --f-sans: Inter, -apple-system, BlinkMacSystemFont, sans-serif;
+  --f-serif: Inter, -apple-system, BlinkMacSystemFont, sans-serif;
+  --orange: #4361ee; --orange-2: #3a53c4; --orange-soft: rgba(67, 97, 238, .12);
+  --paper: #ffffff; --paper-2: #f1f3f5; --paper-3: #e9edf3; --card: #ffffff;
+  --bg: #ffffff; --surface: #ffffff; --sunken: #f8fafc;
+  --ink: #1f2937; --char: #333333; --char-2: #333333; --char-3: #4b5563; --text: #333333;
+  --muted: #888888; --muted-dark: #6b7280;
+  --line: #e5e7eb; --line-dark: rgba(0, 0, 0, .1);
+  --radius: 12px;
+}
+/* No fancy italic serif headings inside the dashboard */
+.bp.bp-in-admin .serif { font-family: var(--f-sans); font-style: normal; }

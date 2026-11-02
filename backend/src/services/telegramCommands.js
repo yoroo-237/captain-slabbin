@@ -8,6 +8,7 @@ import { priceCart } from './pricing.service.js';
 import { checkVoucher, voucherLabel } from './voucher.service.js';
 import { isPgpMessage } from './pgp.service.js';
 import { REFUND_COINS, validRefund, refundNote, keepRefundOnAccount } from './refund.service.js';
+import { renderInvoice } from './replicaInvoice.js';
 
 // The "commands" layout: a menu-board bot navigated with typed commands, like a
 // classic Telegram shop (modelled on the bots it was copied from).
@@ -716,6 +717,19 @@ export async function cartPay(user, from = null) {
     await saveCart(user, []);
     // The shipping details and refund address are kept for the next order
     await saveCheckout(user, { voucher: null, orderNote: null });
+    // A replica renders the invoice in the original bot's own layout; any other style,
+    // or a template that fails, uses the standard invoice below
+    const invoiceText = renderInvoice(look().invoice, {
+      order: order.orderNumber,
+      items: order.items.map(i => ({ qty: i.quantity, name: i.name, option: i.option, price: Number(i.price), lineTotal: Number(i.price) * i.quantity })),
+      subtotal,
+      shipping: Number(order.shippingFee),
+      voucherCode: order.voucherCode, discount: Number(order.discount || 0),
+      total: Number(order.totalAmount),
+      paid: payments.map(p => `${p.amount} ${p.currency}`).join(' + '),
+      wallet: Number(newBalance),
+    }, money);
+    if (invoiceText) return { text: invoiceText, keyboard: [[back('menu')]] };
     return {
       text: [
         `Order <code>${escapeHtml(order.orderNumber)}</code>`,

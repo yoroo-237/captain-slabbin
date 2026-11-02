@@ -17,7 +17,7 @@ r.get('/captures', async (req, res) => res.json(ok({ captures: await capture.lis
 // Fidelity check: each crossroad's routes, captured and copied into the replica; then
 // run again the routes picked
 r.get('/captures/:bot/check', async (req, res) => res.json(ok(await capture.checkFidelity(req.user.sub, req.params.bot, req.query.style))));
-r.post('/captures/:bot/retry', async (req, res) => res.status(202).json(ok(await capture.retryRoutes(req.user.sub, req.params.bot, req.body?.items))));
+r.post('/captures/:bot/retry', async (req, res) => res.status(202).json(ok(await capture.retryRoutes(req.user, req.params.bot, req.body?.items, req.body?.styleId))));
 r.delete('/captures/:bot', async (req, res) => { await capture.removeCapture(req.user.sub, req.params.bot); res.json(ok({ removed: true })); });
 
 // Each staff member's own Telegram: API keys, then sessions
@@ -31,7 +31,7 @@ r.post('/account/sign-out', async (req, res) => res.json(ok(await capture.signOu
 r.post('/explore', async (req, res) => res.status(202).json(ok(await capture.explore(req.user.sub, req.body || {}))));
 r.post('/stop', async (req, res) => res.json(ok(await capture.stop(req.user.sub))));
 r.post('/import', async (req, res) => res.status(202).json(ok(await capture.importCapture(req.user, req.body || {}))));
-r.post('/styles/:id/refresh', async (req, res) => res.status(202).json(ok(await capture.refreshStyle(req.user, req.params.id))));
+r.post('/styles/:id/refresh', async (req, res) => res.status(202).json(ok(await capture.refreshStyle(req.user, req.params.id, { fresh: req.body?.fresh === true }))));
 
 export default r;
 

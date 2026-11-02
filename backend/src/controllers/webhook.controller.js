@@ -217,8 +217,10 @@ ${menu.text}` };
     return true;
   };
 
-  // A replica of a captured bot answers with its own screens only: no account,
-  // no shop screens (wallet, cart, orders), unknown input brings back its home
+  // A replica of the user's own bot: its captured pages for navigation and the real
+  // shop engine for commerce, on the replica's own catalog (look.catalog). Browsing
+  // (home, pages, shelves, products) needs no account like the original; the cart,
+  // checkout, wallet and orders open one, then run the live cart and a real order.
   if (look().replica) {
     // Inline search (@bot words…): the replica's pages that match
     if (upd.inline_query) {
@@ -229,16 +231,21 @@ ${menu.text}` };
     const m = upd.message;
     const chatId = cbq?.message?.chat?.id || m?.chat?.id;
     if (!chatId) return;
+    const priv = (cbq?.message || m)?.chat?.type === 'private';
     const home = () => homeScreen(null);
+    // Run one screen: a commerce action (not browsing) opens an account first, like
+    // the originals; captured pages and browsing need none. Falls back to home.
+    const dispatch = async (from, data, messageId) => {
+      const kind = String(data || '').split(':')[0];
+      if (priv && !BROWSE.has(kind) && kind !== 'co' && kind !== 'age') await shop.openAccount(from).catch(() => null);
+      return show(chatId, (await screenFor(from, data)) || home(), messageId);
+    };
     if (cbq) {
-      await tg(bot.token, 'answerCallbackQuery', { callback_query_id: cbq.id }).catch(() => {});
-      const [kind, key] = String(cbq.data || '').split(':');
-      // Pay and the wallet: the shop's own checkout (an account is opened if needed)
-      if (['w', 'dep'].includes(kind) && cbq.message?.chat?.type === 'private') {
-        await shop.openAccount(cbq.from).catch(() => null);
-        return show(chatId, await screenFor(cbq.from, cbq.data), cbq.message.message_id);
-      }
-      return show(chatId, (kind === 'pg' && pageScreen(key)) || home(), cbq.message.message_id);
+      const toast = /^(pay:|cpay)/.test(cbq.data) ? 'Paying…' : /^add:/.test(cbq.data) ? 'Added to cart' : null;
+      await tg(bot.token, 'answerCallbackQuery', { callback_query_id: cbq.id, ...(toast ? { text: toast } : {}) }).catch(() => {});
+      if (!cbq.message) return;
+      clearWaiting(cbq.from);
+      return dispatch(cbq.from, cbq.data, cbq.message.message_id);
     }
     // What the customer shared with a reply-keyboard button: kept for the shop
     const shared = m && (m.contact ? `📱 Contact shared: ${[m.contact.first_name, m.contact.last_name].filter(Boolean).join(' ')} ${m.contact.phone_number || ''}`.trim()
@@ -246,7 +253,7 @@ ${menu.text}` };
       : m.users_shared ? `👤 Users shared: ${(m.users_shared.users || []).map(u => u.username ? '@' + u.username : [u.first_name, u.last_name].filter(Boolean).join(' ') || u.user_id).join(', ')}`
       : m.chat_shared ? `👥 Chat shared: ${m.chat_shared.title || m.chat_shared.username || m.chat_shared.chat_id}`
       : m.poll ? `📊 Poll: ${m.poll.question} (${(m.poll.options || []).map(o => o.text).join(' / ')})` : null);
-    if (shared && m.chat.type === 'private') {
+    if (shared && priv) {
       await toShop({ ...m, text: shared }, { open: true });
       return show(chatId, home());
     }
@@ -254,12 +261,35 @@ ${menu.text}` };
     if (!text) return;
     const word = text.split(/\s+/)[0];
     const cmd = word.startsWith('/') ? word.split('@')[0].toLowerCase() : null;
+    // A typed answer the checkout asked for (shipping field, voucher, notes, product note)
+    const asked = priv && !cmd ? takeWaiting(m.from) : null;
+    if (asked) {
+      const user = await shop.findCustomer(m.from);
+      if (user) {
+        if (asked.kind === 'note') return show(chatId, await board.saveNote(user, asked.productId, text));
+        if (asked.kind === 'custom') {
+          await prisma.message.create({ data: { userId: user.id, senderId: user.id, isStaff: false, body: `Custom order:\n${text.slice(0, 2000)}` } });
+          notifyNewMessage(user, `Custom order: ${text.slice(0, 2000)}`).catch(() => {});
+          return show(chatId, { text: look().texts.customOrderSent, keyboard: [[{ text: look().labels.back, callback_data: 'menu' }]] });
+        }
+        const screen = await board.checkoutAnswer(m.from, user, asked, text);
+        if (screen) return show(chatId, screen);
+      }
+    }
+    if (cmd === '/start') return dispatch(m.from, 'home');
+    // The style's own commands (pages, shelves, /p<id>) and the shop commands
     const typed = cmd && cmd !== '/start' ? await resolveCommand(cmd) : null;
-    const page = typed?.startsWith('pg:') ? typed.slice(3)
-      : !cmd ? (look().pages || []).find(p => (p.triggers || []).includes(text))?.key : null;
-    if (page) return show(chatId, pageScreen(page) || home());
+    if (typed) return dispatch(m.from, typed);
+    // A reply-keyboard button, or text the original answered: its page
+    const trigger = !cmd ? (look().pages || []).find(p => (p.triggers || []).includes(text)) : null;
+    if (trigger) return dispatch(m.from, `pg:${trigger.key}`);
+    if (cmd === '/menu' || cmd === '/categories') return dispatch(m.from, 'menu');
+    if (cmd === '/deals' || cmd === '/firesale') return dispatch(m.from, 'cat:fire-sale:1');
+    if (cmd === '/wallet') return dispatch(m.from, 'w');
+    if (cmd === '/orders') return dispatch(m.from, 'o');
+    if (cmd === '/cart') return dispatch(m.from, 'cart');
     // Text that opens no screen is a message to the shop
-    if (!cmd && m.chat.type === 'private' && await toShop(m, { open: true })) return;
+    if (!cmd && priv && await toShop(m, { open: true })) return;
     return show(chatId, home());
   }
 
