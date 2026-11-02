@@ -693,6 +693,11 @@ class Explorer:
         step = {"action": label, "alert": alert, "error": error, "screens": keys}
         if start:
             step["from"] = start
+        # The button's exact callback data, same form as a screen's button data
+        # (utf-8 decoded): lets the replica graph match a button to its edge without
+        # label collisions. Only inline taps carry data.
+        if action[0] == "cb":
+            step["data"] = action[2].decode("utf-8", "replace")
         if edited_key and edited_key not in keys[:-1]:
             step["edited"] = edited_key
         self.steps.append(step)

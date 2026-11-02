@@ -291,21 +291,30 @@ export async function linkBot(token, chatId, { styleId = null, primary = false, 
 export async function applyStyle(botId, styleId) {
   const style = styleId ? await prisma.botStyle.findUnique({ where: { id: Number(styleId) } }) : null;
   if (styleId && !style) throw fail('This style no longer exists.', 404);
+  // The catalog the bot sold until now, to spot a switch below (before styleId changes)
+  const prev = await prisma.telegramBot.findUnique({ where: { id: Number(botId) }, include: { style: true } });
+  const prevCatalog = prev?.style ? lookOf(prev.style).catalog || null : null;
   const bot = await prisma.telegramBot.update({ where: { id: Number(botId) }, data: { styleId: style?.id || null }, include: { style: true } });
   if (!style) return bot;
-  const { profile, replica } = lookOf(style);
-  // A replica of a captured bot gives its screens and commands, never its identity:
-  // the bot keeps its own name, descriptions and photo
-  if (replica) {
-    await installNavigation(bot);
-    return Object.assign(bot, { photo: 'none', photoError: null });
-  }
-  // Telegram rate-limits renames hard (one per several minutes): only rename when it changes
-  const name = profile.name.slice(0, 64);
-  if ((await tg(bot.token, 'getMyName').catch(() => null))?.name !== name) await tg(bot.token, 'setMyName', { name });
-  await tg(bot.token, 'setMyShortDescription', { short_description: profile.shortDescription.slice(0, 120) });
-  await tg(bot.token, 'setMyDescription', { description: profile.description.slice(0, 512) });
+  const { profile } = lookOf(style);
+  // Applying a style wipes what the previous one left and forces the new state —
+  // name, descriptions, command menu, menu button and photo are all pushed, for a
+  // replica of the user's own bot as for any other style. Blank values clear the
+  // old ones so nothing of the previous style lingers.
+  const name = (profile.name || '').slice(0, 64);
+  // One rename per apply at most (Telegram rate-limits it hard), but always when it changed
+  if (name && (await tg(bot.token, 'getMyName').catch(() => null))?.name !== name) await tg(bot.token, 'setMyName', { name });
+  await tg(bot.token, 'setMyShortDescription', { short_description: (profile.shortDescription || '').slice(0, 120) });
+  await tg(bot.token, 'setMyDescription', { description: (profile.description || '').slice(0, 512) });
   await installNavigation(bot);
+  // Switching catalog: clear carts/checkout left from the previous style so the new
+  // one starts clean (the old lines pointed at products the replica no longer sells)
+  if ((lookOf(style).catalog || null) !== prevCatalog) {
+    await prisma.user.updateMany({
+      where: { telegramBotId: bot.id, OR: [{ telegramCart: { not: [] } }, { telegramCheckout: { not: null } }] },
+      data: { telegramCart: [], telegramCheckout: null },
+    }).catch(err => console.error(`[Telegram] @${bot.username} cart reset:`, err.message));
+  }
   // Telegram's refusal is reported, not hidden: the admin must know the photo didn't change
   let photo = 'none', photoError = null;
   try { photo = await setStylePhoto(bot.id); } catch (err) { photoError = err.message; console.error(`[Telegram] @${bot.username} photo:`, err.message); }

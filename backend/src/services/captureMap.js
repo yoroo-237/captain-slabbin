@@ -31,9 +31,44 @@ export function pageKeys(screens) {
 }
 
 // The screen a button opens: the nearest later screen that was reached by clicking
-// a button with that label ([label]), or by sending its text (reply keyboard)
+// a button with that label ([label]), or by sending its text (reply keyboard).
+// Fallback for old captures with no `steps`/`from` — a guess by label + order.
 export function targetOf(screens, screen, button) {
   const label = stepLabel(button);
   const later = screens.filter(s => s.order > screen.order && (s.sources || []).includes(label));
   return later.sort((a, b) => a.order - b.order)[0] || null;
+}
+
+// A real navigation graph from the capture's `steps`: each step is the edge
+// (from screen) --[button]--> (screen it produced). `from` is the source screen key,
+// `data` the exact callback data of the button (newer captures), `action` its label,
+// `edited` the screen the bot edited in place, `screens` the new messages it sent.
+// `target(screen, button)` follows the true edge — matched by the button's callback
+// data first (no label collisions), then its label — and only falls back to the
+// label+order heuristic for captures made before `steps`/`from` existed.
+export function buildGraph(screens, steps = []) {
+  const byKey = new Map(screens.map(s => [s.key, s]));
+  const fromIndex = new Map(); // source screen key -> its outgoing steps
+  for (const st of steps) {
+    if (!st || st.error || !st.from) continue;
+    if (!fromIndex.has(st.from)) fromIndex.set(st.from, []);
+    fromIndex.get(st.from).push(st);
+  }
+  // The screen a step led to: the one edited in place, else its first new message
+  const produced = st => byKey.get(st.edited) || byKey.get((st.screens || [])[0]) || null;
+  const hasEdges = fromIndex.size > 0;
+  return {
+    hasEdges,
+    target(screen, button) {
+      const out = fromIndex.get(screen.key);
+      if (out) {
+        const data = button.data;
+        const st = (data && out.find(s => s.data === data))
+          || out.find(s => s.action === stepLabel(button));
+        if (st) return produced(st);
+      }
+      // No recorded edge for this button: fall back to the label heuristic
+      return targetOf(screens, screen, button);
+    },
+  };
 }
