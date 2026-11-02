@@ -9,7 +9,7 @@ import cors from 'cors'
 import { prisma, getSettings, saveSettings } from './db.js'
 import { detectType } from './detect.js'
 import { parseTarget } from './target.js'
-import { decodeItems, hasProof, minWithProof } from './proof.js'
+import { decodeItems, hasProof, minWithProof, MAX_FILES_LIMIT, MAX_TOTAL_BYTES } from './proof.js'
 import { authRouter, requireUser, requireSuper, bootstrapSuperadmin } from './auth.js'
 import { walletRouter, webhookRouter, adminWalletRouter, startWalletJobs } from './wallet.js'
 import { getHoldings, allocateUsd, debit, round2 } from './balance.js'
@@ -71,7 +71,10 @@ app.post('/api/detect', (req, res) => {
 // Price of a report, shown before sending
 app.get('/api/pricing', async (_req, res) => {
   const s = await getSettings()
-  res.json({ tokenPriceUsd: s.tokenPriceUsd, reportCostTokens: s.reportCostTokens, maxReportsNoProof: s.maxReportsNoProof, proofCapture: captureEnabled() })
+  res.json({
+    tokenPriceUsd: s.tokenPriceUsd, reportCostTokens: s.reportCostTokens, maxReportsNoProof: s.maxReportsNoProof,
+    maxMediaPerReport: s.maxMediaPerReport, maxSendMb: s.maxSendMb, proofCapture: captureEnabled(),
+  })
 })
 
 // Report with proof, step 1: the server captures the account, the form follows the
@@ -149,7 +152,7 @@ app.get('/api/captures/:id/photo', requireUser, async (req, res) => {
 // spreadMinutes: the batch can be spread over a period, in steps of SPREAD_STEP minutes
 // (0 = all at once, up to MAX_SPREAD). The first report goes at once, the others one by one
 // at a regular interval; the total stays the number of reports.
-const MAX_BATCH = 300
+const MAX_BATCH = 3
 const SPREAD_STEP = 15
 const MAX_SPREAD = 1440
 app.post('/api/reports', requireUser, async (req, res) => {
@@ -175,8 +178,10 @@ app.post('/api/reports', requireUser, async (req, res) => {
   if (!target) return res.status(400).json({ error: 'invalid_target' })
   if (await isWhitelisted(target)) return res.status(403).json({ error: 'protected_account' })
 
-  // Proofs of each report: links and media checked, none shared between two reports
-  const decoded = decodeItems(rawItems)
+  // Proofs of each report: links and media checked, none shared between two reports,
+  // within the media limits set by the super admin
+  const settings = await getSettings()
+  const decoded = decodeItems(rawItems, { maxFiles: settings.maxMediaPerReport, maxTotalBytes: settings.maxSendMb * 1024 * 1024 })
   if (decoded.error) return res.status(decoded.error === 'duplicate_proof' ? 409 : 400).json({ error: decoded.error })
   const items = decoded.items
 
@@ -212,7 +217,6 @@ app.post('/api/reports', requireUser, async (req, res) => {
   // once the background capture is done. Until then: what the description says, if a client sent one, otherwise "other".
   const detected = proof ? { type: proof.detectedType || 'other' } : detectType(cleanDescription, items[0].proofUrl || '')
   const finalType = detected.type
-  const settings = await getSettings()
 
   // Cas 1 : signalement SANS preuve (ni lien, ni capture d'écran).
   // Le nombre de signalements sans preuve autorisés par utilisateur et par compte est fixé
@@ -478,10 +482,13 @@ app.post('/api/admin/targets/:id/status', async (req, res) => {
   res.json({ ok: true, id: updated.id, status: updated.status })
 })
 
-app.get('/api/admin/settings', async (_req, res) => {
-  const { maxReportsNoProof, tokenPriceUsd, reportCostTokens, depositExpiryHours } = await getSettings()
-  res.json({ maxReportsNoProof, tokenPriceUsd, reportCostTokens, depositExpiryHours })
-})
+// Settings shown and changed in the super admin space
+const adminSettings = async () => {
+  const { maxReportsNoProof, maxMediaPerReport, maxSendMb, tokenPriceUsd, reportCostTokens, depositExpiryHours } = await getSettings()
+  return { maxReportsNoProof, maxMediaPerReport, maxSendMb, tokenPriceUsd, reportCostTokens, depositExpiryHours }
+}
+
+app.get('/api/admin/settings', async (_req, res) => res.json(await adminSettings()))
 
 app.put('/api/admin/settings', async (req, res) => {
   const b = req.body || {}
@@ -490,6 +497,15 @@ app.put('/api/admin/settings', async (req, res) => {
   if (b.maxReportsNoProof !== undefined) {
     if (!int(b.maxReportsNoProof, 0, MAX_REPORTS_LIMIT)) return res.status(400).json({ error: 'invalid_setting' })
     data.maxReportsNoProof = Number(b.maxReportsNoProof)
+  }
+  // Media limits: never above what the server accepts (proof.js)
+  if (b.maxMediaPerReport !== undefined) {
+    if (!int(b.maxMediaPerReport, 1, MAX_FILES_LIMIT)) return res.status(400).json({ error: 'invalid_setting' })
+    data.maxMediaPerReport = Number(b.maxMediaPerReport)
+  }
+  if (b.maxSendMb !== undefined) {
+    if (!int(b.maxSendMb, 1, MAX_TOTAL_BYTES / 1024 / 1024)) return res.status(400).json({ error: 'invalid_setting' })
+    data.maxSendMb = Number(b.maxSendMb)
   }
   if (b.reportCostTokens !== undefined) {
     if (!int(b.reportCostTokens, 0, 10000)) return res.status(400).json({ error: 'invalid_setting' })
@@ -505,8 +521,7 @@ app.put('/api/admin/settings', async (req, res) => {
     data.tokenPriceUsd = round2(p)
   }
   await saveSettings(data)
-  const { maxReportsNoProof, tokenPriceUsd, reportCostTokens, depositExpiryHours } = await getSettings()
-  res.json({ maxReportsNoProof, tokenPriceUsd, reportCostTokens, depositExpiryHours })
+  res.json(await adminSettings())
 })
 
 // Liste blanche : comptes et bots que les utilisateurs ne peuvent pas signaler

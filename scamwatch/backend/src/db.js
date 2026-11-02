@@ -4,6 +4,8 @@ export const prisma = new PrismaClient()
 
 const DEFAULT_SETTINGS = {
   maxReportsNoProof: 1,
+  maxMediaPerReport: 3,
+  maxSendMb: 30,
   tokenPriceUsd: 1,
   reportCostTokens: 1,
   depositExpiryHours: 12,
@@ -17,6 +19,8 @@ export async function getSettings() {
   if (!row) return { ...DEFAULT_SETTINGS }
   return {
     maxReportsNoProof: row.maxReportsNoProof,
+    maxMediaPerReport: row.maxMediaPerReport,
+    maxSendMb: row.maxSendMb,
     tokenPriceUsd: Number(row.tokenPriceUsd),
     reportCostTokens: row.reportCostTokens,
     depositExpiryHours: row.depositExpiryHours,

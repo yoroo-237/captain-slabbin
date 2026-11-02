@@ -388,6 +388,8 @@ function Settings({ t }) {
         {field('tokenPriceUsd', { min: 0.01, step: 0.01 })}
         {field('reportCostTokens', { min: 0, step: 1 })}
         {field('maxReportsNoProof', { min: 0, max: 1000, step: 1 })}
+        {field('maxMediaPerReport', { min: 1, max: 20, step: 1 })}
+        {field('maxSendMb', { min: 1, max: 30, step: 1 })}
         {field('depositExpiryHours', { min: 1, max: 168, step: 1 })}
         <button className="primary" disabled={busy}>{t.admin.save}</button>
         {msg && <p className={`msg ${msg.ok ? 'ok' : 'error'}`}>{msg.text}</p>}

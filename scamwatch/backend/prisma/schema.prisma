@@ -119,6 +119,8 @@ model Report {
 model Setting {
   id                 Int      @id @default(1)
   maxReportsNoProof  Int      @default(1) // reports without evidence per user and account, 0 = no limit
+  maxMediaPerReport  Int      @default(3) // media files per report, 1 to 20
+  maxSendMb          Int      @default(30) // all the media of one send together, 1 to 30 MB
   tokenPriceUsd      Decimal  @default(1) @db.Decimal(10, 2) // USD value of one token
   reportCostTokens   Int      @default(1) // tokens spent per report
   depositExpiryHours Int      @default(12)

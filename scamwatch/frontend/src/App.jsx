@@ -13,8 +13,8 @@ import { Progress, ProofPreview } from './Proof.jsx'
 const emptyItems = () => Array.from({ length: MAX_BATCH }, () => ({ files: [], link: '' }))
 const itemHasProof = (item, i, capture) => item.files.length > 0 || !!item.link.trim() || (i === 0 && capture)
 // Files checked before sending (the server checks the bytes again): kind and size
-const fileError = (files) => {
-  if (files.length > MAX_FILES) return 'too_many_files'
+const fileError = (files, maxFiles) => {
+  if (files.length > maxFiles) return 'too_many_files'
   for (const f of files) {
     const kind = f.type.split('/')[0]
     const limit = MAX_BYTES[kind] ?? (/\.(ogg|oga|opus)$/i.test(f.name) ? MAX_BYTES.audio : null)
@@ -137,7 +137,7 @@ export default function App() {
   const setItem = (i, patch) => setItems((all) => all.map((it, j) => (j === i ? { ...it, ...patch } : it)))
   const pickFiles = (i, list) => {
     const files = [...list]
-    const code = fileError(files)
+    const code = fileError(files, maxMedia)
     if (code) return setStatus({ state: 'error', message: t.errors[code] || t.error, code })
     setStatus({ state: 'idle', message: '' })
     setItem(i, { files })
@@ -207,12 +207,15 @@ export default function App() {
   const proofAvailable = !!pricing?.proofCapture
   const proofOn = withProof && proofAvailable
   const limit = pricing?.maxReportsNoProof ?? 1
+  // Media limits set by the super admin: files per report, MB for the whole send
+  const maxMedia = pricing?.maxMediaPerReport ?? MAX_FILES
+  const maxSendMb = pricing?.maxSendMb ?? MAX_TOTAL_BYTES / 1024 / 1024
   // Each report its own proof; in a batch at least a third carry one, within the size limit
   const used = items.slice(0, batch)
   const proofsNeeded = minWithProof(batch)
   const proofsGiven = used.filter((it, i) => itemHasProof(it, i, proofOn)).length
   const proofMissing = proofsGiven < proofsNeeded
-  const tooHeavy = used.reduce((sum, it) => sum + it.files.reduce((s, f) => s + f.size, 0), 0) > MAX_TOTAL_BYTES
+  const tooHeavy = used.reduce((sum, it) => sum + it.files.reduce((s, f) => s + f.size, 0), 0) > maxSendMb * 1024 * 1024
 
   // Same form on the home page and in the super admin space
   const reportCard = (
@@ -272,7 +275,7 @@ export default function App() {
               <label className="file">
                 <span>{t.proofFiles}</span>
                 <input type="file" multiple accept={MEDIA_ACCEPT} onChange={(e) => { pickFiles(i, e.target.files); e.target.value = '' }} />
-                <small className="hint">{it.files.length ? t.proofFilesPicked(it.files.map((f) => f.name)) : t.proofFilesHint}</small>
+                <small className="hint">{it.files.length ? t.proofFilesPicked(it.files.map((f) => f.name)) : t.proofFilesHint(maxMedia, maxSendMb)}</small>
               </label>
               {it.files.length > 0 && <button type="button" className="link" onClick={() => setItem(i, { files: [] })}>{t.proofFilesClear}</button>}
               {/* With the capture, the first report's proof is the capture, not a link */}
@@ -287,7 +290,7 @@ export default function App() {
           {batch > 1 && (
             <p className={`hint ${proofMissing ? 'warn' : ''}`}>{t.proofNeeded(proofsNeeded, batch, proofsGiven)}</p>
           )}
-          {tooHeavy && <p className="hint warn">{t.errors.files_too_large}</p>}
+          {tooHeavy && <p className="hint warn">{t.sendTooHeavy(maxSendMb)}</p>}
         </div>
 
         {batch > 1 && (

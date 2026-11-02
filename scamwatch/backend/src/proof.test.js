@@ -76,6 +76,15 @@ test('each report of a batch brings its own proof', () => {
   assert.equal(decodeItems([{ proofUrl: 'javascript:alert(1)' }]).error, 'invalid_proof')
 })
 
+test('media limits set by the super admin, never above the server ones', () => {
+  const three = [b64(PNG), b64(JPG), b64(WEBP)]
+  assert.equal(decodeItems([{ files: three }], { maxFiles: 2 }).error, 'too_many_files')
+  assert.equal(decodeItems([{ files: three }], { maxFiles: 3 }).items[0].files.length, 3)
+  const video = b64(Buffer.concat([MP4, Buffer.alloc(2 * 1024 * 1024)]))
+  assert.equal(decodeItems([{ files: [video] }], { maxTotalBytes: 1024 * 1024 }).error, 'files_too_large')
+  assert.equal(decodeItems([{ files: [video] }], { maxTotalBytes: 999 * 1024 * 1024 }).items.length, 1)
+})
+
 test('at least a third of a batch carries a proof', () => {
   assert.equal(minWithProof(1), 0)
   assert.equal(minWithProof(2), 1)

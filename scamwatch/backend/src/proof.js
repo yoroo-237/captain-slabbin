@@ -5,11 +5,14 @@
 
 import crypto from 'node:crypto'
 
+// Default files per report; the super admin sets it from 1 to MAX_FILES_LIMIT
 export const MAX_FILES = 3
+export const MAX_FILES_LIMIT = 20
 // Size limit per file, by kind; MAX_FILE_BYTES is the image one
 export const MAX_FILE_BYTES = 3 * 1024 * 1024
 export const MAX_BYTES = { image: MAX_FILE_BYTES, audio: 10 * 1024 * 1024, video: 20 * 1024 * 1024 }
-// All the files of one send together (the request body carries them in base64)
+// All the files of one send together, at most (the request body carries them in base64);
+// the super admin can set a lower one
 export const MAX_TOTAL_BYTES = 30 * 1024 * 1024
 const LARGEST = Math.max(...Object.values(MAX_BYTES))
 
@@ -59,12 +62,12 @@ export function sniffMedia(buf) {
 
 export const mediaKind = (mime) => mime.split('/')[0]
 
-// files: array of base64 strings (data: URLs accepted).
+// files: array of base64 strings (data: URLs accepted), maxFiles at most.
 // Returns { files: [{ mime, size, sha256, data }] } or { error }.
-export function decodeFiles(files) {
+export function decodeFiles(files, maxFiles = MAX_FILES) {
   if (files == null) return { files: [] }
   if (!Array.isArray(files)) return { error: 'invalid_file' }
-  if (files.length > MAX_FILES) return { error: 'too_many_files' }
+  if (files.length > Math.min(maxFiles, MAX_FILES_LIMIT)) return { error: 'too_many_files' }
 
   const out = new Map() // sha256 -> file, the same file sent twice counts once
   for (const item of files) {
@@ -85,15 +88,17 @@ export function decodeFiles(files) {
 
 // One entry per report of a send: { proofUrl, files }.
 // Each report brings its own proof: the same link or file in two reports is refused.
+// maxFiles per report and maxTotalBytes for the whole send come from the settings.
 // Returns { items: [{ proofUrl, urlHash, files }] } or { error }.
-export function decodeItems(items) {
+export function decodeItems(items, { maxFiles = MAX_FILES, maxTotalBytes = MAX_TOTAL_BYTES } = {}) {
   if (!Array.isArray(items) || items.length === 0) return { error: 'invalid_count' }
+  const totalLimit = Math.min(maxTotalBytes, MAX_TOTAL_BYTES)
   const out = []
   const seen = new Set()
   let total = 0
   for (const raw of items) {
     const item = raw && typeof raw === 'object' ? raw : {}
-    const decoded = decodeFiles(item.files)
+    const decoded = decodeFiles(item.files, maxFiles)
     if (decoded.error) return decoded
 
     const proofUrl = item.proofUrl ? String(item.proofUrl).trim().slice(0, 500) || null : null
@@ -106,7 +111,7 @@ export function decodeItems(items) {
       seen.add(key)
     }
     total += decoded.files.reduce((sum, f) => sum + f.size, 0)
-    if (total > MAX_TOTAL_BYTES) return { error: 'files_too_large' }
+    if (total > totalLimit) return { error: 'files_too_large' }
 
     out.push({ proofUrl, urlHash, files: decoded.files })
   }
