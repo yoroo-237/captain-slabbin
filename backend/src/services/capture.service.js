@@ -216,6 +216,8 @@ function exploreArgs(userId, b) {
   };
   num('wait', '--wait', 0.5, 60, 'Attente');
   num('maxActions', '--max-actions', 1, 20000, 'Actions max');
+  // After the run, explore.py analyses the routes and runs the missing ones again (3 passes by default)
+  num('complete', '--complete', 0, 10, 'Passes de complétion');
   for (const [key, flag] of [['skip', '--skip'], ['allow', '--allow']]) {
     for (const v of String(b[key] || '').split('\n').map(s => s.trim()).filter(Boolean)) {
       if (!REGEX.test(v)) throw bad(`${key} invalide.`);

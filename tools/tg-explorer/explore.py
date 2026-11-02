@@ -1,8 +1,11 @@
 """Parcours automatique d'un bot Telegram avec la session créée par login.py.
 
 Envoie /start, rejoue chaque bouton inline, envoie les boutons de clavier et
-les commandes trouvées dans les textes, puis écrit :
+les commandes trouvées dans les textes. Puis analyse les chemins (routes.py) et
+complète ceux qui manquent : les routes manquantes ou en échec sont relancées, en
+--complete passes au plus, tant qu'il en reste de nouvelles. Écrit :
   <out>/data.json    tous les écrans, toutes les étapes, ce qui a été ignoré
+  <out>/check.json   l'analyse des chemins : couverture, routes manquantes
   <out>/media/       les images et fichiers reçus
   <out>/report.html  une page de lecture façon chat
   <out>/state.json   file d'attente : relancer reprend là où le parcours s'est arrêté
@@ -28,6 +31,7 @@ from telethon import errors
 from telethon.tl import functions, types
 
 from common import make_client, normalize_bot
+from routes import check, retry_items
 
 # Seulement ce qui détruit ou vide quelque chose (suppression, retrait de fonds). Achats,
 # paiements, confirmations, panier, commandes, checkout et dépôt sont parcourus : le
@@ -797,6 +801,28 @@ class Explorer:
             added += 1
         print(f"{added} route(s) à relancer, jouées en premier.")
 
+    async def complete(self):
+        """Après le parcours : analyse les chemins (routes.py) et relance les routes
+        manquantes ou en échec, en --complete passes au plus. Chaque route n'est relancée
+        qu'une fois : si elle échoue encore, elle reste « en échec » dans check.json."""
+        tried = set()
+        for n in range(1, self.args.complete + 1):
+            # Arrêt demandé, ou --max-actions atteint : la reprise continuera la file d'abord
+            if stop_requested(self.args) or self.queue:
+                return
+            report = self.check()
+            s = report["summary"]
+            items = [it for it in retry_items(report) if json.dumps(it, sort_keys=True) not in tried]
+            if not items:
+                print(f"Chemins : {s['covered']}/{s['routes']} couverts ({s['coverage']} %), rien à compléter.")
+                return
+            print(f"Complétion {n}/{self.args.complete} : {s['covered']}/{s['routes']} chemins couverts, {len(items)} à relancer.")
+            tried.update(json.dumps(it, sort_keys=True) for it in items)
+            self.add_retries(items)
+            await self.run()
+        s = self.check()["summary"]
+        print(f"Chemins après complétion : {s['covered']}/{s['routes']} couverts ({s['coverage']} %).")
+
     async def reconnect(self, tries=RECONNECT_TRIES):
         """Attend le retour du réseau (environ 10 minutes au plus), sans rien rejouer."""
         for i in range(tries):
@@ -903,13 +929,21 @@ class Explorer:
 
     # ---- sorties --------------------------------------------------------
 
+    def data(self):
+        return {"bot": self.args.bot, "profile": self.profile, "inline": self.inline, "joined": self.joined,
+                "steps": self.steps, "ignored": sorted(set(self.ignored)),
+                "screens": sorted(self.screens.values(), key=lambda s: s["order"])}
+
+    def check(self):
+        """Les chemins de la capture telle qu'elle est (routes.py), file d'attente comprise."""
+        queue = [[base64.b64encode(x).decode() if isinstance(x, bytes) else x for x in a] for a in self.queue]
+        return check(self.data(), {"paths": self.paths, "origin": self.origin, "queue": queue})
+
     def write_data(self):
-        screens = sorted(self.screens.values(), key=lambda s: s["order"])
-        (self.out / "data.json").write_text(json.dumps(
-            {"bot": self.args.bot, "profile": self.profile, "inline": self.inline, "joined": self.joined,
-             "steps": self.steps, "ignored": sorted(set(self.ignored)),
-             "screens": screens}, ensure_ascii=False, indent=2), encoding="utf-8")
-        return screens
+        data = self.data()
+        (self.out / "data.json").write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        (self.out / "check.json").write_text(json.dumps(self.check(), ensure_ascii=False, indent=2), encoding="utf-8")
+        return data["screens"]
 
     def write(self):
         self.save_state()
@@ -968,6 +1002,8 @@ def parse_args():
                         help="nombre max de commandes d'une même famille (/p1, /p2...)")
     parser.add_argument("--no-commands", action="store_true", help="ne pas envoyer les commandes trouvées dans les textes")
     parser.add_argument("--retry", metavar="FICHIER", help="routes à relancer (JSON écrit par la vérification)")
+    parser.add_argument("--complete", type=int, default=3, metavar="N",
+                        help="passes de complétion après le parcours : routes manquantes relancées (0 = aucune)")
     parser.add_argument("--no-join", action="store_true", help="ne pas rejoindre les canaux que le bot exige")
     parser.add_argument("--no-inline", action="store_true", help="ne pas lire le mode inline du bot")
     parser.add_argument("--no-media", action="store_true", help="ne pas télécharger les images et fichiers")
@@ -1007,6 +1043,7 @@ async def explore_bot(client, name, args):
     await explorer.read_profile()
     try:
         await explorer.run()
+        await explorer.complete()
         if not args.no_inline:
             await explorer.read_inline()
     finally:
