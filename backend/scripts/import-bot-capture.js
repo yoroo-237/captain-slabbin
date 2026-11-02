@@ -25,6 +25,7 @@ import { cmdName } from '../src/services/telegramCommands.js';
 import { keptScreens, isBack, commandOf, typedOf, pageKeys, buildGraph } from '../src/services/captureMap.js';
 import { extractInvoiceTemplate } from '../src/services/replicaInvoice.js';
 import { reviewCapture } from '../src/services/captureReview.js';
+import { mergeReplicaLook } from '../src/services/replicaMerge.js';
 import { captureMedia } from './capture-media.js';
 import { applyStyle } from '../src/services/telegram.service.js';
 import { currentTenant } from '../src/tenant.js';
@@ -256,11 +257,15 @@ console.log(`Replica "${name}": ${look.pages.length} pages, home ${home || '(non
 if (dry) { await applied({ id: 0 }); console.log('Dry run: nothing written.'); process.exit(0); }
 const existing = await prisma.botStyle.findFirst({ where: { name }, orderBy: { tenantId: 'desc' } });
 const mine = existing && (!currentTenant() || existing.tenantId === currentTenant()) ? existing : null;
-const data = { name, look, source: `@${bot}`, capture: { bot, profile } };
+// Re-importing keeps the user's hand edits (3-way merge on the last import's fingerprint);
+// --overwrite rebuilds from the capture, dropping edits.
+const overwrite = args.includes('--overwrite');
+const mergedLook = mergeReplicaLook(mine && !overwrite ? (mine.look || {}) : {}, look);
+const data = { name, look: mergedLook, source: `@${bot}`, capture: { bot, profile } };
 const style = mine
   ? await prisma.botStyle.update({ where: { id: mine.id }, data })
   : await prisma.botStyle.create({ data });
-console.log(`Style "${name}" ${mine ? 'updated' : 'created'} (id ${style.id}).`);
+console.log(`Style "${name}" ${mine ? (overwrite ? 'rebuilt (edits dropped)' : 'updated (your edits kept)') : 'created'} (id ${style.id}).`);
 await applied(style);
 if (refreshBots) {
   const using = await prisma.telegramBot.findMany({ where: { styleId: style.id }, select: { id: true, username: true } });
