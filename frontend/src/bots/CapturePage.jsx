@@ -4,6 +4,7 @@ import { useUi, Modal } from './ui.jsx'
 import { L, locale } from './i18n.js'
 import { BASE } from '../utils/api.js'
 import Simulator from './Simulator.jsx'
+import FidelityCheck from './FidelityCheck.jsx'
 
 // Captures: what tg-explorer does on a PC, run by the bots platform's server.
 // The platform's Telegram account browses a bot and records its screens, buttons
@@ -246,7 +247,7 @@ function Account({ account, checking, profile, setProfile, busy, onCheck, onSign
   )
 }
 
-function CaptureCard({ c, files, busy, onResume, onImport, onRemove, onSimulate }) {
+function CaptureCard({ c, files, busy, onResume, onImport, onRemove, onSimulate, onCheck }) {
   const updated = new Date(c.updated).toLocaleString(locale, { dateStyle: 'short', timeStyle: 'short' })
   return (
     <article className="card">
@@ -267,6 +268,7 @@ function CaptureCard({ c, files, busy, onResume, onImport, onRemove, onSimulate 
         </ul>
         <div className="actions">
           <button type="button" className="btn sm primary" onClick={() => onSimulate(c.name)}>{L('Simuler', 'Simulate')} <span className="arrow" aria-hidden="true">↓</span></button>
+          <button type="button" className="btn sm" onClick={() => onCheck(c.name)} title={L('Toutes les routes de chaque carrefour : capturées et copiées ?', 'Every route of each crossroad: captured and copied?')}>{L('Vérifier', 'Check')}</button>
           {c.queued > 0 && <button className="btn sm" disabled={busy} onClick={() => onResume(c.name)}>{L('Reprendre', 'Resume')}</button>}
           <span className="spacer" />
           <button className="btn sm" disabled={busy} onClick={() => onRemove(c.name)} title={L('Supprimer la capture', 'Delete the capture')}>×</button>
@@ -341,6 +343,8 @@ export default function CapturePage() {
   const [myBots, setMyBots] = useState([])
   const [importing, setImporting] = useState(null) // { bot, kind }
   const [simulating, setSimulating] = useState('')
+  const [checkBot, setCheckBot] = useState('')
+  const [checkTick, setCheckTick] = useState(0)
   const { notify, confirm } = useUi()
   const [error, setError] = useState('')
   const set = key => e => setOpts(o => ({ ...o, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
@@ -372,7 +376,7 @@ export default function CapturePage() {
   linesRef.current = lines
   useEffect(() => {
     onDone.current = () => {
-      refresh(); checkAccount(); loadStyles()
+      refresh(); checkAccount(); loadStyles(); setCheckTick(t => t + 1)
       const tail = linesRef.current.slice(-12)
       const end = tail.filter(l => l.startsWith('-- terminé')).pop() || ''
       const failed = !/code 0\)/.test(end)
@@ -532,9 +536,11 @@ export default function CapturePage() {
           ? <div className="empty-state" style={{ marginTop: 18 }}>{L('Aucune capture pour l’instant. Lancez une exploration ci-dessus.', 'No capture yet. Start an exploration above.')}</div>
           : <div className="cards">{captures.map(c => (
             <CaptureCard key={c.name} c={c} files={files} busy={busy} onResume={resume} onImport={(bot, kind) => setImporting({ bot, kind })} onRemove={remove}
-              onSimulate={name => { setSimulating(name); setTimeout(() => document.getElementById('sim')?.scrollIntoView({ behavior: 'smooth' }), 50) }} />
+              onSimulate={name => { setSimulating(name); setTimeout(() => document.getElementById('sim')?.scrollIntoView({ behavior: 'smooth' }), 50) }}
+              onCheck={name => { setCheckBot(name); setTimeout(() => document.getElementById('check')?.scrollIntoView({ behavior: 'smooth' }), 80) }} />
           ))}</div>}
       </section>
+      {checkBot && <FidelityCheck key={checkBot} bot={checkBot} busy={busy} tick={checkTick} onRetried={() => window.scrollTo({ top: 0, behavior: 'smooth' })} />}
       {/* The capture shown in the simulation: the one picked, else the latest */}
       {filesKey && (simulating || latest) && <div id="sim"><Simulator key={simulating || latest} bot={simulating || latest} files={files} /></div>}
       {importing && <ImportDialog {...importing} bots={myBots} onClose={() => setImporting(null)} onStart={startImport} />}

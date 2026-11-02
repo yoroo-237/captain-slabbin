@@ -14,6 +14,7 @@ import { fileURLToPath } from 'url';
 import { env } from '../config/env.js';
 import { prisma } from '../db.js';
 import { tenantOfStaff } from '../tenant.js';
+import { checkCapture } from './captureCheck.js';
 
 const BACKEND = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const TOOL = path.resolve(env.capture.toolDir || path.join(BACKEND, '..', 'tools', 'tg-explorer'));
@@ -361,6 +362,44 @@ export async function importCapture(user, { bot, kind, dry, name, applyTo, catal
   run(userId, `Import ${kind === 'style' ? 'du style' : 'des produits'}`, process.execPath,
     [path.join('scripts', IMPORTS[kind]), dir, ...extra, ...(dry === false ? [] : ['--dry'])], BACKEND,
     { ...process.env, TENANT_ID: tenant ? String(tenant) : '' });
+  return state(userId);
+}
+
+// ---- fidelity check: every route of every crossroad, captured and copied -------
+// The replica styles made from this bot (the member's own), the one checked:
+// `styleId` when given, else the latest
+export async function checkFidelity(userId, bot, styleId) {
+  const dir = captureDir(userId, bot);
+  const data = JSON.parse(await fs.readFile(path.join(dir, 'data.json'), 'utf8').catch(() => { throw bad('Capture not found.'); }));
+  let saved = {};
+  try { saved = JSON.parse(await fs.readFile(path.join(dir, 'state.json'), 'utf8')); } catch { /* an old capture: no ways back */ }
+  const name = normalizeBot(data.bot || bot).toLowerCase();
+  const styles = (await prisma.botStyle.findMany({ orderBy: { id: 'desc' } }))
+    .filter(s => s.look?.replica && sourceBotOf(s)?.toLowerCase() === name);
+  const style = styles.find(s => s.id === Number(styleId)) || styles[0] || null;
+  return { ...checkCapture(data, saved, style), styles: styles.map(s => ({ id: s.id, name: s.name })) };
+}
+
+// Runs again the routes picked in the check (buttons of a screen, commands, typed
+// texts), then the rest of the queue; what was played is not played again
+export async function retryRoutes(userId, bot, items) {
+  busy(userId);
+  const dir = captureDir(userId, bot);
+  await fs.access(path.join(dir, 'state.json')).catch(() => { throw bad('This capture cannot be resumed: run it again from the start.'); });
+  const picked = (Array.isArray(items) ? items : []).slice(0, 500).map(i => (
+    i?.screen ? { screen: String(i.screen).slice(0, 40), label: String(i.label || '').slice(0, 200) }
+      : i?.cmd ? { cmd: String(i.cmd).slice(0, 80) } : i?.text ? { text: String(i.text).slice(0, 200) } : null)).filter(Boolean);
+  if (!picked.length) throw bad('Pick at least one route to run again.');
+  if (!freeCaptures()) {
+    const allowed = await replicaBots();
+    if (!allowed.has(String(bot).toLowerCase())) throw Object.assign(new Error('Only the bot of an existing style can be captured here, to update that style.'), { status: 403 });
+  }
+  const file = path.join(dir, 'retry.json');
+  await fs.writeFile(file, JSON.stringify(picked));
+  const args = [...exploreArgs(userId, { bots: [bot], profile: 'explorer', maxActions: 20000 }), '--retry', file];
+  await fs.rm(stopFile(userId), { force: true });
+  emit(userId, 'line', `== @${bot} : ${picked.length} route(s) relancée(s) depuis la vérification`);
+  run(userId, 'Exploration', PYTHON, args, TOOL, await userEnv(userId));
   return state(userId);
 }
 
