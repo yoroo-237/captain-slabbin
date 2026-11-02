@@ -76,8 +76,14 @@ app.get('/api/pricing', async (_req, res) => {
 // evidence (link or screenshot) never sent for this account. Without evidence,
 // a limited number of reports per user and account (set in the super admin space).
 // Each report costs tokens, taken from the user's wallet.
+// count: 1 to MAX_BATCH reports sent at once, only without evidence (a proof counts once).
+const MAX_BATCH = 300
 app.post('/api/reports', requireUser, async (req, res) => {
-  const { target: rawTarget, description = '', proofUrl, lang, files } = req.body || {}
+  const { target: rawTarget, description = '', proofUrl, lang, files, count: rawCount = 1 } = req.body || {}
+
+  const count = Number(rawCount)
+  if (!Number.isInteger(count) || count < 1 || count > MAX_BATCH) return res.status(400).json({ error: 'invalid_count' })
+  if (count > 1 && (proofUrl || (Array.isArray(files) && files.length))) return res.status(400).json({ error: 'invalid_count' })
 
   const target = parseTarget(rawTarget)
   if (!target) return res.status(400).json({ error: 'invalid_target' })
@@ -102,22 +108,27 @@ app.post('/api/reports', requireUser, async (req, res) => {
   // Ce compte a-t-il déjà été signalé au moins une fois ? (on ne récupère que l'id, rien d'autre)
   const existing = await prisma.target.findUnique({ where, select: { id: true } })
 
-  // Les contrôles anti-doublon ne servent que si le compte est déjà connu :
+  // Cas 1 : signalement SANS preuve (ni lien, ni capture d'écran).
+  // Le nombre de signalements sans preuve autorisés par utilisateur et par compte est fixé
+  // par le super admin (maxReportsNoProof, 0 = illimité). Un envoi de plusieurs signalements
+  // (count) compte pour autant, y compris sur un compte encore jamais signalé.
+  // Le super admin n'a aucune limite ni aucun coût.
+  if (req.user.role !== 'superadmin' && !urlHash && decoded.files.length === 0 && settings.maxReportsNoProof > 0) {
+    // On ne compte que les signalements sans preuve de cet utilisateur pour ce compte
+    const sent = existing
+      ? await prisma.report.count({ where: { targetId: existing.id, userId: req.user.id, proofHash: null, evidence: { none: {} } } })
+      : 0
+    // Limite atteinte : refus avec 409 (Conflict)
+    if (sent >= settings.maxReportsNoProof) return res.status(409).json({ error: 'already_reported' })
+    // Il reste de la place, mais pas pour tout le lot demandé
+    if (sent + count > settings.maxReportsNoProof) {
+      return res.status(409).json({ error: 'report_limit', remaining: settings.maxReportsNoProof - sent })
+    }
+  }
+
+  // Les contrôles de preuve déjà vue ne servent que si le compte est déjà connu :
   // pour un compte nouveau, aucun signalement antérieur ne peut entrer en conflit
   if (existing) {
-    // Cas 1 : signalement SANS preuve (ni lien, ni capture d'écran).
-    // Le nombre de signalements sans preuve autorisés par utilisateur et par compte est fixé
-    // par le super admin (maxReportsNoProof, 0 = illimité).
-    // Le super admin n'a aucune limite ni aucun coût.
-    if (req.user.role !== 'superadmin' && !urlHash && decoded.files.length === 0 && settings.maxReportsNoProof > 0) {
-      // On ne compte que les signalements sans preuve de cet utilisateur pour ce compte
-      const sent = await prisma.report.count({
-        where: { targetId: existing.id, userId: req.user.id, proofHash: null, evidence: { none: {} } },
-      })
-      // Limite atteinte : refus avec 409 (Conflict)
-      if (sent >= settings.maxReportsNoProof) return res.status(409).json({ error: 'already_reported' })
-    }
-
     // Cas 2 : signalement AVEC preuve. On l'accepte même si la personne a déjà signalé,
     // à condition que la preuve soit nouvelle pour ce compte.
     // seenUrl : ce même lien (comparé via son empreinte urlHash) a-t-il déjà été envoyé pour ce compte ?
@@ -135,7 +146,7 @@ app.post('/api/reports', requireUser, async (req, res) => {
 
   // Coût du signalement : jetons × prix du jeton, payé en crypto au cours du moment.
   // Le super admin signale sans payer.
-  const tokens = req.user.role === 'superadmin' ? 0 : settings.reportCostTokens
+  const tokens = req.user.role === 'superadmin' ? 0 : settings.reportCostTokens * count
   const usdCost = round2(tokens * settings.tokenPriceUsd)
   let payments = []
   if (usdCost > 0) {
@@ -152,28 +163,33 @@ app.post('/api/reports', requireUser, async (req, res) => {
 
       const t = await tx.target.upsert({
         where,
-        update: { reportCount: { increment: 1 } },
-        create: { ...target, reportCount: 1 },
+        update: { reportCount: { increment: count } },
+        create: { ...target, reportCount: count },
       })
-      const report = await tx.report.create({
-        data: {
-          targetId: t.id,
-          userId: req.user.id,
-          type: finalType,
-          detectedType: detected.type,
-          description: cleanDescription,
-          proofUrl: cleanProof,
-          proofHash: urlHash,
-          lang: lang === 'fr' ? 'fr' : 'en',
-          ipHash,
-          evidence: { create: decoded.files.map((f) => ({ ...f, targetId: t.id })) },
-        },
-      })
+      const reports = []
+      for (let i = 0; i < count; i++) {
+        reports.push(await tx.report.create({
+          data: {
+            targetId: t.id,
+            userId: req.user.id,
+            type: finalType,
+            detectedType: detected.type,
+            description: cleanDescription,
+            proofUrl: cleanProof,
+            proofHash: urlHash,
+            lang: lang === 'fr' ? 'fr' : 'en',
+            ipHash,
+            evidence: { create: decoded.files.map((f) => ({ ...f, targetId: t.id })) },
+          },
+        }))
+      }
+      // One payment for the whole batch, linked to its first report
       if (payments.length) {
+        const name = target.username ? '@' + target.username : target.tgId
         await tx.transaction.create({
           data: {
             userId: req.user.id, type: 'report', usd: usdCost, tokens, payments,
-            reportId: report.id, note: `Report on ${target.username ? '@' + target.username : target.tgId}`,
+            reportId: reports[0].id, note: count > 1 ? `${count} reports on ${name}` : `Report on ${name}`,
           },
         })
       }
@@ -187,7 +203,7 @@ app.post('/api/reports', requireUser, async (req, res) => {
 
   const typed = await requestCapture(saved.id)
   res.status(201).json({
-    ok: true, targetId: saved.id, reportCount: saved.reportCount, tokensSpent: tokens,
+    ok: true, targetId: saved.id, reportCount: saved.reportCount, tokensSpent: tokens, count,
     capturing: !typed && captureEnabled(),
   })
 })

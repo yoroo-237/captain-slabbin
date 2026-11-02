@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { messages } from './i18n.js'
-import { api, session } from './api.js'
+import { api, session, MAX_BATCH } from './api.js'
 import Admin from './Admin.jsx'
 import Auth from './Auth.jsx'
 import Wallet from './Wallet.jsx'
@@ -31,6 +31,7 @@ export default function App() {
 
   const [target, setTarget] = useState('')
   const [status, setStatus] = useState({ state: 'idle', message: '' })
+  const [batch, setBatch] = useState(1)
 
   const [query, setQuery] = useState('')
   const [targets, setTargets] = useState([])
@@ -81,16 +82,17 @@ export default function App() {
   }, [query])
 
   // Only the account: the server captures it and gives the report its type
-  const submit = async (e) => {
-    e.preventDefault()
+  // count: 1 from the main button, 1 to MAX_BATCH from the batch button
+  const submit = async (e, count = 1) => {
+    e?.preventDefault()
     if (!user) return go('login')
     setStatus({ state: 'sending', message: '' })
     try {
       const r = await api('/api/reports', {
         method: 'POST',
-        body: JSON.stringify({ target, lang }),
+        body: JSON.stringify({ target, lang, count }),
       })
-      const done = r.tokensSpent ? t.thanksPaid(r.tokensSpent) : t.thanks
+      const done = count > 1 ? t.thanksBatch(count, r.tokensSpent) : r.tokensSpent ? t.thanksPaid(r.tokensSpent) : t.thanks
       setStatus({ state: 'ok', message: r.capturing ? `${done} ${t.capturing}` : done })
       setTarget('')
       loadTargets(query); loadStats(); reloadWallet()
@@ -102,6 +104,8 @@ export default function App() {
   const isSuper = user?.role === 'superadmin'
   const cost = isSuper ? 0 : pricing?.reportCostTokens ?? 1
   const short = user && wallet && cost > 0 && wallet.tokens < cost
+  const shortBatch = user && wallet && cost > 0 && wallet.tokens < cost * batch
+  const sending = status.state === 'sending'
 
   // Same form on the home page and in the super admin space
   const reportCard = (
@@ -128,8 +132,22 @@ export default function App() {
         <button className="primary" disabled={status.state === 'sending' || short}>
           {status.state === 'sending' ? t.sending : user ? t.submitCost(cost) : t.loginAndReport}
         </button>
-        {/* Shown but never active: no batch of reports is sent */}
-        <button type="button" className="ghost batch" disabled title={t.batchOff}>{t.batch}</button>
+        {/* Batch: 1 to MAX_BATCH reports on the same account, the server checks the limit */}
+        <div className="batch">
+          <div className="stepper" role="group" aria-label={t.batchCount}>
+            <button type="button" onClick={() => setBatch((n) => Math.max(1, n - 1))} disabled={batch <= 1} aria-label={t.batchLess}>−</button>
+            <output aria-live="polite">{batch}</output>
+            <button type="button" onClick={() => setBatch((n) => Math.min(MAX_BATCH, n + 1))} disabled={batch >= MAX_BATCH} aria-label={t.batchMore}>+</button>
+          </div>
+          <button
+            type="button"
+            className="ghost"
+            disabled={sending || shortBatch}
+            onClick={(e) => { if (e.currentTarget.form.reportValidity()) submit(null, batch) }}
+          >
+            {user ? t.batchSend(batch, cost * batch) : t.loginAndReport}
+          </button>
+        </div>
         {status.message && (
           <p className={`msg ${status.state}`}>
             {status.message}

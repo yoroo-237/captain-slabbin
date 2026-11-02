@@ -28,6 +28,9 @@ export const api = async (url, options = {}) => {
   return data
 }
 
+// Must match MAX_BATCH in backend/src/server.js
+export const MAX_BATCH = 300
+
 // Must match backend/src/proof.js
 export const MAX_FILES = 3
 export const MAX_FILE_BYTES = 3 * 1024 * 1024
