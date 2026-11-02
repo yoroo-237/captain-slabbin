@@ -16,11 +16,15 @@ import { runPython, captureDir } from './python.js'
 import { telegramCreds } from './telegram.js'
 
 const SCRIPT = process.env.CAPTURE_SCRIPT || path.join(captureDir, 'capture.py')
-const TIMEOUT_MS = 120_000
+const TIMEOUT_MS = 180_000 // a bot conversation: /start, then up to 8 buttons pressed
 const REUSE_MS = 24 * 3600_000 // type of a report without proof
 const PROOF_REUSE_MS = 10 * 60_000 // a proof is a fresh look at the account
 export const PROOF_VALID_MS = 60 * 60_000 // a finished proof must be sent within this time
 const MAX_PHOTO = 2 * 1024 * 1024
+const MAX_TEXTS = 150
+const MAX_MESSAGES = 200
+const MAX_MEDIA = 20
+const MEDIA_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
 
 // The Telegram account is connected from Admin → Settings
 export const captureEnabled = () => !!telegramCreds()
@@ -38,10 +42,30 @@ const runScript = (ref) => {
 // Every text the capture gathered, for the type detection
 const textOf = (c) => [c.title, c.about, ...(Array.isArray(c.texts) ? c.texts : [])].filter(Boolean).join('\n')
 
-// Same account content = same hash, whenever it was captured
-const hashOf = (d) => crypto.createHash('sha256').update(JSON.stringify([
-  d.kind, d.title, d.about, d.texts, d.photo ? crypto.createHash('sha256').update(d.photo).digest('hex') : null,
-])).digest('hex')
+const sha = (b) => crypto.createHash('sha256').update(b).digest('hex')
+
+// Same account content = same hash, whenever it was captured: texts and images only,
+// not message ids or dates (a bot answers /start with new ids each time)
+const hashOf = (d, media) => sha(JSON.stringify([d.kind, d.title, d.about, d.texts, d.photo ? sha(d.photo) : null, media.map((m) => m.sha256)]))
+
+// Images of the messages, as the script sent them (base64), checked
+const mediaOf = (list) => (Array.isArray(list) ? list : []).slice(0, MAX_MEDIA).map((m, position) => {
+  const data = m?.data ? Buffer.from(String(m.data), 'base64') : null
+  if (!data?.length || data.length > MAX_PHOTO || !MEDIA_TYPES.includes(m.mime)) return null
+  return { position, messageId: Number.isInteger(m.message) ? m.message : null, mime: m.mime, size: data.length, sha256: sha(data), data }
+}).filter(Boolean)
+
+// Conversation or history, kept to known fields (shown in the admin and the proof preview)
+const httpUrl = (u) => (typeof u === 'string' && /^https?:\/\//i.test(u) ? u.slice(0, 500) : undefined)
+const messagesOf = (list, positions) => (Array.isArray(list) ? list : []).slice(0, MAX_MESSAGES).map((m) => ({
+  id: Number.isInteger(m?.id) ? m.id : null,
+  date: typeof m?.date === 'string' ? m.date.slice(0, 40) : null,
+  from: m?.from === 'me' ? 'me' : 'them',
+  text: String(m?.text || '').slice(0, 4000),
+  buttons: (Array.isArray(m?.buttons) ? m.buttons : []).slice(0, 20).map((b) => ({ text: String(b?.text || '').slice(0, 200), url: httpUrl(b?.url) })),
+  media: (Array.isArray(m?.media) ? m.media : []).filter((i) => positions.has(i)),
+  ...(m?.edited ? { edited: true } : {}),
+}))
 
 // Gives the capture's type to the reports of this account that do not have one yet
 async function applyCapture(capture) {
@@ -64,14 +88,16 @@ async function runCapture(captureId) {
     return
   }
 
-  const texts = (Array.isArray(r.texts) ? r.texts : []).map((t) => String(t).slice(0, 4000)).slice(0, 30)
+  const texts = (Array.isArray(r.texts) ? r.texts : []).map((t) => String(t).slice(0, 4000)).slice(0, MAX_TEXTS)
   const photo = r.photo ? Buffer.from(r.photo, 'base64') : null
+  const media = mediaOf(r.media)
   const data = {
     status: 'done', kind: r.kind || null, title: String(r.title || '').slice(0, 200), about: String(r.about || '').slice(0, 1000),
-    texts, photo: photo && photo.length <= MAX_PHOTO ? photo : null, finishedAt: new Date(),
+    texts, messages: messagesOf(r.messages, new Set(media.map((m) => m.position))),
+    photo: photo && photo.length <= MAX_PHOTO ? photo : null, finishedAt: new Date(),
   }
   data.detectedType = detectType(textOf(data)).type
-  data.contentHash = hashOf(data)
+  data.contentHash = hashOf(data, media)
 
   // The capture tells what the account really is, and its numeric ID never changes
   const update = { kind: data.kind || target.kind }
@@ -80,6 +106,7 @@ async function runCapture(captureId) {
   const type = data.detectedType || 'other'
   await prisma.$transaction([
     prisma.capture.update({ where: { id: row.id }, data }),
+    prisma.captureMedia.createMany({ data: media.map((m) => ({ ...m, captureId: row.id })) }),
     prisma.target.update({ where: { id: target.id }, data: update }),
     prisma.report.updateMany({ where: { targetId: target.id, captured: false }, data: { type, detectedType: type, captured: true } }),
   ])

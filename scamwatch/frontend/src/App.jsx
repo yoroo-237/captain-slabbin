@@ -31,6 +31,8 @@ const go = (route) => { window.location.hash = route }
 export default function App() {
   const [lang, setLang] = useState(initialLang)
   const t = messages[lang]
+  // Dates are written in the page language (captured messages, history)
+  useEffect(() => { document.documentElement.lang = lang }, [lang])
   const [route, setRoute] = useState(currentRoute)
 
   const [user, setUser] = useState(null)

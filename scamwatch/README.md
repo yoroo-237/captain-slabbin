@@ -9,7 +9,10 @@ Standalone project of this repository, with its own Railway project, served on i
 - Report form: the account (@username, t.me link or numeric ID), an "Attach a proof" checkbox and
   a progress bar (account check, proof capture, type, payment and sending).
 - Capture (`capture/capture.py`, Telethon, a Telegram account dedicated to ScamWatch): name, bio
-  and photo; a bot's answer to `/start`; a public channel or group's latest messages. Regular users
+  and photo; a bot's conversation (`/start`, then up to 8 of its buttons pressed over 2 levels,
+  never buttons that share the phone or location, pay or open a mini app); a public channel or
+  group's history (100 latest messages); the images of the messages (photos, video thumbnails, 20 at
+  most, table `CaptureMedia`). Shown as a chat in Moderation and in the proof preview. Regular users
   are never messaged. Captures run one at a time; `backend/src/detect.js` gives the type from what
   was captured.
   - With proof: `POST /api/captures`, the form follows `GET /api/captures/:id`, shows the capture,

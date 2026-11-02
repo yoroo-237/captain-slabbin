@@ -101,16 +101,30 @@ app.get('/api/captures/:id', requireUser, async (req, res) => {
   if (!Number.isInteger(id)) return res.status(400).json({ error: 'invalid_id' })
   const c = await prisma.capture.findUnique({
     where: { id },
-    select: { id: true, status: true, error: true, kind: true, title: true, about: true, texts: true, detectedType: true, finishedAt: true, photo: true },
+    select: {
+      id: true, status: true, error: true, kind: true, title: true, about: true, texts: true, messages: true, detectedType: true, finishedAt: true, photo: true,
+      media: { select: { id: true, position: true }, orderBy: { position: 'asc' } },
+    },
   })
   if (!c) return res.status(404).json({ error: 'not_found' })
   const texts = Array.isArray(c.texts) ? c.texts : []
   res.json({
     id: c.id, status: c.status, error: c.error, kind: c.kind, title: c.title, about: c.about.slice(0, 300),
     texts: texts.slice(0, 3).map((x) => String(x).slice(0, 200)), textCount: texts.length,
+    messages: c.messages, media: c.media,
     detectedType: c.detectedType, finishedAt: c.finishedAt, hasPhoto: !!c.photo,
     ahead: c.status === 'pending' ? queuedAhead(c.id) : 0,
   })
+})
+
+// Image of a captured message (photo or video thumbnail)
+app.get('/api/captures/media/:id', requireUser, async (req, res) => {
+  const id = Number(req.params.id)
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'invalid_id' })
+  const m = await prisma.captureMedia.findUnique({ where: { id }, select: { mime: true, data: true } })
+  if (!m) return res.status(404).json({ error: 'not_found' })
+  res.set({ 'Content-Type': m.mime, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, max-age=3600' })
+  res.send(Buffer.from(m.data))
 })
 
 app.get('/api/captures/:id/photo', requireUser, async (req, res) => {
@@ -386,7 +400,10 @@ app.get('/api/admin/targets/:id', async (req, res) => {
   const capture = await prisma.capture.findFirst({
     where: { targetId: id },
     orderBy: { createdAt: 'desc' },
-    select: { id: true, status: true, error: true, kind: true, title: true, about: true, texts: true, detectedType: true, createdAt: true, finishedAt: true, photo: true },
+    select: {
+      id: true, status: true, error: true, kind: true, title: true, about: true, texts: true, messages: true, detectedType: true, createdAt: true, finishedAt: true, photo: true,
+      media: { select: { id: true, position: true }, orderBy: { position: 'asc' } },
+    },
   })
   res.json({
     ...target, whitelisted: await isWhitelisted(target), reports,

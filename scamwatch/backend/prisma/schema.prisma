@@ -57,8 +57,10 @@ model Capture {
   kind         String?   // user | bot | channel | group
   title        String    @default("")
   about        String    @default("")
-  texts        Json      @default("[]") // bot answer to /start, or latest channel / group messages
+  texts        Json      @default("[]") // the account's messages as plain text (type detection)
+  messages     Json      @default("[]") // conversation with the bot, or channel / group history: [{id, date, from, text, buttons, media}]
   photo        Bytes?
+  media        CaptureMedia[]
   detectedType String?
   contentHash  String?   // what was seen (sha256): the same content is one proof only, once per account
   createdAt    DateTime  @default(now())
@@ -67,6 +69,22 @@ model Capture {
 
   @@index([targetId, createdAt])
   @@index([status])
+}
+
+// Image of a captured message (photo, or thumbnail of a video). position = index used by
+// Capture.messages[].media
+model CaptureMedia {
+  id        Int      @id @default(autoincrement())
+  captureId Int
+  capture   Capture  @relation(fields: [captureId], references: [id], onDelete: Cascade)
+  position  Int
+  messageId Int?     // Telegram message id
+  mime      String
+  size      Int
+  sha256    String
+  data      Bytes
+
+  @@index([captureId, position])
 }
 
 model Report {

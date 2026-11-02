@@ -1,4 +1,65 @@
-import { Screenshot } from './Admin.jsx'
+import { useEffect, useState } from 'react'
+import { session, safeLink } from './api.js'
+
+// Screenshots need the session header, so they are fetched as blobs
+export function Screenshot({ id, alt, path = `/api/admin/evidence/${id}` }) {
+  const [src, setSrc] = useState(null)
+  useEffect(() => {
+    let url
+    let alive = true
+    fetch(path, { headers: { Authorization: `Bearer ${session.token}` } })
+      .then((r) => (r.ok ? r.blob() : null))
+      .then((b) => { if (b && alive) { url = URL.createObjectURL(b); setSrc(url) } })
+      .catch(() => {})
+    return () => { alive = false; if (url) URL.revokeObjectURL(url) }
+  }, [path])
+  if (!src) return <span className="shot placeholder" />
+  return <a href={src} target="_blank" rel="noreferrer"><img className="shot" src={src} alt={alt} /></a>
+}
+
+// Conversation with the bot (its answers, the buttons pressed) or channel / group history,
+// with the images of the messages. limit: messages shown before "show all"
+// (the start of a bot conversation, the latest messages of a channel).
+export function Transcript({ t, capture, limit }) {
+  const [all, setAll] = useState(false)
+  const messages = capture.messages || []
+  // Captures made before conversations were kept: their texts only
+  if (!messages.length) {
+    return capture.texts?.length > 0 && (
+      <ul className="texts">{capture.texts.slice(0, 10).map((x, i) => <li key={i} className="desc">{x}</li>)}</ul>
+    )
+  }
+  const mediaAt = Object.fromEntries((capture.media || []).map((m) => [m.position, m.id]))
+  const cut = limit && !all && messages.length > limit
+  const shown = !cut ? messages : capture.kind === 'bot' ? messages.slice(0, limit) : messages.slice(-limit)
+  return (
+    <div className="chat">
+      {shown.map((m, i) => (
+        <div key={i} className={`bubble ${m.from}${m.id === null && m.from === 'me' ? ' action' : ''}`}>
+          {m.media.some((p) => mediaAt[p]) && (
+            <div className="chat-media">
+              {m.media.filter((p) => mediaAt[p]).map((p) => <Screenshot key={p} path={`/api/captures/media/${mediaAt[p]}`} alt="" />)}
+            </div>
+          )}
+          {m.text && <p>{m.text}</p>}
+          {m.buttons.length > 0 && (
+            <div className="chat-buttons">
+              {m.buttons.map((b, j) => (safeLink(b.url)
+                ? <a key={j} className="chip" href={safeLink(b.url)} target="_blank" rel="noopener noreferrer nofollow">{b.text} ↗</a>
+                : <span key={j} className="chip">{b.text}</span>))}
+            </div>
+          )}
+          {(m.date || m.edited) && (
+            <span className="chat-meta">{m.edited ? `${t.chat.edited} · ` : ''}{m.date && new Date(m.date).toLocaleString(document.documentElement.lang || undefined, { dateStyle: 'short', timeStyle: 'short' })}</span>
+          )}
+        </div>
+      ))}
+      {limit && messages.length > limit && (
+        <button type="button" className="link" onClick={() => setAll(!all)}>{all ? t.chat.less : t.chat.more(messages.length)}</button>
+      )}
+    </div>
+  )
+}
 
 // Steps of a report, in order. With proof the server captures the account first,
 // the report is paid and sent only once the proof is in.
@@ -45,11 +106,7 @@ export function ProofPreview({ t, lang, capture }) {
             <span className="badge confirmed">{t.types[capture.detectedType] || capture.detectedType}</span>
           </p>
           {capture.about && <p className="desc">{capture.about}</p>}
-          {capture.texts.length > 0 && (
-            <ul className="texts">
-              {capture.texts.map((x, i) => <li key={i} className="desc">{x}</li>)}
-            </ul>
-          )}
+          <Transcript t={t} capture={capture} limit={4} />
           <p className="hint">{t.flow.proofMeta(capture.textCount, new Date(capture.finishedAt).toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' }))}</p>
         </div>
       </div>

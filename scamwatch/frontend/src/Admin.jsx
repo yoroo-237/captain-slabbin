@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, session, safeLink, fmtCrypto, fmtUsd } from './api.js'
 import { PasswordCard } from './Auth.jsx'
+import { Screenshot, Transcript } from './Proof.jsx'
 
 const FILTERS = ['pending', 'confirmed', 'rejected', 'all']
 const TABS = ['moderation', 'report', 'wallet', 'whitelist', 'settings']
@@ -9,21 +10,6 @@ const SWEEPABLE = ['BTC', 'LTC', 'DOGE', 'ETH']
 
 const name = (x) => (x.username ? `@${x.username}` : `ID ${x.tgId}`)
 
-// Screenshots need the session header, so they are fetched as blobs
-export function Screenshot({ id, alt, path = `/api/admin/evidence/${id}` }) {
-  const [src, setSrc] = useState(null)
-  useEffect(() => {
-    let url
-    let alive = true
-    fetch(path, { headers: { Authorization: `Bearer ${session.token}` } })
-      .then((r) => (r.ok ? r.blob() : null))
-      .then((b) => { if (b && alive) { url = URL.createObjectURL(b); setSrc(url) } })
-      .catch(() => {})
-    return () => { alive = false; if (url) URL.revokeObjectURL(url) }
-  }, [path])
-  if (!src) return <span className="shot placeholder" />
-  return <a href={src} target="_blank" rel="noreferrer"><img className="shot" src={src} alt={alt} /></a>
-}
 
 // What the server saw of the account; the type of the reports comes from it
 function CapturePanel({ t, target, busy, onRecapture }) {
@@ -51,11 +37,7 @@ function CapturePanel({ t, target, busy, onRecapture }) {
               <span className="badge confirmed">{t.types[c.detectedType] || c.detectedType}</span>
             </p>
             {c.about && <p className="desc">{c.about}</p>}
-            {c.texts?.length > 0 && (
-              <ul className="texts">
-                {c.texts.slice(0, 10).map((x, i) => <li key={i} className="desc">{x}</li>)}
-              </ul>
-            )}
+            <Transcript t={t} capture={c} limit={12} />
           </div>
         </div>
       )}

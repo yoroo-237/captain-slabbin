@@ -16,6 +16,11 @@ export const messages = {
     noProofHint: (n) => `Simple report: sent at once, its type is set later by a capture in the background. ${n > 0 ? `Up to ${n} per account.` : 'No limit.'}`,
     proofOff: 'Proof capture is not set up yet: reports are sent without proof.',
     submitProof: (n, c) => `Capture and ${n > 1 ? `send ${n} reports` : 'report'}${c > 0 ? ` (${c} token${c > 1 ? 's' : ''})` : ''}`,
+    chat: {
+      edited: 'edited',
+      more: (n) => `Show the ${n} messages`,
+      less: 'Show less',
+    },
     flow: {
       label: 'Report progress',
       running: 'In progress...',
@@ -279,6 +284,11 @@ export const messages = {
     noProofHint: (n) => `Signalement simple : envoyé tout de suite, son type est attribué ensuite par une capture en arrière-plan. ${n > 0 ? `${n} maximum par compte.` : 'Sans limite.'}`,
     proofOff: 'La capture des preuves n\'est pas encore configurée : les signalements partent sans preuve.',
     submitProof: (n, c) => `Capturer et ${n > 1 ? `lancer ${n} signalements` : 'signaler'}${c > 0 ? ` (${c} jeton${c > 1 ? 's' : ''})` : ''}`,
+    chat: {
+      edited: 'modifié',
+      more: (n) => `Afficher les ${n} messages`,
+      less: 'Afficher moins',
+    },
     flow: {
       label: 'Avancement du signalement',
       running: 'En cours...',
