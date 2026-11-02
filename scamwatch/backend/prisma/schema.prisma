@@ -1,0 +1,65 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// A reported Telegram account (user, bot, channel or group).
+// tgId is filled when the numeric ID is known: usernames change, IDs do not.
+model Target {
+  id          Int      @id @default(autoincrement())
+  username    String?  @unique
+  tgId        String?  @unique
+  kind        String   @default("unknown") // user | bot | channel | unknown
+  status      String   @default("pending") // pending | confirmed | rejected (set by the admin)
+  reportCount Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  reports     Report[]
+}
+
+model Report {
+  id           Int        @id @default(autoincrement())
+  targetId     Int
+  target       Target     @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  type         String     // type kept (user's choice, or the detected one)
+  detectedType String     // type proposed by the automatic detection
+  description  String     @default("")
+  proofUrl     String?
+  proofHash    String?    // normalized proof link hash: one link counts once per account
+  lang         String     @default("en")
+  ipHash       String?    // hashed IP: a person reports again only with new evidence
+  createdAt    DateTime   @default(now())
+  evidence     Evidence[]
+
+  @@unique([targetId, proofHash])
+  @@index([targetId])
+  @@index([createdAt])
+}
+
+// Settings changed from the moderation space: a single row (id 1).
+model Setting {
+  id                Int      @id @default(1)
+  maxReportsNoProof Int      @default(1) // reports without evidence per person (hashed IP) and account, 0 = no limit
+  updatedAt         DateTime @updatedAt
+}
+
+// Screenshot attached to a report, stored in the database (Railway disks are not kept).
+// Only visible to the admin.
+model Evidence {
+  id        Int      @id @default(autoincrement())
+  reportId  Int
+  report    Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  targetId  Int      // copied from the report: one screenshot counts once per account
+  mime      String
+  size      Int
+  sha256    String
+  data      Bytes
+  createdAt DateTime @default(now())
+
+  @@unique([targetId, sha256])
+  @@index([reportId])
+}

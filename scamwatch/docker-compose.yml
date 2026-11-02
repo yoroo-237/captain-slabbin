@@ -1,0 +1,34 @@
+# Full stack in one command: docker compose up --build
+# Open http://localhost:4100
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: scamwatch
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-scamwatch}
+      POSTGRES_DB: scamwatch
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scamwatch -d scamwatch"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://scamwatch:${POSTGRES_PASSWORD:-scamwatch}@db:5432/scamwatch
+      IP_SALT: ${IP_SALT:-change-me}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      PORT: 4100
+    ports:
+      - "${APP_PORT:-4100}:4100"
+
+volumes:
+  dbdata:
