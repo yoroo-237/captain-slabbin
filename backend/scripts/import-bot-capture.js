@@ -227,13 +227,21 @@ const styleProfile = {
   ...(profilePhoto ? { photo: profilePhoto } : {}),
   ...(commands.length ? { commands } : {}),
 };
+// The catalog the replica sells: the products imported from this same bot (same
+// source tag as the `catalog` import, derived from the bot name by default). The
+// shop engine serves the cart, checkout and orders scoped to this source. Pass
+// --catalog "" to keep it unset (the shop's own catalog).
+const derivedSource = String(bot).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
+const catalogArg = args.includes('--catalog') ? String(opt('--catalog') || '') : null;
+const catalogSource = (catalogArg === null ? derivedSource : catalogArg.toLowerCase().replace(/[^a-z0-9]/g, '')).slice(0, 20);
 const look = {
   layout: 'commands', siteLinks: false, upperTitles: false, home,
   pages: await withImages(pages),
   replica: true,
+  ...(catalogSource ? { catalog: catalogSource } : {}),
   ...(Object.keys(styleProfile).length ? { profile: styleProfile } : {}),
 };
-console.log(`Replica "${name}": ${look.pages.length} pages, home ${home || '(none)'}, ${commands.length} commands${personal ? `, ${personal} anti-phishing screen(s) left out` : ''}. Identity: ${styleProfile.name || '(name not captured)'}${styleProfile.photo ? ' + photo' : ''}.`);
+console.log(`Replica "${name}": ${look.pages.length} pages, home ${home || '(none)'}, ${commands.length} commands, catalog ${catalogSource || '(shop\'s own)'}${personal ? `, ${personal} anti-phishing screen(s) left out` : ''}. Identity: ${styleProfile.name || '(name not captured)'}${styleProfile.photo ? ' + photo' : ''}.`);
 if (dry) { await applied({ id: 0 }); console.log('Dry run: nothing written.'); process.exit(0); }
 const existing = await prisma.botStyle.findFirst({ where: { name }, orderBy: { tenantId: 'desc' } });
 const mine = existing && (!currentTenant() || existing.tenantId === currentTenant()) ? existing : null;
