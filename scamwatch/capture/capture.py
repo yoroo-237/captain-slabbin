@@ -4,8 +4,11 @@ Reads what anyone can see of the account with the ScamWatch Telegram account:
 - every account: name, bio and profile photo;
 - a bot: the conversation it holds. It sends /start, then presses the bot's buttons
   (inline buttons and keyboard buttons, MAX_CLICKS at most, MAX_DEPTH levels) and
-  keeps every answer. Buttons that would share the phone number or the location,
-  pay, open a mini app or switch chat are never pressed; link buttons are only kept;
+  keeps every answer. Then it analyses the routes (each button seen: answered, ended
+  without a new screen, failed, or not reached) and completes the missing ones: up to
+  COMPLETE_PASSES more passes of COMPLETE_CLICKS, one level deeper each time, within
+  TIME_BUDGET_S. Buttons that would share the phone number or the location, pay, open
+  a mini app or switch chat are never pressed; link buttons are only kept;
 - a channel or a public group: its message history (MAX_HISTORY latest messages);
 - images: photos of the messages and thumbnails of videos (MAX_MEDIA at most).
 Regular users are never messaged.
@@ -17,12 +20,14 @@ Prints one JSON object on stdout: the capture, or {"error": "<code>"}.
   messages: [{id, date, from: "them" | "me", text, buttons: [{text, url?}], media: [index], edited?}]
   media:    [{data (base64), mime, message}]
   texts:    the account's messages as plain text (type detection)
+  routes:   a bot's buttons after completion: {total, covered, ended, failed, missing, passes}
 """
 import asyncio
 import base64
 import json
 import os
 import sys
+import time
 
 from telethon import TelegramClient, errors, functions, types
 from telethon.sessions import StringSession
@@ -31,6 +36,11 @@ START_WAIT_S = 6
 CLICK_WAIT_S = 4
 MAX_CLICKS = 8
 MAX_DEPTH = 2
+# Completion of the missing routes, after the first pass
+COMPLETE_PASSES = 2
+COMPLETE_CLICKS = 6
+# The server stops the script after 120 s: the capture ends before, whatever is left
+TIME_BUDGET_S = 95
 MAX_HISTORY = 100
 MAX_MEDIA = 20
 MAX_MEDIA_BYTES = 1_500_000
@@ -65,6 +75,10 @@ class Capture:
     def __init__(self, client, entity):
         self.client, self.entity = client, entity
         self.messages, self.media = [], []
+        # Routes of a bot, by button label: "covered" (an answer came), "ended" (pressed,
+        # nothing new) or "failed"; a label seen but never pressed has no status (missing)
+        self.status, self.seen_labels, self.retried = {}, set(), set()
+        self.passes = 0
 
     async def keep_media(self, msg):
         """Photo of the message, or the thumbnail of a video / image file."""
@@ -111,32 +125,36 @@ class Capture:
         last = await self.client.get_messages(self.entity, limit=1)
         return last[0].id if last else 0
 
-    async def bot(self):
-        """Opens the bot, then presses its buttons level by level and keeps every answer."""
-        before = await self.last_id()
-        await self.client.send_message(self.entity, "/start")
-        self.note("/start")
-        await asyncio.sleep(START_WAIT_S)
-        frontier = []  # (message, row, col, label, depth)
-        for m in await self.new_since(before):
-            await self.keep(m)
-            frontier += [(m, i, j, b.text, 1) for i, j, b in buttons_of(m) if pressable(b)]
+    def routes_of(self, msg, depth):
+        """The buttons of a message that can be pressed: (message, row, col, label, depth)."""
+        found = [(msg, i, j, b.text, depth) for i, j, b in buttons_of(msg) if pressable(b)]
+        self.seen_labels.update(r[3] for r in found)
+        return found
 
-        pressed, clicks = set(), 0
-        while frontier and clicks < MAX_CLICKS:
-            msg, i, j, label, depth = frontier.pop(0)
-            if label in pressed:
+    async def press(self, frontier, max_clicks, max_depth, deadline):
+        """Presses the buttons of the frontier in order and keeps the answers. Returns what
+        is left: buttons not reached (click limit, time) and those found too deep."""
+        left, done_now, clicks = [], set(), 0
+        while frontier:
+            route = frontier.pop(0)
+            msg, i, j, label, depth = route
+            if label in done_now or self.status.get(label) in ("covered", "ended"):
                 continue
-            pressed.add(label)
+            if depth > max_depth or clicks >= max_clicks or time.monotonic() >= deadline:
+                left.append(route)
+                continue
+            done_now.add(label)
             clicks += 1
             before = await self.last_id()
             self.note(f"[{label}]")
             try:
                 answer = await msg.click(i, j)
             except Exception:
+                self.status[label] = "failed"
                 continue
+            alert = isinstance(answer, types.messages.BotCallbackAnswer) and answer.message
             # A pop-up or toast answer of the bot
-            if isinstance(answer, types.messages.BotCallbackAnswer) and answer.message:
+            if alert:
                 self.messages.append({"id": None, "date": None, "from": "them", "text": answer.message[:MAX_TEXT], "buttons": [], "media": []})
             await asyncio.sleep(CLICK_WAIT_S)
             found = []
@@ -148,9 +166,41 @@ class Capture:
             for m in await self.new_since(before):
                 await self.keep(m)
                 found.append(m)
-            if depth < MAX_DEPTH:
-                for m in found:
-                    frontier += [(m, a, c, b.text, depth + 1) for a, c, b in buttons_of(m) if pressable(b)]
+            self.status[label] = "covered" if found or alert else "ended"
+            for m in found:
+                frontier += self.routes_of(m, depth + 1)
+        return left
+
+    async def bot(self):
+        """Opens the bot, presses its buttons level by level and keeps every answer (capture),
+        then looks at the routes left (analysis) and presses them in more passes (completion)."""
+        deadline = time.monotonic() + TIME_BUDGET_S
+        before = await self.last_id()
+        await self.client.send_message(self.entity, "/start")
+        self.note("/start")
+        await asyncio.sleep(START_WAIT_S)
+        frontier = []
+        for m in await self.new_since(before):
+            await self.keep(m)
+            frontier += self.routes_of(m, 1)
+
+        left = await self.press(frontier, MAX_CLICKS, MAX_DEPTH, deadline)
+        # Missing routes (click or depth limit) and those that failed once, one level
+        # deeper each pass; a route that fails again stays failed
+        for n in range(1, COMPLETE_PASSES + 1):
+            todo = [r for r in left if self.status.get(r[3]) is None
+                    or (self.status[r[3]] == "failed" and r[3] not in self.retried)]
+            if not todo or time.monotonic() >= deadline:
+                break
+            self.passes = n
+            self.retried.update(r[3] for r in todo if self.status.get(r[3]) == "failed")
+            left = await self.press(todo, COMPLETE_CLICKS, MAX_DEPTH + n, deadline)
+
+    def routes(self):
+        """What the capture covered of the bot's buttons."""
+        st = [self.status.get(label) for label in self.seen_labels]
+        return {"total": len(st), "covered": st.count("covered"), "ended": st.count("ended"),
+                "failed": st.count("failed"), "missing": st.count(None), "passes": self.passes}
 
     async def history(self):
         msgs = await self.client.get_messages(self.entity, limit=MAX_HISTORY)
@@ -178,6 +228,7 @@ async def capture(client, ref):
                       about=full.full_user.about or "")
         if entity.bot:
             await c.bot()
+            result["routes"] = c.routes()
     else:
         full = await client(functions.channels.GetFullChannelRequest(entity))
         result.update(kind="channel" if getattr(entity, "broadcast", False) else "group",

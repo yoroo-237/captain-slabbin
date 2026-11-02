@@ -67,6 +67,12 @@ const messagesOf = (list, positions) => (Array.isArray(list) ? list : []).slice(
   ...(m?.edited ? { edited: true } : {}),
 }))
 
+// What a bot capture covered of the bot's buttons (capture.py), kept to known counts
+const ROUTE_COUNTS = ['total', 'covered', 'ended', 'failed', 'missing', 'passes']
+const routesOf = (r) => (r && typeof r === 'object'
+  ? Object.fromEntries(ROUTE_COUNTS.map((k) => [k, Number.isInteger(r[k]) && r[k] >= 0 ? Math.min(r[k], 10000) : 0]))
+  : undefined)
+
 // Gives the capture's type to the reports of this account that do not have one yet
 async function applyCapture(capture) {
   const type = capture.detectedType || 'other'
@@ -94,6 +100,7 @@ async function runCapture(captureId) {
   const data = {
     status: 'done', kind: r.kind || null, title: String(r.title || '').slice(0, 200), about: String(r.about || '').slice(0, 1000),
     texts, messages: messagesOf(r.messages, new Set(media.map((m) => m.position))),
+    routes: routesOf(r.routes),
     photo: photo && photo.length <= MAX_PHOTO ? photo : null, finishedAt: new Date(),
   }
   data.detectedType = detectType(textOf(data)).type

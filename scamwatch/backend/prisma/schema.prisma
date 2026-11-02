@@ -61,6 +61,7 @@ model Capture {
   about        String    @default("")
   texts        Json      @default("[]") // the account's messages as plain text (type detection)
   messages     Json      @default("[]") // conversation with the bot, or channel / group history: [{id, date, from, text, buttons, media}]
+  routes       Json?     // a bot's buttons after completion: {total, covered, ended, failed, missing, passes}
   photo        Bytes?
   media        CaptureMedia[]
   detectedType String?
