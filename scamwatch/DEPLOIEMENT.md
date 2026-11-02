@@ -55,6 +55,8 @@ Pour déployer depuis `main`, fusionnez d'abord la branche (pull request sur Git
 ### 1.3 Variables
 Dans les **Variables** du service : **Raw Editor**, collez le bloc complet, **Update Variables**, puis redéployez. La liste est aussi dans `scamwatch/backend/.env.example`.
 
+> Le bloc avec les vraies valeurs de production est dans `M:\Travail\mario\SCAMWATCH-DEPLOY.local.md`, sur le PC de développement uniquement : son nom finit par `.local.md`, donc git ne le pousse jamais. Ce guide-ci, lui, est sur GitHub et ne contient aucune clé.
+
 Certaines valeurs viennent du `.env` de la plateforme bots, d'autres **doivent** être neuves :
 
 | Variable | Valeur | Reprise de la plateforme bots ? |
