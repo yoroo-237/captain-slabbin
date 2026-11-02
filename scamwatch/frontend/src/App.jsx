@@ -128,6 +128,8 @@ export default function App() {
         <button className="primary" disabled={status.state === 'sending' || short}>
           {status.state === 'sending' ? t.sending : user ? t.submitCost(cost) : t.loginAndReport}
         </button>
+        {/* Shown but never active: no batch of reports is sent */}
+        <button type="button" className="ghost batch" disabled title={t.batchOff}>{t.batch}</button>
         {status.message && (
           <p className={`msg ${status.state}`}>
             {status.message}
