@@ -33,8 +33,10 @@ Standalone project of this repository, with its own Railway project, served on i
 
 ## Super admin (`/#admin`)
 
-The account named by `SUPERADMIN_USERNAME` is created or updated at every start with
-`SUPERADMIN_PASSWORD` (the password never lives in the code).
+The account named by `SUPERADMIN_USERNAME` is created once, at the first start, with
+`SUPERADMIN_PASSWORD` (the password never lives in the code). It is then kept as it is: its
+password is changed from the site (My account). Lost password: `RESET_SUPERADMIN_PASSWORD=true`
+for one deploy puts the variable's password back.
 
 - Moderation: reports and screenshots per account, confirm, reject, back to pending, add to whitelist.
 - Wallet: funds received, reserve addresses, sweep per currency, deposits (manual credit for XMR).

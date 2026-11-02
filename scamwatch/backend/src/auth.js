@@ -1,6 +1,8 @@
 // User accounts: username + password, a signed token in the Authorization header.
-// The super admin (MKO) is created or updated at every start from SUPERADMIN_USERNAME
-// and SUPERADMIN_PASSWORD, so the password never lives in the code.
+// The super admin (MKO) is created once, at the first start, from SUPERADMIN_USERNAME
+// and SUPERADMIN_PASSWORD (the password never lives in the code). After that the account
+// is kept as it is in the database: its password is changed from the site.
+// Lost password: RESET_SUPERADMIN_PASSWORD=true puts the variable's password back.
 
 import crypto from 'node:crypto'
 import { promisify } from 'node:util'
@@ -58,13 +60,18 @@ export async function bootstrapSuperadmin() {
   const username = process.env.SUPERADMIN_USERNAME?.trim().toLowerCase()
   const password = process.env.SUPERADMIN_PASSWORD
   if (!username || !password) return console.warn('[auth] SUPERADMIN_USERNAME / SUPERADMIN_PASSWORD not set: no super admin account')
+
+  const reset = process.env.RESET_SUPERADMIN_PASSWORD === 'true'
+  if (!reset && await prisma.user.findUnique({ where: { username }, select: { id: true } })) {
+    return console.log(`[auth] super admin "${username}" already exists, kept as is`)
+  }
   const passwordHash = await hashPassword(password)
   await prisma.user.upsert({
     where: { username },
     update: { passwordHash, role: 'superadmin', isActive: true },
     create: { username, passwordHash, role: 'superadmin' },
   })
-  console.log(`[auth] super admin "${username}" ready`)
+  console.log(`[auth] super admin "${username}" ${reset ? 'password reset from the variables' : 'created'}`)
 }
 
 // Wrong passwords per IP: 10 tries, then blocked 15 minutes
@@ -103,6 +110,17 @@ export function authRouter(hashIp) {
   })
 
   r.get('/me', requireUser, (req, res) => res.json({ user: publicUser(req.user) }))
+
+  // Any signed-in user, the super admin included, changes their own password
+  r.post('/password', requireUser, async (req, res) => {
+    const current = String(req.body?.current || '')
+    const next = String(req.body?.next || '')
+    if (next.length < 8 || next.length > 200) return res.status(400).json({ error: 'weak_password' })
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } })
+    if (!(await verifyPassword(current, user.passwordHash))) return res.status(401).json({ error: 'wrong_password' })
+    await prisma.user.update({ where: { id: user.id }, data: { passwordHash: await hashPassword(next) } })
+    res.json({ ok: true })
+  })
 
   return r
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, session, safeLink, fmtCrypto, fmtUsd } from './api.js'
+import { PasswordCard } from './Auth.jsx'
 
 const FILTERS = ['pending', 'confirmed', 'rejected', 'all']
 const TABS = ['moderation', 'wallet', 'whitelist', 'settings']
@@ -376,7 +377,7 @@ export default function Admin({ t, lang, user }) {
       {tab === 'moderation' && <Moderation t={t} lang={lang} />}
       {tab === 'wallet' && <WalletAdmin t={t} lang={lang} />}
       {tab === 'whitelist' && <Whitelist t={t} lang={lang} />}
-      {tab === 'settings' && <Settings t={t} />}
+      {tab === 'settings' && <div className="admin"><Settings t={t} /><PasswordCard t={t} /></div>}
     </>
   )
 }

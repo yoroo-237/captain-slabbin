@@ -1,6 +1,45 @@
 import { useState } from 'react'
 import { api } from './api.js'
 
+// Change one's own password (users and super admin)
+export function PasswordCard({ t }) {
+  const [current, setCurrent] = useState('')
+  const [next, setNext] = useState('')
+  const [msg, setMsg] = useState(null)
+  const [busy, setBusy] = useState(false)
+
+  const submit = async (e) => {
+    e.preventDefault()
+    setBusy(true); setMsg(null)
+    try {
+      await api('/api/auth/password', { method: 'POST', body: JSON.stringify({ current, next }) })
+      setCurrent(''); setNext('')
+      setMsg({ ok: true, text: t.auth.passwordChanged })
+    } catch (err) {
+      setMsg({ ok: false, text: t.auth.errors[err.code] || t.error })
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <section className="card">
+      <h2>{t.auth.account}</h2>
+      <form onSubmit={submit}>
+        <label>
+          {t.auth.currentPassword}
+          <input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" required />
+        </label>
+        <label>
+          {t.auth.newPassword}
+          <input type="password" value={next} onChange={(e) => setNext(e.target.value)} autoComplete="new-password" minLength={8} required />
+          <span className="hint">{t.auth.passwordHint}</span>
+        </label>
+        <button className="primary" disabled={busy}>{t.auth.changePassword}</button>
+        {msg && <p className={`msg ${msg.ok ? 'ok' : 'error'}`}>{msg.text}</p>}
+      </form>
+    </section>
+  )
+}
+
 // Sign in or create an account; onDone receives { token, user }
 export default function Auth({ t, onDone }) {
   const [mode, setMode] = useState('login')

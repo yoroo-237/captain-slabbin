@@ -26,7 +26,7 @@ Plateforme de signalement des comptes Telegram frauduleux, avec portefeuille cry
 
 ## 0. Sécurité, à faire en premier
 
-1. **Mot de passe super admin** : il n'est jamais écrit dans le code, seulement dans la variable Railway `SUPERADMIN_PASSWORD`. Choisissez un mot de passe **long et aléatoire** (20 caractères ou plus). Celui envoyé dans la conversation (`Admin001@`) est trop court et doit être considéré comme connu : ne l'utilisez pas.
+1. **Mot de passe super admin** : il n'est jamais écrit dans le code. Le mot de passe de départ vient de la variable Railway `SUPERADMIN_PASSWORD` ; changez-le ensuite depuis le site (**Admin → Réglages → Mon compte**), de préférence pour un mot de passe long et aléatoire, différent de celui des autres plateformes.
 2. **Seeds du portefeuille** : générez **de nouvelles seeds** pour ScamWatch (voir 1.3), différentes de celles des boutiques et de la plateforme bots. Les adresses sont dérivées sur une branche à part (`m/44'/coin'/7'/0/<n° de dépôt>`), donc une seed partagée ne crée pas de collision, mais une seed dédiée limite les dégâts si l'une fuit.
 3. **Boutiques** : leurs webhooks de dépôt créditent sans vérifier la blockchain (voir la section 6). À corriger avant d'ouvrir ScamWatch au public, puisque vous y renvoyez vos utilisateurs.
 
@@ -66,7 +66,7 @@ Certaines valeurs viennent du `.env` de la plateforme bots, d'autres **doivent**
 | `IP_SALT` | chaîne aléatoire¹, **à ne plus jamais changer** ensuite | nouvelle |
 | `JWT_SECRET` | chaîne aléatoire de 32 caractères ou plus¹ | **non**, nouvelle |
 | `SUPERADMIN_USERNAME` | `mko` (la casse est ignorée : `MKO` marche aussi à la connexion) | oui |
-| `SUPERADMIN_PASSWORD` | mot de passe long et aléatoire¹ ² | **non**, nouveau |
+| `SUPERADMIN_PASSWORD` | mot de passe de départ du super admin² | au choix |
 | `BTC_HD_SEED` | phrase BIP39 de 12 mots¹ (BTC, LTC, DOGE) | **non**, nouvelle |
 | `ETH_HD_SEED` | autre phrase BIP39 de 12 mots¹ | **non**, nouvelle |
 | `BLOCKCYPHER_TOKEN` | jeton **actif** du compte blockcypher.com | **oui**, le jeton du compte sert à tous les projets |
@@ -86,10 +86,10 @@ Lancée depuis `scamwatch` (sans `\backend`), la commande échoue avec `Cannot f
 
 Gardez une copie des deux seeds hors ligne : elles contrôlent les fonds déposés. Ne les réutilisez jamais ailleurs, et ne reprenez jamais celles de la plateforme bots : les deux projets se partageraient alors les mêmes clés.
 
-² Le compte super admin est **recréé à chaque démarrage** à partir de ces deux variables. Pour changer de mot de passe, modifiez `SUPERADMIN_PASSWORD` et redéployez. Mot de passe perdu : même chose.
+² Le compte super admin est créé **une seule fois**, au premier démarrage, à partir de ces deux variables. Ensuite il reste tel quel en base : un mot de passe changé dans **Mon compte** survit aux redéploiements, et modifier la variable ne change plus rien. Mot de passe perdu : ajoutez `RESET_SUPERADMIN_PASSWORD=true`, redéployez (le mot de passe de `SUPERADMIN_PASSWORD` est remis), puis **retirez** la variable.
 
 ### 1.4 Vérifier
-Ouvrez `https://scamwatch.captainslabbin.shop/api/health` : la réponse doit être `{"ok":true}`. Dans les logs Railway, la ligne `[auth] super admin "mko" ready` confirme la création du compte.
+Ouvrez `https://scamwatch.captainslabbin.shop/api/health` : la réponse doit être `{"ok":true}`. Dans les logs Railway, la ligne `[auth] super admin "mko" created` confirme la création du compte au premier démarrage ; aux démarrages suivants, `already exists, kept as is`.
 
 ---
 

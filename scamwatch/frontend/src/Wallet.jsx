@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, CURRENCIES, fmtCrypto, fmtUsd } from './api.js'
+import { PasswordCard } from './Auth.jsx'
 
 // Balance in crypto at the live price, tokens available, top-ups and history
 export default function Wallet({ t, lang, wallet, reloadWallet }) {
@@ -152,6 +153,8 @@ export default function Wallet({ t, lang, wallet, reloadWallet }) {
           ))}
         </ul>
       </section>
+
+      <PasswordCard t={t} />
     </div>
   )
 }
