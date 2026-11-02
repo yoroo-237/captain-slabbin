@@ -478,6 +478,68 @@ function setIn(obj, path, value) {
   return next
 }
 
+// Move an item in a list (page reordering)
+const moveItem = (arr, from, to) => { const n = [...arr]; const [x] = n.splice(from, 1); n.splice(to, 0, x); return n }
+
+// Telegram-ish HTML, kept to the tags Telegram shows, for the live preview
+const PREVIEW_TAGS = /^(B|STRONG|I|EM|U|INS|S|STRIKE|DEL|CODE|PRE|A|BR|BLOCKQUOTE|SPAN)$/
+function previewHtml(html) {
+  try {
+    const doc = new DOMParser().parseFromString(`<div>${String(html || '').replace(/\n/g, '<br>')}</div>`, 'text/html')
+    doc.querySelectorAll('*').forEach(el => {
+      if (!PREVIEW_TAGS.test(el.tagName)) { el.replaceWith(...el.childNodes); return }
+      ;[...el.attributes].forEach(a => { if (!(el.tagName === 'A' && a.name === 'href')) el.removeAttribute(a.name) })
+    })
+    return doc.body.firstChild.innerHTML
+  } catch { return String(html || '') }
+}
+
+// Live preview: the bot's chat as the current look would render it. Pick a page
+// (home by default); updates as the fields are edited.
+function StylePreview({ look, defaults }) {
+  const pages = look.pages || []
+  const homeKey = look.home || pages[0]?.key || ''
+  const [key, setKey] = useState(homeKey)
+  const page = pages.find(p => p.key === key) || pages.find(p => p.key === homeKey) || pages[0] || null
+  const name = look.profile?.name || defaults.profile?.name || 'Bot'
+  const photo = look.profile?.photo
+  return (
+    <div className="admin-card" style={{ position: 'sticky', top: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+        <h3 className="admin-card-title" style={{ fontSize: '0.95rem', margin: 0 }}>Live preview</h3>
+        {pages.length > 0 && (
+          <select className="admin-input" style={{ maxWidth: 220 }} value={page?.key || ''} onChange={e => setKey(e.target.value)}>
+            {pages.map(p => <option key={p.key} value={p.key}>{p.key === look.home ? `${p.key} (home)` : p.key}</option>)}
+          </select>
+        )}
+      </div>
+      <div style={{ marginTop: 10, background: '#e7ebf0', borderRadius: 12, padding: 12 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+          {photo
+            ? <img src={photo} alt="" width="32" height="32" style={{ borderRadius: '50%', objectFit: 'cover' }} />
+            : <span style={{ width: 32, height: 32, borderRadius: '50%', background: '#4361ee', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 14 }}>{String(name).replace(/^@/, '').slice(0, 1).toUpperCase()}</span>}
+          <b>{name}</b>
+        </div>
+        {!page ? <div style={{ color: '#888', fontSize: 14 }}>No page yet — add one below.</div> : (
+          <div style={{ background: '#fff', borderRadius: '12px 12px 12px 4px', padding: '8px 12px', fontSize: 14, lineHeight: 1.5 }}>
+            {page.image && <img src={page.image} alt="" style={{ maxWidth: '100%', borderRadius: 8, marginBottom: 6, display: 'block' }} />}
+            <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }} dangerouslySetInnerHTML={{ __html: previewHtml(page.html || '') }} />
+            {(page.buttons || []).length > 0 && (
+              <div style={{ display: 'grid', gap: 4, marginTop: 8 }}>
+                {page.buttons.map((row, ri) => (
+                  <div key={ri} style={{ display: 'flex', gap: 4 }}>
+                    {row.map((b, bi) => <span key={bi} style={{ flex: 1, textAlign: 'center', background: '#4361ee', color: '#fff', borderRadius: 6, padding: '6px 8px', fontSize: 13 }}>{b.text}</span>)}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function StyleEditor({ initial, defaults, shelves: allShelves, busy, act, onClose }) {
   const [name, setName] = useState(initial.name)
   const [look, setLook] = useState(initial.look)
@@ -539,6 +601,8 @@ function StyleEditor({ initial, defaults, shelves: allShelves, busy, act, onClos
         <label className="admin-label">Style name</label>
         <input className="admin-input" value={name} onChange={e => setName(e.target.value)} />
       </div>
+
+      <StylePreview look={look} defaults={defaults} />
 
       <h3 className="admin-card-title" style={{ fontSize: '0.95rem', marginTop: 20 }}>Profile in Telegram</h3>
       {field(['profile', 'name'], 'Bot name')}
@@ -621,7 +685,9 @@ function StyleEditor({ initial, defaults, shelves: allShelves, busy, act, onClos
         </>
       )}
 
-      <h3 className="admin-card-title" style={{ fontSize: '0.95rem', marginTop: 20 }}>Screens</h3>
+      <details style={{ marginTop: 20 }}>
+      <summary style={{ cursor: 'pointer', fontWeight: 700, fontSize: '0.95rem' }}>Advanced styling — generic screens, buttons, images</summary>
+      <h3 className="admin-card-title" style={{ fontSize: '0.95rem', marginTop: 16 }}>Screens</h3>
       {TEXT_FIELDS.map(([k, l]) => field(['texts', k], l, { area: true }))}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '0 12px' }}>
         {field(['rule'], 'Divider line')}
@@ -642,6 +708,7 @@ function StyleEditor({ initial, defaults, shelves: allShelves, busy, act, onClos
       <h3 className="admin-card-title" style={{ fontSize: '0.95rem', marginTop: 20 }}>Images (url)</h3>
       {IMAGE_FIELDS.map(([k, l]) => field(['images', k], l))}
       {shelves.map(c => field(['images', 'shelves', c.slug], `Shelf: ${c.name}`))}
+      </details>
 
       <h3 className="admin-card-title" style={{ fontSize: '0.95rem', marginTop: 20 }}>Pages</h3>
       <p style={{ ...muted, marginTop: 0 }}>Your own screens, each with its text, image and buttons. A button opens another page or one of the shop's screens. Pick a home page to have /start open it instead of the shelves.</p>
@@ -656,9 +723,17 @@ function StyleEditor({ initial, defaults, shelves: allShelves, busy, act, onClos
         <input className="admin-input" style={{ marginBottom: 10 }} type="search" placeholder={`Search the ${pages.length} pages (command or text)`} value={pageFilter} onChange={e => { setPageFilter(e.target.value); setPageLimit(20) }} />
       )}
       {shownPages.slice(0, pageLimit).map(({ p, i }) => (
-        <PageEditor key={i} page={p} pages={pages} shelves={shelves}
-          onChange={np => setPages(pages.map((x, j) => j === i ? np : x))}
-          onRemove={() => { setPages(pages.filter((_, j) => j !== i)); if (look.home === p.key) set(['home'], '') }} />
+        <div key={i}>
+          {!q && pages.length > 1 && (
+            <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', marginBottom: 2 }}>
+              <button type="button" className="admin-btn admin-btn-secondary admin-btn-sm" disabled={i === 0} onClick={() => setPages(moveItem(pages, i, i - 1))} title="Move up">↑</button>
+              <button type="button" className="admin-btn admin-btn-secondary admin-btn-sm" disabled={i === pages.length - 1} onClick={() => setPages(moveItem(pages, i, i + 1))} title="Move down">↓</button>
+            </div>
+          )}
+          <PageEditor page={p} pages={pages} shelves={shelves}
+            onChange={np => setPages(pages.map((x, j) => j === i ? np : x))}
+            onRemove={() => { setPages(pages.filter((_, j) => j !== i)); if (look.home === p.key) set(['home'], '') }} />
+        </div>
       ))}
       {q && shownPages.length === 0 && <p className="admin-text-muted">No page matches.</p>}
       {shownPages.length > pageLimit && (
