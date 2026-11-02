@@ -23,6 +23,7 @@ import path from 'path';
 import { prisma } from '../src/db.js';
 import { cmdName } from '../src/services/telegramCommands.js';
 import { keptScreens, isBack, commandOf, typedOf, pageKeys, buildGraph } from '../src/services/captureMap.js';
+import { extractInvoiceTemplate } from '../src/services/replicaInvoice.js';
 import { captureMedia } from './capture-media.js';
 import { applyStyle } from '../src/services/telegram.service.js';
 import { currentTenant } from '../src/tenant.js';
@@ -234,14 +235,19 @@ const styleProfile = {
 const derivedSource = String(bot).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20);
 const catalogArg = args.includes('--catalog') ? String(opt('--catalog') || '') : null;
 const catalogSource = (catalogArg === null ? derivedSource : catalogArg.toLowerCase().replace(/[^a-z0-9]/g, '')).slice(0, 20);
+// The final invoice in the original's own layout (a draft the user refines in the
+// editor); cartPay renders the real order into it, and falls back to the standard
+// invoice when there is none.
+const invoice = extractInvoiceTemplate(screens);
 const look = {
   layout: 'commands', siteLinks: false, upperTitles: false, home,
   pages: await withImages(pages),
   replica: true,
   ...(catalogSource ? { catalog: catalogSource } : {}),
+  ...(invoice ? { invoice } : {}),
   ...(Object.keys(styleProfile).length ? { profile: styleProfile } : {}),
 };
-console.log(`Replica "${name}": ${look.pages.length} pages, home ${home || '(none)'}, ${commands.length} commands, catalog ${catalogSource || '(shop\'s own)'}${personal ? `, ${personal} anti-phishing screen(s) left out` : ''}. Identity: ${styleProfile.name || '(name not captured)'}${styleProfile.photo ? ' + photo' : ''}.`);
+console.log(`Replica "${name}": ${look.pages.length} pages, home ${home || '(none)'}, ${commands.length} commands, catalog ${catalogSource || '(shop\'s own)'}${invoice ? ', invoice template (draft — refine it in the editor)' : ''}${personal ? `, ${personal} anti-phishing screen(s) left out` : ''}. Identity: ${styleProfile.name || '(name not captured)'}${styleProfile.photo ? ' + photo' : ''}.`);
 if (dry) { await applied({ id: 0 }); console.log('Dry run: nothing written.'); process.exit(0); }
 const existing = await prisma.botStyle.findFirst({ where: { name }, orderBy: { tenantId: 'desc' } });
 const mine = existing && (!currentTenant() || existing.tenantId === currentTenant()) ? existing : null;
