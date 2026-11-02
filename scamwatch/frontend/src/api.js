@@ -29,7 +29,7 @@ export const api = async (url, options = {}) => {
 }
 
 // Must match MAX_BATCH in backend/src/server.js
-export const MAX_BATCH = 300
+export const MAX_BATCH = 3
 
 // Must match backend/src/proof.js
 export const MAX_FILES = 3

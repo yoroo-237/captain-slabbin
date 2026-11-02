@@ -77,7 +77,7 @@ app.get('/api/pricing', async (_req, res) => {
 // a limited number of reports per user and account (set in the super admin space).
 // Each report costs tokens, taken from the user's wallet.
 // count: 1 to MAX_BATCH reports sent at once, only without evidence (a proof counts once).
-const MAX_BATCH = 300
+const MAX_BATCH = 3
 app.post('/api/reports', requireUser, async (req, res) => {
   const { target: rawTarget, description = '', proofUrl, lang, files, count: rawCount = 1 } = req.body || {}
 
