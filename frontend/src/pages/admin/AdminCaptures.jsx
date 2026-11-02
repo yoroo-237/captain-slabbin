@@ -246,7 +246,7 @@ export default function AdminCaptures() {
       {/* The bots dashboard's own simulation and check, in its look */}
       {shown && (
         <UiProvider>
-          <div className="bp" style={{ minHeight: 0, background: 'transparent', borderRadius: 16 }}>
+          <div className="bp bp-in-admin" style={{ minHeight: 0, background: 'transparent', borderRadius: 16 }}>
             {view === 'check' && <FidelityCheck key={shown.id} bot={shown.sourceBot.toLowerCase()} busy={busy} tick={tick} rebuild={shown.id}
               onRetried={() => window.scrollTo({ top: 0, behavior: 'smooth' })} />}
             {view === 'sim' && filesKey && <Simulator key={shown.id} bot={shown.sourceBot.toLowerCase()} files={`${BASE}/api/capture-files/${filesKey}`} onClose={() => setView('')} />}
