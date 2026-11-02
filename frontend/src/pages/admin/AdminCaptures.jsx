@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { adminFetch } from './utils/api.js'
 import { askConfirm, showMessage } from './dialog'
+import { BASE } from '../../utils/api.js'
 import { useTask, taskName, lineKind } from '../../bots/CapturePage.jsx'
+import Simulator from '../../bots/Simulator.jsx'
+import FidelityCheck from '../../bots/FidelityCheck.jsx'
+import { UiProvider } from '../../bots/ui.jsx'
+import '../../bots/bots.css'
 
 // Admin → Bot captures: keeps the replica styles up to date. Only the bot a style
 // was replicated from can be captured again here (the server refuses any other):
 // the capture resumes where it stopped, runs to the end, then that same style is
-// rebuilt and the bots using it get its new screens and commands.
+// rebuilt and the bots using it get its new screens and commands. The capture of
+// the style picked can be played in the simulation and checked route by route, the
+// routes missing run again (then the style is rebuilt the same way).
 const cap = (path, body) => adminFetch(`/admin/capture${path}`, body === undefined ? {} : { method: 'POST', body: JSON.stringify(body) })
 const muted = { fontSize: '0.8rem', color: '#777', marginTop: 4 }
 const LOG_COLORS = { cmd: '#8a94a6', ok: '#28a745', err: '#dc3545', info: '#b8860b' }
@@ -130,17 +137,20 @@ export default function AdminCaptures() {
   const [captures, setCaptures] = useState([])
   const [picked, setPicked] = useState('')
   const [error, setError] = useState('')
+  const [filesKey, setFilesKey] = useState('')
+  const [view, setView] = useState('') // '' | 'sim' | 'check'
+  const [tick, setTick] = useState(0)
   const load = useCallback(async () => {
     try {
       const [t, c] = await Promise.all([adminFetch('/admin/telegram'), cap('/captures')])
       setStyles((t.styles || []).filter(s => s.sourceBot).map(s => ({ ...s, bots: (t.bots || []).filter(b => b.styleId === s.id).map(b => b.username) })))
-      setCaptures(c.captures || [])
+      setCaptures(c.captures || []); setFilesKey(c.key || '')
     } catch (e) { setError(e.message) }
   }, [])
   useEffect(() => { load() }, [load])
   useEffect(() => {
     onDone.current = () => {
-      load()
+      load(); setTick(t => t + 1)
       const tail = lines.slice(-12)
       const said = [...tail].reverse().find(l => !l.startsWith('-- terminé') && !l.startsWith('$ ')) || ''
       showMessage(said || 'The update is finished.')
@@ -149,6 +159,9 @@ export default function AdminCaptures() {
 
   const busy = state.running
   const captureOf = bot => captures.find(c => c.name === String(bot).toLowerCase())
+  const current = styles?.find(x => String(x.id) === String(picked)) || styles?.[0]
+  const shown = view && current && captureOf(current.sourceBot) ? current : null
+  const toggleView = v => setView(x => (x === v ? '' : v))
   const update = async s => {
     const what = s.replica ? 'this style is rebuilt and the bots using it get its new screens and commands'
       : 'its information pages and its welcome and menu pictures are updated (its catalog, cart and checkout stay as they are)'
@@ -174,7 +187,7 @@ export default function AdminCaptures() {
         {!styles ? <p style={muted}>Loading…</p> : styles.length === 0 ? (
           <p style={{ ...muted, marginTop: 0 }}>No style made from a bot yet. A style copied or replicated from a bot shows here, ready to be updated from that bot.</p>
         ) : (() => {
-          const s = styles.find(x => String(x.id) === String(picked)) || styles[0]
+          const s = current
           const c = captureOf(s.sourceBot)
           return (
             <>
@@ -185,6 +198,8 @@ export default function AdminCaptures() {
                     {styles.map(x => <option key={x.id} value={x.id}>{x.name} (from @{x.sourceBot})</option>)}
                   </select>
                   <button type="button" className="admin-btn admin-btn-primary" disabled={busy} onClick={() => update(s)}>{busy ? 'Updating…' : 'Update'}</button>
+                  {c && <button type="button" className={`admin-btn ${view === 'sim' ? 'admin-btn-primary' : 'admin-btn-secondary'}`} onClick={() => toggleView('sim')}>Simulate</button>}
+                  {c && <button type="button" className={`admin-btn ${view === 'check' ? 'admin-btn-primary' : 'admin-btn-secondary'}`} onClick={() => toggleView('check')}>Check</button>}
                 </div>
               </div>
               <div style={muted}>
@@ -204,6 +219,17 @@ export default function AdminCaptures() {
         <Journal lines={lines} />
         <p style={muted}>Stopping keeps what was captured and leaves the style as it was; the next update resumes from there.</p>
       </div>
+
+      {/* The bots dashboard's own simulation and check, in its look */}
+      {shown && (
+        <UiProvider>
+          <div className="bp" style={{ minHeight: 0, background: 'transparent', borderRadius: 16 }}>
+            {view === 'check' && <FidelityCheck key={shown.id} bot={shown.sourceBot.toLowerCase()} busy={busy} tick={tick} rebuild={shown.id}
+              onRetried={() => window.scrollTo({ top: 0, behavior: 'smooth' })} />}
+            {view === 'sim' && filesKey && <Simulator key={shown.id} bot={shown.sourceBot.toLowerCase()} files={`${BASE}/api/capture-files/${filesKey}`} onClose={() => setView('')} />}
+          </div>
+        </UiProvider>
+      )}
     </div>
   )
 }

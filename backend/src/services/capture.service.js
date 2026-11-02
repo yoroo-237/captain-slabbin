@@ -313,26 +313,32 @@ export async function removeCapture(userId, bot) {
 // Styles → "Update from the bot": the capture of the style's bot is resumed (what
 // was played is not played again) and finished, then the same style is rebuilt
 // from it in place; the bots using it get its new screens and commands at once.
-export async function refreshStyle(user, styleId) {
-  const userId = Number(user.sub);
+// The style to rebuild from its bot's capture, once that capture is finished
+async function styleToRebuild(user, styleId) {
   const style = await prisma.botStyle.findUnique({ where: { id: Number(styleId) } });
   if (!style) throw Object.assign(new Error('Style not found.'), { status: 404 });
   const bot = sourceBotOf(style);
   if (!bot) throw bad('This style was not made from a capture: it has no bot to capture again.');
+  const tenant = tenantOfStaff(user);
+  if (tenant && style.tenantId !== tenant) throw bad('A shared style of the platform cannot be updated: make your own replica.');
   // A replica is rebuilt; a shop style (its own catalog and checkout) only gets
   // the information pages and the welcome and menu pictures
   const replica = !!style.look?.replica;
-  const tenant = tenantOfStaff(user);
-  if (tenant && style.tenantId !== tenant) throw bad('A shared style of the platform cannot be updated: make your own replica.');
+  return { style, bot, rebuild: async (userId, code) => {
+    if (code !== 0) { emit(userId, 'line', `-- Capture inachevée : le style « ${style.name} » n'a pas été modifié.`); return; }
+    await importCapture(user, { bot, kind: 'style', dry: false, name: style.name, refresh: true, merge: !replica });
+  } };
+}
+
+export async function refreshStyle(user, styleId) {
+  const userId = Number(user.sub);
+  const { style, bot, rebuild } = await styleToRebuild(user, styleId);
   busy(userId);
   const args = exploreArgs(userId, { bots: [bot], profile: 'explorer', maxActions: 20000 });
   await fs.mkdir(capturesOf(userId), { recursive: true });
   await fs.rm(stopFile(userId), { force: true });
   emit(userId, 'line', `== Mise à jour du style « ${style.name} » depuis @${bot}`);
-  run(userId, 'Exploration', PYTHON, args, TOOL, await userEnv(userId), async code => {
-    if (code !== 0) { emit(userId, 'line', `-- Capture inachevée : le style « ${style.name} » n'a pas été modifié.`); return; }
-    await importCapture(user, { bot, kind: 'style', dry: false, name: style.name, refresh: true, merge: !replica });
-  });
+  run(userId, 'Exploration', PYTHON, args, TOOL, await userEnv(userId), code => rebuild(userId, code));
   return { ...state(userId), bot, style: style.name };
 }
 
@@ -381,8 +387,12 @@ export async function checkFidelity(userId, bot, styleId) {
 }
 
 // Runs again the routes picked in the check (buttons of a screen, commands, typed
-// texts), then the rest of the queue; what was played is not played again
-export async function retryRoutes(userId, bot, items) {
+// texts), then the rest of the queue; what was played is not played again. With
+// `styleId` (the site's update page), that style is rebuilt once it is finished.
+export async function retryRoutes(user, bot, items, styleId) {
+  const userId = Number(user.sub);
+  const target = styleId ? await styleToRebuild(user, styleId) : null;
+  if (target && target.bot.toLowerCase() !== String(bot).toLowerCase()) throw bad('This style was not made from this bot.');
   busy(userId);
   const dir = captureDir(userId, bot);
   await fs.access(path.join(dir, 'state.json')).catch(() => { throw bad('This capture cannot be resumed: run it again from the start.'); });
@@ -399,7 +409,7 @@ export async function retryRoutes(userId, bot, items) {
   const args = [...exploreArgs(userId, { bots: [bot], profile: 'explorer', maxActions: 20000 }), '--retry', file];
   await fs.rm(stopFile(userId), { force: true });
   emit(userId, 'line', `== @${bot} : ${picked.length} route(s) relancée(s) depuis la vérification`);
-  run(userId, 'Exploration', PYTHON, args, TOOL, await userEnv(userId));
+  run(userId, 'Exploration', PYTHON, args, TOOL, await userEnv(userId), target ? code => target.rebuild(userId, code) : undefined);
   return state(userId);
 }
 
