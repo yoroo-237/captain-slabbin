@@ -141,3 +141,48 @@ input[type='file']::file-selector-button {
 .shot { width: 120px; height: 120px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); display: block; }
 a:hover .shot { border-color: var(--blue); }
 .shot.placeholder { background: var(--light); }
+
+/* Header navigation */
+.nav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.pill {
+  color: var(--white); text-decoration: none; font-weight: 700; font-size: 0.8rem; cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.5); background: transparent; border-radius: 999px; padding: 6px 14px;
+}
+.pill:hover { background: rgba(255, 255, 255, 0.1); }
+.pill.on { background: var(--white); color: var(--navy); border-color: var(--white); }
+@media (max-width: 600px) { .topbar-inner { flex-direction: column; align-items: flex-start; } .nav { justify-content: flex-start; } }
+
+.cost { margin: -6px 0 14px; color: var(--blue); font-weight: 700; font-size: 0.9rem; }
+.cost span { color: var(--muted); font-weight: 600; }
+.msg.info { color: var(--navy); background: var(--light); border: 1px solid var(--line); margin-bottom: 14px; }
+.msg .link { font-size: inherit; }
+.page-tabs { margin: 0 0 18px; }
+.full { grid-column: 1 / -1; }
+.narrow-wide { max-width: 560px; }
+h3 { font-size: 0.95rem; margin: 18px 0 10px; font-weight: 800; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.78rem; word-break: break-all; }
+.ghost.small { padding: 4px 12px; font-size: 0.8rem; }
+.inline { display: flex; gap: 8px; align-items: center; }
+.inline input { max-width: 220px; }
+
+/* Wallet */
+.wallet { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+@media (max-width: 760px) { .wallet { grid-template-columns: 1fr; } }
+.balance { border-top: 4px solid var(--sky); }
+.big { font-size: 2.6rem; font-weight: 900; margin: 0; line-height: 1.1; }
+.big span { font-size: 1rem; font-weight: 700; color: var(--muted); }
+.holdings { list-style: none; padding: 0; margin: 16px 0 12px; display: grid; gap: 6px; }
+.holdings li { display: grid; grid-template-columns: 60px 1fr auto; gap: 12px; padding: 8px 12px; background: var(--light); border-radius: 6px; font-size: 0.9rem; }
+.form-grid { display: grid; gap: 12px; }
+.deposit { margin-top: 16px; padding: 14px; border: 1px dashed var(--blue); border-radius: var(--radius); background: var(--light); display: grid; gap: 10px; }
+.address { display: flex; gap: 8px; align-items: center; }
+.address code { flex: 1; min-width: 0; font-size: 0.82rem; word-break: break-all; background: var(--white); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+.address .ghost { padding: 8px 12px; }
+.pos { color: var(--ok); font-weight: 700; }
+.neg { color: var(--navy); font-weight: 700; }
+.badge.protected { background: var(--sky); color: var(--white); margin-right: 6px; }
+
+/* Admin funds */
+.stats { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+.stat { display: grid; gap: 2px; padding: 12px 16px; background: var(--light); border-radius: var(--radius); min-width: 140px; }
+.stat strong { font-size: 1.2rem; font-weight: 800; }

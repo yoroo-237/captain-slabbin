@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { messages, TYPE_KEYS } from './i18n.js'
-import { api, readAsDataUrl, MAX_FILES, MAX_FILE_BYTES, IMAGE_TYPES } from './api.js'
+import { api, session, readAsDataUrl, MAX_FILES, MAX_FILE_BYTES, IMAGE_TYPES } from './api.js'
 import Admin from './Admin.jsx'
+import Auth from './Auth.jsx'
+import Wallet from './Wallet.jsx'
 
 const initialLang = () => {
   try {
@@ -11,12 +13,21 @@ const initialLang = () => {
   return navigator.language?.startsWith('fr') ? 'fr' : 'en'
 }
 
-const isAdminRoute = () => window.location.hash === '#admin'
+const ROUTES = ['wallet', 'login', 'admin']
+const currentRoute = () => {
+  const r = window.location.hash.replace(/^#/, '')
+  return ROUTES.includes(r) ? r : ''
+}
+const go = (route) => { window.location.hash = route }
 
 export default function App() {
   const [lang, setLang] = useState(initialLang)
   const t = messages[lang]
-  const [adminRoute, setAdminRoute] = useState(isAdminRoute)
+  const [route, setRoute] = useState(currentRoute)
+
+  const [user, setUser] = useState(null)
+  const [wallet, setWallet] = useState(null)
+  const [pricing, setPricing] = useState(null)
 
   const [target, setTarget] = useState('')
   const [description, setDescription] = useState('')
@@ -37,11 +48,31 @@ export default function App() {
     try { localStorage.setItem('lang', l) } catch {}
   }
 
+  const reloadWallet = () => api('/api/wallet').then(setWallet).catch(() => {})
+
+  const logout = () => {
+    session.set(''); setUser(null); setWallet(null)
+    if (['wallet', 'admin'].includes(currentRoute())) go('')
+  }
+
+  const signedIn = ({ token, user: u }) => {
+    session.set(token); setUser(u)
+    go(u.role === 'superadmin' ? 'admin' : '')
+  }
+
   useEffect(() => {
-    const onHash = () => setAdminRoute(isAdminRoute())
+    const onHash = () => setRoute(currentRoute())
     window.addEventListener('hashchange', onHash)
-    return () => window.removeEventListener('hashchange', onHash)
+    window.addEventListener('scamwatch:logout', logout)
+    if (session.token) api('/api/auth/me').then((r) => setUser(r.user)).catch(() => {})
+    api('/api/pricing').then(setPricing).catch(() => {})
+    return () => {
+      window.removeEventListener('hashchange', onHash)
+      window.removeEventListener('scamwatch:logout', logout)
+    }
   }, [])
+
+  useEffect(() => { if (user) reloadWallet() }, [user?.id])
 
   const loadTargets = (q = '') =>
     api(`/api/targets?q=${encodeURIComponent(q)}`).then(setTargets).catch(() => {})
@@ -86,24 +117,28 @@ export default function App() {
 
   const submit = async (e) => {
     e.preventDefault()
+    if (!user) return go('login')
     setStatus({ state: 'sending', message: '' })
     try {
       const encoded = await Promise.all(files.map(readAsDataUrl))
-      await api('/api/reports', {
+      const r = await api('/api/reports', {
         method: 'POST',
         body: JSON.stringify({
           target, description, proofUrl: proofUrl || undefined, type: type || undefined, lang,
           files: encoded.length ? encoded : undefined,
         }),
       })
-      setStatus({ state: 'ok', message: t.thanks })
+      setStatus({ state: 'ok', message: r.tokensSpent ? t.thanksPaid(r.tokensSpent) : t.thanks })
       setTarget(''); setDescription(''); setProofUrl(''); setType(''); setDetected(null)
       setFiles([]); setFileInputKey((k) => k + 1)
-      loadTargets(query); loadStats()
+      loadTargets(query); loadStats(); reloadWallet()
     } catch (err) {
-      setStatus({ state: 'error', message: t.errors[err.code] || t.error })
+      setStatus({ state: 'error', message: t.errors[err.code] || t.error, code: err.code })
     }
   }
+
+  const cost = user?.role === 'superadmin' ? 0 : pricing?.reportCostTokens ?? 1
+  const short = user && wallet && cost > 0 && wallet.tokens < cost
 
   return (
     <>
@@ -113,20 +148,46 @@ export default function App() {
           <h1><a href="#" className="home">{t.title}</a></h1>
           <p className="tagline">{t.tagline}</p>
         </div>
-        <div className="lang">
-          {['en', 'fr'].map((l) => (
-            <button key={l} className={l === lang ? 'on' : ''} onClick={() => changeLang(l)}>{l.toUpperCase()}</button>
-          ))}
-        </div>
+        <nav className="nav">
+          {user ? (
+            <>
+              <a href="#wallet" className={`pill ${route === 'wallet' ? 'on' : ''}`}>
+                {wallet ? `${wallet.tokens} ${t.wallet.tokens}` : t.wallet.title}
+              </a>
+              {user.role === 'superadmin' && <a href="#admin" className={`pill ${route === 'admin' ? 'on' : ''}`}>{t.admin.title}</a>}
+              <button className="pill" onClick={logout} title={user.username}>{t.auth.logout}</button>
+            </>
+          ) : (
+            <a href="#login" className={`pill ${route === 'login' ? 'on' : ''}`}>{t.auth.login}</a>
+          )}
+          <div className="lang">
+            {['en', 'fr'].map((l) => (
+              <button key={l} className={l === lang ? 'on' : ''} onClick={() => changeLang(l)}>{l.toUpperCase()}</button>
+            ))}
+          </div>
+        </nav>
       </div>
     </header>
 
     <div className="page">
+      {route === 'admin' && <Admin t={t} lang={lang} user={user} />}
+      {route === 'login' && (user ? <section className="card narrow"><p className="muted">{t.auth.signedInAs(user.username)}</p></section> : <Auth t={t} onDone={signedIn} />)}
+      {route === 'wallet' && (user ? <Wallet t={t} lang={lang} wallet={wallet} reloadWallet={reloadWallet} /> : <Auth t={t} onDone={signedIn} />)}
 
-      {adminRoute ? <Admin t={t} lang={lang} /> : (
+      {route === '' && (
         <main>
           <section className="card">
             <h2>{t.reportTitle}</h2>
+            <p className="cost">
+              {cost > 0 ? t.costLine(cost) : t.costFree}
+              {user && wallet && cost > 0 && <span> · {t.balanceShort(wallet.tokens)}</span>}
+            </p>
+            {!user && (
+              <p className="msg info">{t.loginToReport} <a href="#login" className="link">{t.auth.login}</a></p>
+            )}
+            {short && (
+              <p className="msg error">{t.errors.insufficient_tokens} <a href="#wallet" className="link">{t.wallet.topUp}</a></p>
+            )}
             <form onSubmit={submit}>
               <label>
                 {t.target}
@@ -166,10 +227,15 @@ export default function App() {
 
               <p className="hint">{t.repeatRule}</p>
 
-              <button className="primary" disabled={status.state === 'sending'}>
-                {status.state === 'sending' ? t.sending : t.submit}
+              <button className="primary" disabled={status.state === 'sending' || short}>
+                {status.state === 'sending' ? t.sending : user ? t.submitCost(cost) : t.loginAndReport}
               </button>
-              {status.message && <p className={`msg ${status.state}`}>{status.message}</p>}
+              {status.message && (
+                <p className={`msg ${status.state}`}>
+                  {status.message}
+                  {status.code === 'insufficient_tokens' && <> <a href="#wallet" className="link">{t.wallet.topUp}</a></>}
+                </p>
+              )}
             </form>
           </section>
 

@@ -1,148 +1,59 @@
 import { useEffect, useState } from 'react'
-import { api, safeLink } from './api.js'
+import { api, session, safeLink, fmtCrypto, fmtUsd } from './api.js'
 
 const FILTERS = ['pending', 'confirmed', 'rejected', 'all']
+const TABS = ['moderation', 'wallet', 'whitelist', 'settings']
+const RESERVE = ['BTC', 'LTC', 'DOGE', 'ETH', 'XMR']
+const SWEEPABLE = ['BTC', 'LTC', 'DOGE', 'ETH']
 
-const readKey = () => {
-  try { return sessionStorage.getItem('adminKey') || '' } catch { return '' }
-}
+const name = (x) => (x.username ? `@${x.username}` : `ID ${x.tgId}`)
 
-// Screenshots need the admin header, so they are fetched as blobs
-function Screenshot({ id, adminKey, alt }) {
+// Screenshots need the session header, so they are fetched as blobs
+function Screenshot({ id, alt }) {
   const [src, setSrc] = useState(null)
   useEffect(() => {
     let url
     let alive = true
-    fetch(`/api/admin/evidence/${id}`, { headers: { Authorization: `Bearer ${adminKey}` } })
+    fetch(`/api/admin/evidence/${id}`, { headers: { Authorization: `Bearer ${session.token}` } })
       .then((r) => (r.ok ? r.blob() : null))
       .then((b) => { if (b && alive) { url = URL.createObjectURL(b); setSrc(url) } })
       .catch(() => {})
     return () => { alive = false; if (url) URL.revokeObjectURL(url) }
-  }, [id, adminKey])
+  }, [id])
   if (!src) return <span className="shot placeholder" />
   return <a href={src} target="_blank" rel="noreferrer"><img className="shot" src={src} alt={alt} /></a>
 }
 
-// How many reports without evidence one person can send for the same account
-function Settings({ t, call }) {
-  const [max, setMax] = useState('')
-  const [msg, setMsg] = useState(null)
-  const [busy, setBusy] = useState(false)
-
-  useEffect(() => {
-    call('/api/admin/settings').then((s) => setMax(String(s.maxReportsNoProof))).catch(() => {})
-  }, [])
-
-  const save = async (e) => {
-    e.preventDefault()
-    setBusy(true); setMsg(null)
-    try {
-      const s = await call('/api/admin/settings', { method: 'PUT', body: JSON.stringify({ maxReportsNoProof: Number(max) }) })
-      setMax(String(s.maxReportsNoProof))
-      setMsg({ ok: true, text: t.admin.saved })
-    } catch (err) {
-      setMsg({ ok: false, text: t.admin.errors[err.code] || t.error })
-    } finally { setBusy(false) }
-  }
-
-  return (
-    <section className="card settings">
-      <h2>{t.admin.settings}</h2>
-      <form onSubmit={save}>
-        <label>
-          {t.admin.maxNoProof}
-          <input type="number" min="0" max="1000" step="1" value={max} onChange={(e) => setMax(e.target.value)} required />
-        </label>
-        <button className="primary" disabled={busy}>{t.admin.save}</button>
-      </form>
-      <p className="hint">{t.admin.maxNoProofHint}</p>
-      {msg && <p className={`msg ${msg.ok ? 'ok' : 'error'}`}>{msg.text}</p>}
-    </section>
-  )
-}
-
-export default function Admin({ t, lang }) {
-  const [adminKey, setAdminKey] = useState(readKey)
-  const [password, setPassword] = useState('')
-  const [authError, setAuthError] = useState('')
+function Moderation({ t, lang }) {
   const [filter, setFilter] = useState('pending')
   const [query, setQuery] = useState('')
   const [targets, setTargets] = useState([])
   const [selected, setSelected] = useState(null)
   const [busy, setBusy] = useState(false)
 
-  const call = (url, options = {}) =>
-    api(url, { ...options, headers: { Authorization: `Bearer ${adminKey}` } }).catch((err) => {
-      if (err.code === 'unauthorized') logout()
-      throw err
-    })
-
-  const logout = () => {
-    try { sessionStorage.removeItem('adminKey') } catch {}
-    setAdminKey(''); setTargets([]); setSelected(null)
-  }
-
-  const login = async (e) => {
-    e.preventDefault()
-    setAuthError('')
-    try {
-      await api('/api/admin/targets?status=pending', { headers: { Authorization: `Bearer ${password}` } })
-      try { sessionStorage.setItem('adminKey', password) } catch {}
-      setAdminKey(password); setPassword('')
-    } catch (err) {
-      setAuthError(t.admin.errors[err.code] || t.error)
-    }
-  }
-
   const loadTargets = () => {
     const status = filter === 'all' ? '' : filter
-    return call(`/api/admin/targets?status=${status}&q=${encodeURIComponent(query)}`).then(setTargets).catch(() => {})
+    return api(`/api/admin/targets?status=${status}&q=${encodeURIComponent(query)}`).then(setTargets).catch(() => {})
   }
-  const open = (id) => call(`/api/admin/targets/${id}`).then(setSelected).catch(() => {})
+  const open = (id) => api(`/api/admin/targets/${id}`).then(setSelected).catch(() => {})
 
   useEffect(() => {
-    if (!adminKey) return
     const id = setTimeout(loadTargets, 250)
     return () => clearTimeout(id)
-  }, [adminKey, filter, query])
+  }, [filter, query])
 
-  const setStatus = async (status) => {
+  const act = async (fn) => {
     setBusy(true)
-    try {
-      await call(`/api/admin/targets/${selected.id}/status`, { method: 'POST', body: JSON.stringify({ status }) })
-      await open(selected.id)
-      await loadTargets()
-    } catch {} finally { setBusy(false) }
+    try { await fn(); await open(selected.id); await loadTargets() } catch {} finally { setBusy(false) }
   }
+  const setStatus = (status) => act(() => api(`/api/admin/targets/${selected.id}/status`, { method: 'POST', body: JSON.stringify({ status }) }))
+  const protect = () => act(() => api('/api/admin/whitelist', { method: 'POST', body: JSON.stringify({ target: selected.username || selected.tgId }) }))
 
-  const name = (x) => (x.username ? `@${x.username}` : `ID ${x.tgId}`)
   const date = (d) => new Date(d).toLocaleString(lang)
-
-  if (!adminKey) {
-    return (
-      <section className="card narrow">
-        <h2>{t.admin.title}</h2>
-        <form onSubmit={login}>
-          <label>
-            {t.admin.password}
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoFocus />
-          </label>
-          <button className="primary">{t.admin.login}</button>
-          {authError && <p className="msg error">{authError}</p>}
-        </form>
-      </section>
-    )
-  }
 
   return (
     <div className="admin">
-      <Settings t={t} call={call} />
-
       <section className="card">
-        <div className="row">
-          <h2>{t.admin.title}</h2>
-          <button className="link" onClick={logout}>{t.admin.logout}</button>
-        </div>
         <div className="tabs">
           {FILTERS.map((f) => (
             <button key={f} className={f === filter ? 'on' : ''} onClick={() => setFilter(f)}>{t.admin.filters[f]}</button>
@@ -168,20 +79,24 @@ export default function Admin({ t, lang }) {
           <>
             <div className="row">
               <h2>{name(selected)}</h2>
-              <span className={`badge ${selected.status}`}>{t.statuses[selected.status]}</span>
+              <span>
+                {selected.whitelisted && <span className="badge protected">{t.admin.protected}</span>}
+                <span className={`badge ${selected.status}`}>{t.statuses[selected.status]}</span>
+              </span>
             </div>
             <p className="muted">{selected.reportCount} {t.reports}</p>
             <div className="actions">
               <button className="primary" disabled={busy || selected.status === 'confirmed'} onClick={() => setStatus('confirmed')}>{t.admin.confirm}</button>
               <button className="danger" disabled={busy || selected.status === 'rejected'} onClick={() => setStatus('rejected')}>{t.admin.reject}</button>
               <button className="ghost" disabled={busy || selected.status === 'pending'} onClick={() => setStatus('pending')}>{t.admin.reset}</button>
+              {!selected.whitelisted && <button className="ghost" disabled={busy} onClick={protect}>{t.admin.addWhitelist}</button>}
             </div>
 
             <ul className="reports">
               {selected.reports.map((r) => (
                 <li key={r.id}>
                   <div className="row muted">
-                    <span>{t.types[r.type] || r.type}</span>
+                    <span>{t.types[r.type] || r.type}{r.user ? ` · ${r.user.username}` : ''}</span>
                     <span>{date(r.createdAt)}</span>
                   </div>
                   {r.description && <p className="desc">{r.description}</p>}
@@ -190,7 +105,7 @@ export default function Admin({ t, lang }) {
                     : <span className="muted">{r.proofUrl}</span>)}
                   {r.evidence.length > 0 && (
                     <div className="shots">
-                      {r.evidence.map((ev) => <Screenshot key={ev.id} id={ev.id} adminKey={adminKey} alt={t.admin.screenshot} />)}
+                      {r.evidence.map((ev) => <Screenshot key={ev.id} id={ev.id} alt={t.admin.screenshot} />)}
                     </div>
                   )}
                 </li>
@@ -200,5 +115,268 @@ export default function Admin({ t, lang }) {
         )}
       </section>
     </div>
+  )
+}
+
+function WalletAdmin({ t, lang }) {
+  const [overview, setOverview] = useState(null)
+  const [reserve, setReserve] = useState({})
+  const [deposits, setDeposits] = useState([])
+  const [depFilter, setDepFilter] = useState('awaiting')
+  const [sweeps, setSweeps] = useState([])
+  const [amounts, setAmounts] = useState({})
+  const [msg, setMsg] = useState(null)
+  const [busy, setBusy] = useState('')
+
+  const load = () => {
+    api('/api/admin/wallet/overview').then((o) => {
+      setOverview(o)
+      setReserve((r) => (Object.keys(r).length ? r : { ...o.reserveAddresses, XMR: o.xmrAddress || '' }))
+    }).catch(() => {})
+    api('/api/admin/wallet/sweeps').then(setSweeps).catch(() => {})
+  }
+  const loadDeposits = () => api(`/api/admin/wallet/deposits?status=${depFilter}`).then(setDeposits).catch(() => {})
+
+  useEffect(load, [])
+  useEffect(() => { loadDeposits() }, [depFilter])
+
+  const run = async (key, fn, okText) => {
+    setBusy(key); setMsg(null)
+    try {
+      const r = await fn()
+      setMsg({ ok: true, text: typeof okText === 'function' ? okText(r) : okText })
+      load(); loadDeposits()
+    } catch (err) {
+      setMsg({ ok: false, text: t.admin.errors[err.code] || t.error })
+    } finally { setBusy('') }
+  }
+
+  const saveReserve = (e) => {
+    e.preventDefault()
+    run('reserve', () => api('/api/admin/wallet/reserve', { method: 'PUT', body: JSON.stringify(reserve) }), t.admin.saved)
+  }
+  const sweep = (c) => run(`sweep${c}`, () => api(`/api/admin/wallet/sweep/${c}`, { method: 'POST' }), (r) => t.admin.swept(r.swept, r.total, c))
+  const confirm = (d) => run(`dep${d.id}`, () => api(`/api/admin/wallet/deposits/${d.id}/confirm`, { method: 'POST', body: JSON.stringify({ amount: Number(amounts[d.id]) }) }), t.admin.saved)
+
+  const unswept = Object.fromEntries((overview?.unswept || []).map((u) => [u.currency, u]))
+  const date = (d) => new Date(d).toLocaleString(lang)
+
+  return (
+    <div className="admin">
+      <section className="card full">
+        <h2>{t.admin.funds}</h2>
+        <p className="muted">{overview ? t.admin.usersCount(overview.users) : ''}</p>
+        <div className="stats">
+          {(overview?.collected || []).map((c) => (
+            <div key={c.currency} className="stat">
+              <span className="muted">{c.currency}</span>
+              <strong>{fmtCrypto(c.amount)}</strong>
+              <span className="hint">{t.admin.collected(fmtUsd(c.usd))}</span>
+            </div>
+          ))}
+          {overview && overview.collected.length === 0 && <p className="muted">{t.admin.noFunds}</p>}
+        </div>
+        {msg && <p className={`msg ${msg.ok ? 'ok' : 'error'}`}>{msg.text}</p>}
+      </section>
+
+      <section className="card">
+        <h2>{t.admin.reserve}</h2>
+        <form onSubmit={saveReserve}>
+          {RESERVE.map((c) => (
+            <label key={c}>
+              {c}
+              <input value={reserve[c] || ''} onChange={(e) => setReserve({ ...reserve, [c]: e.target.value })} placeholder={t.admin.reservePlaceholder} />
+            </label>
+          ))}
+          <p className="hint">{t.admin.reserveHint}</p>
+          <button className="primary" disabled={busy === 'reserve'}>{t.admin.save}</button>
+        </form>
+      </section>
+
+      <section className="card">
+        <h2>{t.admin.sweep}</h2>
+        <ul className="list">
+          {SWEEPABLE.map((c) => (
+            <li key={c}>
+              <span className="name">{c}</span>
+              <span className="count">
+                {unswept[c] ? t.admin.toSweep(fmtCrypto(unswept[c].amount), unswept[c].deposits) : t.admin.nothing}
+                <button className="ghost small" disabled={!!busy || !unswept[c]} onClick={() => sweep(c)}>
+                  {busy === `sweep${c}` ? '...' : t.admin.sweepNow}
+                </button>
+              </span>
+            </li>
+          ))}
+        </ul>
+        <p className="hint">{t.admin.sweepHint}</p>
+        {sweeps.length > 0 && (
+          <>
+            <h3>{t.admin.sweepLog}</h3>
+            <ul className="reports">
+              {sweeps.slice(0, 20).map((s) => (
+                <li key={s.id}>
+                  <div className="row"><span className="name">{fmtCrypto(s.amount)} {s.currency}</span><span className="muted">{date(s.createdAt)}</span></div>
+                  <span className="mono muted">{s.txHash}</span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </section>
+
+      <section className="card full">
+        <div className="row">
+          <h2>{t.admin.deposits}</h2>
+          <div className="tabs">
+            {['awaiting', 'partial', 'confirmed', 'expired'].map((s) => (
+              <button key={s} className={s === depFilter ? 'on' : ''} onClick={() => setDepFilter(s)}>{t.wallet.depositStatus[s]}</button>
+            ))}
+          </div>
+        </div>
+        <ul className="reports">
+          {deposits.length === 0 && <li className="muted">{t.none}</li>}
+          {deposits.map((d) => (
+            <li key={d.id}>
+              <div className="row">
+                <span className="name">#{d.id} · {d.username} · {d.currency}</span>
+                <span className="muted">{date(d.createdAt)}</span>
+              </div>
+              <span className="mono muted">{d.address}</span>
+              {d.status === 'confirmed' && (
+                <span className="hint">{fmtCrypto(d.amountReceived)} {d.currency} · {fmtUsd(d.usdCredited)} · {d.sweptAt ? t.admin.sweptAt(date(d.sweptAt)) : t.admin.notSwept}</span>
+              )}
+              {['awaiting', 'partial'].includes(d.status) && (
+                <div className="inline">
+                  <input type="number" min="0" step="any" placeholder={t.admin.received(d.currency)}
+                    value={amounts[d.id] || ''} onChange={(e) => setAmounts({ ...amounts, [d.id]: e.target.value })} />
+                  <button className="ghost small" disabled={!!busy || !(Number(amounts[d.id]) > 0)} onClick={() => confirm(d)}>{t.admin.confirmDeposit}</button>
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      </section>
+    </div>
+  )
+}
+
+function Whitelist({ t, lang }) {
+  const [entries, setEntries] = useState([])
+  const [target, setTarget] = useState('')
+  const [note, setNote] = useState('')
+  const [msg, setMsg] = useState(null)
+
+  const load = () => api('/api/admin/whitelist').then(setEntries).catch(() => {})
+  useEffect(() => { load() }, [])
+
+  const add = async (e) => {
+    e.preventDefault()
+    setMsg(null)
+    try {
+      await api('/api/admin/whitelist', { method: 'POST', body: JSON.stringify({ target, note }) })
+      setTarget(''); setNote(''); load()
+    } catch (err) {
+      setMsg(t.admin.errors[err.code] || t.errors[err.code] || t.error)
+    }
+  }
+  const remove = async (id) => { await api(`/api/admin/whitelist/${id}`, { method: 'DELETE' }).catch(() => {}); load() }
+
+  return (
+    <div className="admin">
+      <section className="card">
+        <h2>{t.admin.whitelist}</h2>
+        <p className="hint">{t.admin.whitelistHint}</p>
+        <form onSubmit={add}>
+          <label>
+            {t.target}
+            <input value={target} onChange={(e) => setTarget(e.target.value)} placeholder={t.targetHint} required />
+          </label>
+          <label>
+            {t.admin.note}
+            <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} />
+          </label>
+          <button className="primary">{t.admin.add}</button>
+          {msg && <p className="msg error">{msg}</p>}
+        </form>
+      </section>
+      <section className="card">
+        <ul className="list">
+          {entries.length === 0 && <li className="muted">{t.admin.whitelistEmpty}</li>}
+          {entries.map((x) => (
+            <li key={x.id}>
+              <span className="name">
+                {name(x)}
+                {x.note && <span className="hint">{x.note}</span>}
+              </span>
+              <span className="count">
+                <span className="hint">{new Date(x.createdAt).toLocaleDateString(lang)}</span>
+                <button className="link" onClick={() => remove(x.id)}>{t.admin.remove}</button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </div>
+  )
+}
+
+function Settings({ t }) {
+  const [values, setValues] = useState(null)
+  const [msg, setMsg] = useState(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => { api('/api/admin/settings').then(setValues).catch(() => {}) }, [])
+
+  const save = async (e) => {
+    e.preventDefault()
+    setBusy(true); setMsg(null)
+    try {
+      setValues(await api('/api/admin/settings', { method: 'PUT', body: JSON.stringify(values) }))
+      setMsg({ ok: true, text: t.admin.saved })
+    } catch (err) {
+      setMsg({ ok: false, text: t.admin.errors[err.code] || t.error })
+    } finally { setBusy(false) }
+  }
+
+  if (!values) return <section className="card"><p className="muted">...</p></section>
+  const field = (key, props) => (
+    <label key={key}>
+      {t.admin.fields[key]}
+      <input type="number" required value={values[key]} onChange={(e) => setValues({ ...values, [key]: e.target.value })} {...props} />
+      <span className="hint">{t.admin.fieldHints[key]}</span>
+    </label>
+  )
+
+  return (
+    <section className="card narrow-wide">
+      <h2>{t.admin.settings}</h2>
+      <form onSubmit={save}>
+        {field('tokenPriceUsd', { min: 0.01, step: 0.01 })}
+        {field('reportCostTokens', { min: 0, step: 1 })}
+        {field('maxReportsNoProof', { min: 0, max: 1000, step: 1 })}
+        {field('depositExpiryHours', { min: 1, max: 168, step: 1 })}
+        <button className="primary" disabled={busy}>{t.admin.save}</button>
+        {msg && <p className={`msg ${msg.ok ? 'ok' : 'error'}`}>{msg.text}</p>}
+      </form>
+    </section>
+  )
+}
+
+export default function Admin({ t, lang, user }) {
+  const [tab, setTab] = useState('moderation')
+
+  if (!user) return <section className="card narrow"><p className="muted">{t.admin.signInFirst}</p><a className="link" href="#login">{t.auth.login}</a></section>
+  if (user.role !== 'superadmin') return <section className="card narrow"><p className="muted">{t.admin.forbidden}</p></section>
+
+  return (
+    <>
+      <div className="tabs page-tabs">
+        {TABS.map((x) => <button key={x} className={x === tab ? 'on' : ''} onClick={() => setTab(x)}>{t.admin.tabs[x]}</button>)}
+      </div>
+      {tab === 'moderation' && <Moderation t={t} lang={lang} />}
+      {tab === 'wallet' && <WalletAdmin t={t} lang={lang} />}
+      {tab === 'whitelist' && <Whitelist t={t} lang={lang} />}
+      {tab === 'settings' && <Settings t={t} />}
+    </>
   )
 }

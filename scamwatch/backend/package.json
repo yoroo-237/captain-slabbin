@@ -1,6 +1,6 @@
 {
   "name": "scamwatch-backend",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,14 +8,21 @@
     "start": "node src/server.js",
     "build": "prisma generate",
     "db:push": "prisma db push",
-    "test": "node --test src/detect.test.js src/proof.test.js"
+    "test": "node --test src/detect.test.js src/proof.test.js src/balance.test.js src/auth.test.js"
   },
   "dependencies": {
     "@prisma/client": "^5.14.0",
+    "axios": "^1.7.2",
+    "bip32": "^4.0.0",
+    "bip39": "^3.1.0",
+    "bitcoinjs-lib": "^6.1.6",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
+    "ethers": "^6.13.1",
     "express": "^4.19.2",
-    "express-async-errors": "^3.1.1"
+    "express-async-errors": "^3.1.1",
+    "jsonwebtoken": "^9.0.2",
+    "tiny-secp256k1": "^2.2.3"
   },
   "devDependencies": {
     "prisma": "^5.14.0"

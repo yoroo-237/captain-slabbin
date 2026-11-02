@@ -6,35 +6,58 @@ import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import express from 'express'
 import cors from 'cors'
-import { PrismaClient } from '@prisma/client'
+import { prisma, getSettings, saveSettings } from './db.js'
 import { detectType, TYPES } from './detect.js'
 import { parseTarget } from './target.js'
-import { decodeFiles, proofUrlHash, sha256 } from './proof.js'
+import { decodeFiles, proofUrlHash } from './proof.js'
+import { authRouter, requireUser, requireSuper, bootstrapSuperadmin } from './auth.js'
+import { walletRouter, webhookRouter, adminWalletRouter, startWalletJobs } from './wallet.js'
+import { getHoldings, allocateUsd, debit, round2 } from './balance.js'
+import { getCachedUsdPrices } from './price.js'
 
-const prisma = new PrismaClient()
 const app = express()
 const here = path.dirname(fileURLToPath(import.meta.url))
 const SALT = process.env.IP_SALT || 'scamwatch'
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || ''
 const STATUSES = ['pending', 'confirmed', 'rejected']
+const MAX_REPORTS_LIMIT = 1000
 
 app.set('trust proxy', 1)
 app.use(cors())
 
-// Reports carry screenshots (base64), every other route stays small
+// Reports carry screenshots (base64), Alchemy needs the raw body for its signature,
+// every other route stays small
 const smallJson = express.json({ limit: '100kb' })
 const reportJson = express.json({ limit: '13mb' })
-app.use((req, res, next) => (req.path === '/api/reports' ? reportJson : smallJson)(req, res, next))
+const rawBody = express.raw({ type: '*/*', limit: '1mb' })
+app.use((req, res, next) => {
+  if (req.path === '/api/reports') return reportJson(req, res, next)
+  if (req.path === '/api/webhooks/alchemy') return rawBody(req, res, next)
+  return smallJson(req, res, next)
+})
 
 const hashIp = (ip) => crypto.createHash('sha256').update(`${SALT}:${ip}`).digest('hex')
 
-// Used until the admin saves the settings once
-const DEFAULT_SETTINGS = { maxReportsNoProof: 1 }
-const MAX_REPORTS_LIMIT = 1000
-const getSettings = async () =>
-  (await prisma.setting.findUnique({ where: { id: 1 }, select: { maxReportsNoProof: true } })) || DEFAULT_SETTINGS
+// Liste blanche : un compte y figure par son @username ou par son ID numérique
+const whereTarget = (t) => (t.username ? { username: t.username } : { tgId: t.tgId })
+const isWhitelisted = async (t) => !!(await prisma.whitelistEntry.findFirst({ where: whereTarget(t), select: { id: true } }))
+
+// Filtre Prisma qui écarte les comptes en liste blanche des listes publiques.
+// Les champs nuls sont gardés à part : en SQL, "NULL NOT IN (...)" n'est jamais vrai.
+async function notWhitelisted() {
+  const rows = await prisma.whitelistEntry.findMany({ select: { username: true, tgId: true } })
+  const usernames = rows.map((r) => r.username).filter(Boolean)
+  const tgIds = rows.map((r) => r.tgId).filter(Boolean)
+  const and = []
+  if (usernames.length) and.push({ OR: [{ username: null }, { username: { notIn: usernames } }] })
+  if (tgIds.length) and.push({ OR: [{ tgId: null }, { tgId: { notIn: tgIds } }] })
+  return and.length ? { AND: and } : {}
+}
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }))
+
+app.use('/api/auth', authRouter(hashIp))
+app.use('/api/wallet', walletRouter())
+app.use('/api/webhooks', webhookRouter())
 
 // Live preview of the detected type while the user types
 app.post('/api/detect', (req, res) => {
@@ -42,14 +65,22 @@ app.post('/api/detect', (req, res) => {
   res.json(detectType(description, proofUrl))
 })
 
+// Price of a report, shown before sending
+app.get('/api/pricing', async (_req, res) => {
+  const s = await getSettings()
+  res.json({ tokenPriceUsd: s.tokenPriceUsd, reportCostTokens: s.reportCostTokens })
+})
+
 // An account can be reported again and again, as long as each report brings
 // evidence (link or screenshot) never sent for this account. Without evidence,
-// a limited number of reports per person and account (set in the moderation space).
-app.post('/api/reports', async (req, res) => {
+// a limited number of reports per user and account (set in the super admin space).
+// Each report costs tokens, taken from the user's wallet.
+app.post('/api/reports', requireUser, async (req, res) => {
   const { target: rawTarget, description = '', proofUrl, type, lang, files } = req.body || {}
 
   const target = parseTarget(rawTarget)
   if (!target) return res.status(400).json({ error: 'invalid_target' })
+  if (await isWhitelisted(target)) return res.status(403).json({ error: 'protected_account' })
 
   const decoded = decodeFiles(files)
   if (decoded.error) return res.status(400).json({ error: decoded.error })
@@ -61,9 +92,10 @@ app.post('/api/reports', async (req, res) => {
   const ipHash = hashIp(req.ip)
   const detected = detectType(cleanDescription, cleanProof || '')
   const finalType = TYPES.includes(type) ? type : detected.type
+  const settings = await getSettings()
 
   // Le compte signalé est identifié par son @username s'il en a un, sinon par son ID Telegram numérique
-  const where = target.username ? { username: target.username } : { tgId: target.tgId }
+  const where = whereTarget(target)
   // Ce compte a-t-il déjà été signalé au moins une fois ? (on ne récupère que l'id, rien d'autre)
   const existing = await prisma.target.findUnique({ where, select: { id: true } })
 
@@ -71,19 +103,15 @@ app.post('/api/reports', async (req, res) => {
   // pour un compte nouveau, aucun signalement antérieur ne peut entrer en conflit
   if (existing) {
     // Cas 1 : signalement SANS preuve (ni lien, ni capture d'écran).
-    // Le nombre de signalements sans preuve autorisés par personne et par compte est fixé
-    // par l'admin (maxReportsNoProof, 0 = illimité).
-    // La "personne" est reconnue par ipHash : l'IP hachée avec un sel (on ne stocke jamais l'IP en clair).
-    if (!urlHash && decoded.files.length === 0) {
-      const { maxReportsNoProof } = await getSettings()
-      if (maxReportsNoProof > 0) {
-        // On ne compte que les signalements sans preuve de cette IP pour ce compte
-        const sent = await prisma.report.count({
-          where: { targetId: existing.id, ipHash, proofHash: null, evidence: { none: {} } },
-        })
-        // Limite atteinte : refus avec 409 (Conflict)
-        if (sent >= maxReportsNoProof) return res.status(409).json({ error: 'already_reported' })
-      }
+    // Le nombre de signalements sans preuve autorisés par utilisateur et par compte est fixé
+    // par le super admin (maxReportsNoProof, 0 = illimité).
+    if (!urlHash && decoded.files.length === 0 && settings.maxReportsNoProof > 0) {
+      // On ne compte que les signalements sans preuve de cet utilisateur pour ce compte
+      const sent = await prisma.report.count({
+        where: { targetId: existing.id, userId: req.user.id, proofHash: null, evidence: { none: {} } },
+      })
+      // Limite atteinte : refus avec 409 (Conflict)
+      if (sent >= settings.maxReportsNoProof) return res.status(409).json({ error: 'already_reported' })
     }
 
     // Cas 2 : signalement AVEC preuve. On l'accepte même si la personne a déjà signalé,
@@ -101,17 +129,32 @@ app.post('/api/reports', async (req, res) => {
     if (seenUrl || seenFile) return res.status(409).json({ error: 'duplicate_proof' })
   }
 
+  // Coût du signalement : jetons × prix du jeton, payé en crypto au cours du moment.
+  // Le super admin signale sans payer.
+  const tokens = req.user.role === 'superadmin' ? 0 : settings.reportCostTokens
+  const usdCost = round2(tokens * settings.tokenPriceUsd)
+  let payments = []
+  if (usdCost > 0) {
+    const holdings = await getHoldings(prisma, req.user.id)
+    const prices = await getCachedUsdPrices(holdings.map((h) => h.currency))
+    payments = allocateUsd(holdings, prices, usdCost) // 402 insufficient_tokens si le solde ne suffit pas
+  }
+
   let saved
   try {
     saved = await prisma.$transaction(async (tx) => {
+      // Débit d'abord : si le solde a baissé entre-temps, rien n'est enregistré
+      for (const p of payments) await debit(tx, req.user.id, p.currency, p.amount)
+
       const t = await tx.target.upsert({
         where,
         update: { reportCount: { increment: 1 } },
         create: { ...target, reportCount: 1 },
       })
-      await tx.report.create({
+      const report = await tx.report.create({
         data: {
           targetId: t.id,
+          userId: req.user.id,
           type: finalType,
           detectedType: detected.type,
           description: cleanDescription,
@@ -122,6 +165,14 @@ app.post('/api/reports', async (req, res) => {
           evidence: { create: decoded.files.map((f) => ({ ...f, targetId: t.id })) },
         },
       })
+      if (payments.length) {
+        await tx.transaction.create({
+          data: {
+            userId: req.user.id, type: 'report', usd: usdCost, tokens, payments,
+            reportId: report.id, note: `Report on ${target.username ? '@' + target.username : target.tgId}`,
+          },
+        })
+      }
       return t
     })
   } catch (err) {
@@ -130,15 +181,15 @@ app.post('/api/reports', async (req, res) => {
     throw err
   }
 
-  res.status(201).json({ ok: true, targetId: saved.id, type: finalType, reportCount: saved.reportCount })
+  res.status(201).json({ ok: true, targetId: saved.id, type: finalType, reportCount: saved.reportCount, tokensSpent: tokens })
 })
 
-// Public list: rejected accounts are hidden, confirmed ones come first
+// Public list: rejected and whitelisted accounts are hidden, confirmed ones come first
 app.get('/api/targets', async (req, res) => {
   const q = String(req.query.q || '').trim().replace(/^@/, '').toLowerCase()
   const search = q ? { OR: [{ username: { contains: q } }, { tgId: q }] } : {}
   const targets = await prisma.target.findMany({
-    where: { ...search, status: { not: 'rejected' } },
+    where: { ...search, ...(await notWhitelisted()), status: { not: 'rejected' } },
     // 'confirmed' sorts before 'pending' alphabetically
     orderBy: [{ status: 'asc' }, { reportCount: 'desc' }],
     take: 50,
@@ -152,7 +203,7 @@ app.get('/api/targets/:id', async (req, res) => {
   if (!Number.isInteger(id)) return res.status(400).json({ error: 'invalid_id' })
 
   const target = await prisma.target.findUnique({ where: { id } })
-  if (!target || target.status === 'rejected') return res.status(404).json({ error: 'not_found' })
+  if (!target || target.status === 'rejected' || await isWhitelisted(target)) return res.status(404).json({ error: 'not_found' })
 
   const byType = await prisma.report.groupBy({ by: ['type'], where: { targetId: id }, _count: true })
   const recent = await prisma.report.findMany({
@@ -174,29 +225,10 @@ app.get('/api/stats', async (_req, res) => {
   res.json({ targets, reports })
 })
 
-// --- Admin: check the evidence, confirm or reject an account ---------------
+// --- Super admin: check the evidence, confirm or reject an account ---------
 
-// Wrong passwords per IP: 10 tries, then blocked 15 minutes
-const failures = new Map()
-const BLOCK_MS = 15 * 60 * 1000
-
-app.use('/api/admin', (req, res, next) => {
-  if (!ADMIN_PASSWORD) return res.status(503).json({ error: 'admin_disabled' })
-
-  const key = hashIp(req.ip)
-  const now = Date.now()
-  const f = failures.get(key)
-  if (f && f.until > now && f.count >= 10) return res.status(429).json({ error: 'too_many_attempts' })
-
-  const given = (req.get('authorization') || '').replace(/^Bearer /, '')
-  const ok = crypto.timingSafeEqual(Buffer.from(sha256(given), 'hex'), Buffer.from(sha256(ADMIN_PASSWORD), 'hex'))
-  if (!ok) {
-    failures.set(key, { count: f && f.until > now ? f.count + 1 : 1, until: now + BLOCK_MS })
-    return res.status(401).json({ error: 'unauthorized' })
-  }
-  failures.delete(key)
-  next()
-})
+app.use('/api/admin/wallet', adminWalletRouter())
+app.use('/api/admin', requireSuper)
 
 app.get('/api/admin/targets', async (req, res) => {
   const status = STATUSES.includes(req.query.status) ? req.query.status : undefined
@@ -223,10 +255,11 @@ app.get('/api/admin/targets/:id', async (req, res) => {
     take: 200,
     select: {
       id: true, type: true, detectedType: true, description: true, proofUrl: true, lang: true, createdAt: true,
+      user: { select: { username: true } },
       evidence: { select: { id: true, mime: true, size: true } },
     },
   })
-  res.json({ ...target, reports })
+  res.json({ ...target, whitelisted: await isWhitelisted(target), reports })
 })
 
 app.get('/api/admin/evidence/:id', async (req, res) => {
@@ -253,19 +286,57 @@ app.post('/api/admin/targets/:id/status', async (req, res) => {
   res.json({ ok: true, id: updated.id, status: updated.status })
 })
 
-app.get('/api/admin/settings', async (_req, res) => res.json(await getSettings()))
+app.get('/api/admin/settings', async (_req, res) => {
+  const { maxReportsNoProof, tokenPriceUsd, reportCostTokens, depositExpiryHours } = await getSettings()
+  res.json({ maxReportsNoProof, tokenPriceUsd, reportCostTokens, depositExpiryHours })
+})
 
 app.put('/api/admin/settings', async (req, res) => {
-  const max = Number((req.body || {}).maxReportsNoProof)
-  if (!Number.isInteger(max) || max < 0 || max > MAX_REPORTS_LIMIT) return res.status(400).json({ error: 'invalid_setting' })
+  const b = req.body || {}
+  const data = {}
+  const int = (v, min, max) => Number.isInteger(Number(v)) && Number(v) >= min && Number(v) <= max
+  if (b.maxReportsNoProof !== undefined) {
+    if (!int(b.maxReportsNoProof, 0, MAX_REPORTS_LIMIT)) return res.status(400).json({ error: 'invalid_setting' })
+    data.maxReportsNoProof = Number(b.maxReportsNoProof)
+  }
+  if (b.reportCostTokens !== undefined) {
+    if (!int(b.reportCostTokens, 0, 10000)) return res.status(400).json({ error: 'invalid_setting' })
+    data.reportCostTokens = Number(b.reportCostTokens)
+  }
+  if (b.depositExpiryHours !== undefined) {
+    if (!int(b.depositExpiryHours, 1, 168)) return res.status(400).json({ error: 'invalid_setting' })
+    data.depositExpiryHours = Number(b.depositExpiryHours)
+  }
+  if (b.tokenPriceUsd !== undefined) {
+    const p = Number(b.tokenPriceUsd)
+    if (!(p >= 0.01 && p <= 10000)) return res.status(400).json({ error: 'invalid_setting' })
+    data.tokenPriceUsd = round2(p)
+  }
+  await saveSettings(data)
+  const { maxReportsNoProof, tokenPriceUsd, reportCostTokens, depositExpiryHours } = await getSettings()
+  res.json({ maxReportsNoProof, tokenPriceUsd, reportCostTokens, depositExpiryHours })
+})
 
-  const saved = await prisma.setting.upsert({
-    where: { id: 1 },
-    update: { maxReportsNoProof: max },
-    create: { id: 1, maxReportsNoProof: max },
-    select: { maxReportsNoProof: true },
+// Liste blanche : comptes et bots que les utilisateurs ne peuvent pas signaler
+app.get('/api/admin/whitelist', async (_req, res) => {
+  res.json(await prisma.whitelistEntry.findMany({ orderBy: { id: 'desc' } }))
+})
+
+app.post('/api/admin/whitelist', async (req, res) => {
+  const target = parseTarget(req.body?.target)
+  if (!target) return res.status(400).json({ error: 'invalid_target' })
+  if (await isWhitelisted(target)) return res.status(409).json({ error: 'already_whitelisted' })
+  const entry = await prisma.whitelistEntry.create({
+    data: { username: target.username, tgId: target.tgId, note: String(req.body?.note || '').trim().slice(0, 200) },
   })
-  res.json(saved)
+  res.status(201).json(entry)
+})
+
+app.delete('/api/admin/whitelist/:id', async (req, res) => {
+  const id = Number(req.params.id)
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'invalid_id' })
+  await prisma.whitelistEntry.deleteMany({ where: { id } })
+  res.json({ ok: true })
 })
 
 // Serves the built frontend when present (production)
@@ -277,9 +348,18 @@ if (fs.existsSync(dist)) {
 
 app.use((err, _req, res, _next) => {
   if (err.type === 'entity.too.large') return res.status(413).json({ error: 'file_too_large' })
+  // Errors raised on purpose (insufficient_tokens, wallet_not_configured...) carry their own status
+  if (typeof err.code === 'string' && Number.isInteger(err.status) && /^[a-z_]+$/.test(err.code)) {
+    return res.status(err.status).json({ error: err.code })
+  }
   console.error(err)
   res.status(500).json({ error: 'server_error' })
 })
 
 const port = process.env.PORT || 4100
-app.listen(port, () => console.log(`scamwatch api on :${port}`))
+bootstrapSuperadmin()
+  .catch((err) => console.error('[auth] super admin not created:', err.message))
+  .finally(() => {
+    startWalletJobs()
+    app.listen(port, () => console.log(`scamwatch api on :${port}`))
+  })

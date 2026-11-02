@@ -25,7 +25,14 @@ services:
     environment:
       DATABASE_URL: postgresql://scamwatch:${POSTGRES_PASSWORD:-scamwatch}@db:5432/scamwatch
       IP_SALT: ${IP_SALT:-change-me}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      JWT_SECRET: ${JWT_SECRET:-local-dev-secret-change-me}
+      SUPERADMIN_USERNAME: ${SUPERADMIN_USERNAME:-mko}
+      SUPERADMIN_PASSWORD: ${SUPERADMIN_PASSWORD:-}
+      BTC_HD_SEED: ${BTC_HD_SEED:-}
+      ETH_HD_SEED: ${ETH_HD_SEED:-}
+      BLOCKCYPHER_TOKEN: ${BLOCKCYPHER_TOKEN:-}
+      ALCHEMY_API_KEY: ${ALCHEMY_API_KEY:-}
+      ALCHEMY_SIGNING_KEY: ${ALCHEMY_SIGNING_KEY:-}
       PORT: 4100
     ports:
       - "${APP_PORT:-4100}:4100"

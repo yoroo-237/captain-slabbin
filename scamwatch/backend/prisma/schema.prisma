@@ -22,29 +22,47 @@ model Target {
 }
 
 model Report {
-  id           Int        @id @default(autoincrement())
+  id           Int          @id @default(autoincrement())
   targetId     Int
-  target       Target     @relation(fields: [targetId], references: [id], onDelete: Cascade)
-  type         String     // type kept (user's choice, or the detected one)
-  detectedType String     // type proposed by the automatic detection
-  description  String     @default("")
+  target       Target       @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  userId       Int?         // account that paid for the report (null for reports sent before accounts existed)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  type         String       // type kept (user's choice, or the detected one)
+  detectedType String       // type proposed by the automatic detection
+  description  String       @default("")
   proofUrl     String?
-  proofHash    String?    // normalized proof link hash: one link counts once per account
-  lang         String     @default("en")
-  ipHash       String?    // hashed IP: a person reports again only with new evidence
-  createdAt    DateTime   @default(now())
+  proofHash    String?      // normalized proof link hash: one link counts once per account
+  lang         String       @default("en")
+  ipHash       String?      // hashed IP, kept for abuse checks
+  createdAt    DateTime     @default(now())
   evidence     Evidence[]
+  payment      Transaction?
 
   @@unique([targetId, proofHash])
   @@index([targetId])
+  @@index([userId])
   @@index([createdAt])
 }
 
-// Settings changed from the moderation space: a single row (id 1).
+// Settings changed from the super admin space: a single row (id 1).
 model Setting {
-  id                Int      @id @default(1)
-  maxReportsNoProof Int      @default(1) // reports without evidence per person (hashed IP) and account, 0 = no limit
-  updatedAt         DateTime @updatedAt
+  id                 Int      @id @default(1)
+  maxReportsNoProof  Int      @default(1) // reports without evidence per user and account, 0 = no limit
+  tokenPriceUsd      Decimal  @default(1) @db.Decimal(10, 2) // USD value of one token
+  reportCostTokens   Int      @default(1) // tokens spent per report
+  depositExpiryHours Int      @default(12)
+  reserveAddresses   Json     @default("{}") // { BTC, LTC, DOGE, ETH }: where the super admin sweeps deposits
+  xmrAddress         String?  // XMR deposits go straight to this address, confirmed by hand
+  updatedAt          DateTime @updatedAt
+}
+
+// Accounts and bots that users cannot report (edited by the super admin)
+model WhitelistEntry {
+  id        Int      @id @default(autoincrement())
+  username  String?  @unique
+  tgId      String?  @unique
+  note      String   @default("")
+  createdAt DateTime @default(now())
 }
 
 // Screenshot attached to a report, stored in the database (Railway disks are not kept).
@@ -62,4 +80,89 @@ model Evidence {
 
   @@unique([targetId, sha256])
   @@index([reportId])
+}
+
+// ─── ACCOUNTS & WALLET ───────────────────────────────────────────────────────
+
+model User {
+  id           Int             @id @default(autoincrement())
+  username     String          @unique
+  passwordHash String
+  role         String          @default("user") // user | superadmin
+  isActive     Boolean         @default(true)
+  createdAt    DateTime        @default(now())
+  holdings     WalletHolding[]
+  deposits     Deposit[]
+  transactions Transaction[]
+  reports      Report[]
+}
+
+// Crypto quantity a user holds per currency. The USD balance is amount × live price,
+// and the tokens they can spend are that balance divided by the token price.
+model WalletHolding {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currency  String
+  amount    Decimal  @default(0) @db.Decimal(18, 8)
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, currency])
+}
+
+// One deposit address per top-up. Everything received goes to the super admin's
+// reserve when swept (no commission split).
+model Deposit {
+  id             Int       @id @default(autoincrement())
+  userId         Int
+  user           User      @relation(fields: [userId], references: [id])
+  currency       String    // BTC | LTC | DOGE | ETH | XMR
+  address        String    @default("pending")
+  status         String    @default("awaiting") // awaiting | partial | confirmed | expired
+  amountReceived Decimal   @default(0) @db.Decimal(18, 8)
+  usdCredited    Decimal   @default(0) @db.Decimal(12, 2) // USD value at confirmation, informative
+  hookId         String?
+  ethIndex       Int?
+  expiresAt      DateTime
+  confirmedAt    DateTime?
+  sweptAt        DateTime?
+  sweepTx        String?
+  createdAt      DateTime  @default(now())
+
+  @@index([userId])
+  @@index([status])
+}
+
+// Wallet movements: deposit (+crypto), report (-crypto, tokens spent), adjustment
+model Transaction {
+  id           Int      @id @default(autoincrement())
+  userId       Int
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type         String   // deposit | report | adjustment
+  currency     String?  // single currency (deposit); a report can be paid from several, see payments
+  cryptoAmount Decimal? @db.Decimal(18, 8)
+  usd          Decimal  @default(0) @db.Decimal(12, 2)
+  rate         Decimal? @db.Decimal(18, 8)
+  tokens       Int?     // tokens spent (report)
+  payments     Json     @default("[]") // report: [{ currency, amount, rate, usd }] debited at the price of the moment
+  depositId    Int?     @unique
+  reportId     Int?     @unique
+  report       Report?  @relation(fields: [reportId], references: [id], onDelete: SetNull)
+  note         String?
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+}
+
+model SweepLog {
+  id          Int      @id @default(autoincrement())
+  currency    String
+  amount      Decimal  @db.Decimal(18, 8)
+  address     String
+  txHash      String?
+  depositId   Int
+  triggeredBy Int?
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
 }
