@@ -8,7 +8,7 @@ Plateforme de signalement des comptes Telegram frauduleux, avec portefeuille cry
 | **Dépôt** | `yoroo-237/captain-slabbin`, dossier `scamwatch/` |
 | **Branche** | `feat/scamwatch` (ou `main` après fusion) |
 | **Hébergement** | Railway, **projet séparé** des boutiques : un seul service (API + site) et sa base Postgres |
-| **Adresse** | un sous-domaine, ex. `scamwatch.<votre-domaine>` |
+| **Adresse** | `https://scamwatch.captainslabbin.shop` |
 
 ---
 
@@ -27,7 +27,7 @@ Plateforme de signalement des comptes Telegram frauduleux, avec portefeuille cry
 ## 0. Sécurité, à faire en premier
 
 1. **Mot de passe super admin** : il n'est jamais écrit dans le code, seulement dans la variable Railway `SUPERADMIN_PASSWORD`. Choisissez un mot de passe **long et aléatoire** (20 caractères ou plus). Celui envoyé dans la conversation (`Admin001@`) est trop court et doit être considéré comme connu : ne l'utilisez pas.
-2. **Seeds du portefeuille** : générez **de nouvelles seeds** pour ScamWatch (voir 1.3). Les adresses sont dérivées sur une branche à part (`m/44'/coin'/7'/0/<n° de dépôt>`), donc une seed partagée avec une boutique ne crée pas de collision, mais une seed dédiée limite les dégâts si l'une fuit.
+2. **Seeds du portefeuille** : générez **de nouvelles seeds** pour ScamWatch (voir 1.3), différentes de celles des boutiques et de la plateforme bots. Les adresses sont dérivées sur une branche à part (`m/44'/coin'/7'/0/<n° de dépôt>`), donc une seed partagée ne crée pas de collision, mais une seed dédiée limite les dégâts si l'une fuit.
 3. **Boutiques** : leurs webhooks de dépôt créditent sans vérifier la blockchain (voir la section 6). À corriger avant d'ouvrir ScamWatch au public, puisque vous y renvoyez vos utilisateurs.
 
 ---
@@ -50,43 +50,50 @@ Pour déployer depuis `main`, fusionnez d'abord la branche (pull request sur Git
    - **Builder** : Dockerfile (détecté automatiquement) ;
    - **Healthcheck Path** : `/api/health`.
    - Pas de pre-deploy step : au démarrage, l'image applique le schéma (`prisma db push`) puis crée ou met à jour le compte super admin.
-4. **Settings → Networking → Custom Domain** : `scamwatch.<votre-domaine>`. Railway affiche une cible : créez chez votre registrar un enregistrement **CNAME** `scamwatch` vers cette cible.
+4. **Settings → Networking → Custom Domain** : `scamwatch.captainslabbin.shop`. Railway affiche une cible : créez chez votre registrar un enregistrement **CNAME** `scamwatch` vers cette cible. Le domaine est prêt quand Railway affiche « Access your application over HTTP with the following domains: scamwatch.captainslabbin.shop ».
 
 ### 1.3 Variables
-Dans les **Variables** du service (Raw Editor). La liste complète est aussi dans `scamwatch/backend/.env.example`.
+Dans les **Variables** du service : **Raw Editor**, collez le bloc complet, **Update Variables**, puis redéployez. La liste est aussi dans `scamwatch/backend/.env.example`.
 
-| Variable | Valeur |
-|---|---|
-| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` |
-| `IP_SALT` | chaîne aléatoire¹, **à ne plus jamais changer** ensuite |
-| `JWT_SECRET` | chaîne aléatoire de 32 caractères ou plus¹, différente de celles des boutiques |
-| `SUPERADMIN_USERNAME` | `mko` |
-| `SUPERADMIN_PASSWORD` | votre mot de passe long et aléatoire² |
-| `BTC_HD_SEED` | phrase BIP39 de 12 mots, propre à ScamWatch¹ (BTC, LTC, DOGE) |
-| `ETH_HD_SEED` | autre phrase BIP39 de 12 mots¹ |
-| `BLOCKCYPHER_TOKEN` | jeton **actif** du compte blockcypher.com (vérification et balayage BTC/LTC/DOGE) |
-| `ALCHEMY_API_KEY` | clé d'une app Alchemy Ethereum Mainnet (vérification et balayage ETH) |
-| `PUBLIC_URL` | `https://scamwatch.<votre-domaine>` (facultatif : webhooks BlockCypher) |
-| `ALCHEMY_WEBHOOK_ID`, `ALCHEMY_AUTH_TOKEN`, `ALCHEMY_SIGNING_KEY` | facultatif : webhook ETH (voir 3.2) |
+Certaines valeurs viennent du `.env` de la plateforme bots, d'autres **doivent** être neuves :
 
-Ne définissez pas `PORT` : Railway le fournit.
+| Variable | Valeur | Reprise de la plateforme bots ? |
+|---|---|---|
+| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` (la base **de ce projet**) | même texte, autre base |
+| `PUBLIC_URL` | `https://scamwatch.captainslabbin.shop` | **non** : l'adresse de ScamWatch |
+| `IP_SALT` | chaîne aléatoire¹, **à ne plus jamais changer** ensuite | nouvelle |
+| `JWT_SECRET` | chaîne aléatoire de 32 caractères ou plus¹ | **non**, nouvelle |
+| `SUPERADMIN_USERNAME` | `mko` (la casse est ignorée : `MKO` marche aussi à la connexion) | oui |
+| `SUPERADMIN_PASSWORD` | mot de passe long et aléatoire¹ ² | **non**, nouveau |
+| `BTC_HD_SEED` | phrase BIP39 de 12 mots¹ (BTC, LTC, DOGE) | **non**, nouvelle |
+| `ETH_HD_SEED` | autre phrase BIP39 de 12 mots¹ | **non**, nouvelle |
+| `BLOCKCYPHER_TOKEN` | jeton **actif** du compte blockcypher.com | **oui**, le jeton du compte sert à tous les projets |
+| `ALCHEMY_API_KEY` | clé d'une app Alchemy Ethereum Mainnet | **oui**, la même clé convient |
+| `ALCHEMY_WEBHOOK_ID`, `ALCHEMY_SIGNING_KEY` | facultatif : webhook ETH propre à ScamWatch (voir 3.2) | **non** : un webhook est lié à une seule adresse |
+| `ALCHEMY_AUTH_TOKEN` | jeton Notify du compte (`alcht_…`), utile seulement avec le webhook | oui |
 
-¹ Pour tout générer d'un coup, depuis `scamwatch\backend` (après `npm install`) :
+Ne définissez pas `PORT` : Railway le fournit. ScamWatch n'utilise ni Cloudinary, ni `FRONTEND_URL`, ni `JWT_REFRESH_SECRET`, ni `TELEGRAM_*`, ni `XMR_ADDRESS` (l'adresse XMR se règle dans l'admin, voir 2.3).
+
+¹ Pour générer les valeurs neuves, **depuis `scamwatch\backend`** (c'est là qu'est installé `bip39`) :
 ```
-node -e "const c=require('crypto'),b=require('bip39');console.log('IP_SALT='+c.randomBytes(24).toString('hex'));console.log('JWT_SECRET='+c.randomBytes(32).toString('hex'));console.log('BTC_HD_SEED='+b.generateMnemonic(128));console.log('ETH_HD_SEED='+b.generateMnemonic(128))"
+cd M:\Travail\mario\scamwatch\backend
+npm install
+node -e "const c=require('crypto'),b=require('bip39');console.log('IP_SALT='+c.randomBytes(24).toString('hex'));console.log('JWT_SECRET='+c.randomBytes(32).toString('hex'));console.log('SUPERADMIN_PASSWORD='+c.randomBytes(18).toString('base64url'));console.log('BTC_HD_SEED='+b.generateMnemonic(128));console.log('ETH_HD_SEED='+b.generateMnemonic(128))"
 ```
-Gardez une copie des deux seeds hors ligne : elles contrôlent les fonds déposés. Ne les réutilisez jamais ailleurs.
+Lancée depuis `scamwatch` (sans `\backend`), la commande échoue avec `Cannot find module 'bip39'`.
+
+Gardez une copie des deux seeds hors ligne : elles contrôlent les fonds déposés. Ne les réutilisez jamais ailleurs, et ne reprenez jamais celles de la plateforme bots : les deux projets se partageraient alors les mêmes clés.
 
 ² Le compte super admin est **recréé à chaque démarrage** à partir de ces deux variables. Pour changer de mot de passe, modifiez `SUPERADMIN_PASSWORD` et redéployez. Mot de passe perdu : même chose.
 
 ### 1.4 Vérifier
-Ouvrez `https://scamwatch.<votre-domaine>/api/health` : la réponse doit être `{"ok":true}`. Dans les logs Railway, la ligne `[auth] super admin "mko" ready` confirme la création du compte.
+Ouvrez `https://scamwatch.captainslabbin.shop/api/health` : la réponse doit être `{"ok":true}`. Dans les logs Railway, la ligne `[auth] super admin "mko" ready` confirme la création du compte.
 
 ---
 
 ## 2. Premier passage dans l'admin
 
-1. Ouvrez `https://scamwatch.<votre-domaine>/#login` et connectez-vous avec `mko` et votre mot de passe. Vous arrivez sur l'espace **Admin**.
+1. Ouvrez `https://scamwatch.captainslabbin.shop/#login` et connectez-vous avec `mko` et votre mot de passe. Vous arrivez sur l'espace **Admin**.
 2. Onglet **Réglages** :
    - **Prix d'un jeton (USD)** : 1 $ par défaut ;
    - **Jetons par signalement** : 1 par défaut (0 = gratuit) ;
@@ -110,8 +117,11 @@ Le super admin signale sans payer, ce qui est pratique pour tester.
 
 ### 3.2 Webhook ETH (facultatif)
 Sans webhook, la vérification toutes les 5 minutes suffit. Pour un crédit plus rapide :
-1. Alchemy → **Notify → Create Webhook → Address Activity**, Ethereum Mainnet, URL `https://scamwatch.<votre-domaine>/api/webhooks/alchemy`.
+1. Alchemy → **Notify → Create Webhook → Address Activity**, Ethereum Mainnet, URL `https://scamwatch.captainslabbin.shop/api/webhooks/alchemy`.
 2. Copiez le **Signing Key** (`whsec_…`) dans `ALCHEMY_SIGNING_KEY`, le **Webhook ID** (`wh_…`) dans `ALCHEMY_WEBHOOK_ID`, et le jeton Notify du compte (`alcht_…`) dans `ALCHEMY_AUTH_TOKEN`.
+3. Redéployez. Les nouvelles adresses ETH seront ajoutées au webhook automatiquement.
+
+Ne reprenez pas le webhook de la plateforme bots : il pointe vers `bots.captainslabbin.shop`, et sa clé de signature ne vaut que pour lui.
 Un appel sans signature valide est refusé.
 
 ### 3.3 Balayer les fonds vers vos adresses

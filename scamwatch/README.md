@@ -2,7 +2,7 @@
 
 Platform to report scam, fake and abusive Telegram accounts. Bilingual (EN/FR).
 Standalone project of this repository, with its own Railway project, served on its own subdomain
-(e.g. `scamwatch.<domain>`).
+(e.g. `scamwatch.captainslabbin.shop`).
 
 ## Features
 
@@ -86,11 +86,11 @@ Tests: `cd backend && npm test`
 | `ETH_HD_SEED` | seed for ETH |
 | `BLOCKCYPHER_TOKEN` | active blockcypher.com token (BTC/LTC/DOGE checks and sweeps) |
 | `ALCHEMY_API_KEY` | ETH checks and sweeps |
-| `ALCHEMY_WEBHOOK_ID`, `ALCHEMY_AUTH_TOKEN`, `ALCHEMY_SIGNING_KEY` | optional: ETH webhook to `https://<subdomain>/api/webhooks/alchemy` |
-| `PUBLIC_URL` | `https://<subdomain>`, for BlockCypher webhooks (optional, polling works without) |
+| `ALCHEMY_WEBHOOK_ID`, `ALCHEMY_AUTH_TOKEN`, `ALCHEMY_SIGNING_KEY` | optional: ETH webhook to `https://scamwatch.captainslabbin.shop/api/webhooks/alchemy` |
+| `PUBLIC_URL` | `https://scamwatch.captainslabbin.shop`, for BlockCypher webhooks (optional, polling works without) |
 
-4. Settings → Networking → Custom Domain: `scamwatch.<domain>`, CNAME at the registrar.
-5. Sign in at `https://<subdomain>/#admin`, set the reserve addresses and the token price.
+4. Settings → Networking → Custom Domain: `scamwatch.captainslabbin.shop`, CNAME at the registrar.
+5. Sign in at `https://scamwatch.captainslabbin.shop/#admin`, set the reserve addresses and the token price.
 
 ## Next steps
 
