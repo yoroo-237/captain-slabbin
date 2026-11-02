@@ -31,7 +31,7 @@ r.post('/account/sign-out', async (req, res) => res.json(ok(await capture.signOu
 r.post('/explore', async (req, res) => res.status(202).json(ok(await capture.explore(req.user.sub, req.body || {}))));
 r.post('/stop', async (req, res) => res.json(ok(await capture.stop(req.user.sub))));
 r.post('/import', async (req, res) => res.status(202).json(ok(await capture.importCapture(req.user, req.body || {}))));
-r.post('/styles/:id/refresh', async (req, res) => res.status(202).json(ok(await capture.refreshStyle(req.user, req.params.id))));
+r.post('/styles/:id/refresh', async (req, res) => res.status(202).json(ok(await capture.refreshStyle(req.user, req.params.id, { fresh: req.body?.fresh === true }))));
 
 export default r;
 

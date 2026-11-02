@@ -148,6 +148,12 @@ export default function AdminCaptures() {
     } catch (e) { setError(e.message) }
   }, [])
   useEffect(() => { load() }, [load])
+  // While a capture runs, refresh the counts so the paths-done / total progress moves
+  useEffect(() => {
+    if (!state.running) return
+    const id = setInterval(load, 3000)
+    return () => clearInterval(id)
+  }, [state.running, load])
   useEffect(() => {
     onDone.current = () => {
       load(); setTick(t => t + 1)
@@ -162,12 +168,15 @@ export default function AdminCaptures() {
   const current = styles?.find(x => String(x.id) === String(picked)) || styles?.[0]
   const shown = view && current && captureOf(current.sourceBot) ? current : null
   const toggleView = v => setView(x => (x === v ? '' : v))
-  const update = async s => {
+  const update = async (s, fresh = false) => {
     const what = s.replica ? 'this style is rebuilt and the bots using it get its new screens and commands'
       : 'its information pages and its welcome and menu pictures are updated (its catalog, cart and checkout stay as they are)'
-    if (!(await askConfirm(`Update "${s.name}" from @${s.sourceBot}? The capture resumes where it stopped and runs to the end, then ${what}.`, { okLabel: 'Update' }))) return
+    const msg = fresh
+      ? `Recapture "${s.name}" from @${s.sourceBot} from scratch? The saved capture is discarded and it starts again at /start — this can be long — then ${what}.`
+      : `Update "${s.name}" from @${s.sourceBot}? The capture resumes where it stopped and runs to the end, then ${what}.`
+    if (!(await askConfirm(msg, { okLabel: fresh ? 'Restart' : 'Update', danger: fresh }))) return
     setError('')
-    try { await cap(`/styles/${s.id}/refresh`, {}) } catch (e) { setError(e.message) }
+    try { await cap(`/styles/${s.id}/refresh`, fresh ? { fresh: true } : {}) } catch (e) { setError(e.message) }
   }
 
   return (
@@ -198,14 +207,28 @@ export default function AdminCaptures() {
                     {styles.map(x => <option key={x.id} value={x.id}>{x.name} (from @{x.sourceBot})</option>)}
                   </select>
                   <button type="button" className="admin-btn admin-btn-primary" disabled={busy} onClick={() => update(s)}>{busy ? 'Updating…' : 'Update'}</button>
+                  <button type="button" className="admin-btn admin-btn-secondary" disabled={busy} onClick={() => update(s, true)} title="Discard the saved capture and capture the bot again from /start">Restart</button>
                   {c && <button type="button" className={`admin-btn ${view === 'sim' ? 'admin-btn-primary' : 'admin-btn-secondary'}`} onClick={() => toggleView('sim')}>Simulate</button>}
                   {c && <button type="button" className={`admin-btn ${view === 'check' ? 'admin-btn-primary' : 'admin-btn-secondary'}`} onClick={() => toggleView('check')}>Check</button>}
                 </div>
               </div>
               <div style={muted}>
-                From <b>@{s.sourceBot}</b> · {s.replica ? 'replica: rebuilt from the bot' : 'shop style: information pages and pictures only'} · capture: {c ? `${c.screens} screens, ${c.queued ? `${c.queued} actions left` : 'complete'}, ${new Date(c.updated).toLocaleDateString()}` : 'not on this server yet (the update starts it)'}
-                {' · '}used by {s.bots.length ? s.bots.map(b => `@${b}`).join(', ') : 'no bot yet'}
+                From <b>@{s.sourceBot}</b> · {s.replica ? 'replica: rebuilt from the bot' : 'shop style: information pages and pictures only'} · used by {s.bots.length ? s.bots.map(b => `@${b}`).join(', ') : 'no bot yet'}
               </div>
+              {c ? (() => {
+                const done = c.steps || 0, left = c.queued || 0, total = done + left
+                const pct = total ? Math.round((done / total) * 100) : (c.screens ? 100 : 0)
+                return (
+                  <div style={{ marginTop: 8, maxWidth: 460 }}>
+                    <div style={muted}>
+                      Capture: {c.screens} screens · <b>{done}</b> paths explored{left ? <> · {left} left · <b>{total}</b> total ({pct}%)</> : ' · complete'} · {new Date(c.updated).toLocaleDateString()}
+                    </div>
+                    <div style={{ height: 6, background: '#e6e6ef', borderRadius: 999, overflow: 'hidden', marginTop: 6 }}>
+                      <div style={{ width: `${left ? pct : 100}%`, height: '100%', background: left ? '#1a1a2e' : '#28a745', transition: 'width .4s' }} />
+                    </div>
+                  </div>
+                )
+              })() : <div style={muted}>Capture: not on this server yet (the update starts it)</div>}
             </>
           )
         })()}

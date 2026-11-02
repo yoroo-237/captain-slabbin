@@ -330,14 +330,16 @@ async function styleToRebuild(user, styleId) {
   } };
 }
 
-export async function refreshStyle(user, styleId) {
+// fresh: recapture the bot from scratch (--fresh, discards the saved state and starts
+// at /start) instead of resuming where the last capture stopped.
+export async function refreshStyle(user, styleId, { fresh = false } = {}) {
   const userId = Number(user.sub);
   const { style, bot, rebuild } = await styleToRebuild(user, styleId);
   busy(userId);
-  const args = exploreArgs(userId, { bots: [bot], profile: 'explorer', maxActions: 20000 });
+  const args = exploreArgs(userId, { bots: [bot], profile: 'explorer', maxActions: 20000, fresh });
   await fs.mkdir(capturesOf(userId), { recursive: true });
   await fs.rm(stopFile(userId), { force: true });
-  emit(userId, 'line', `== Mise à jour du style « ${style.name} » depuis @${bot}`);
+  emit(userId, 'line', `== ${fresh ? 'Recapture complète' : 'Mise à jour'} du style « ${style.name} » depuis @${bot}`);
   run(userId, 'Exploration', PYTHON, args, TOOL, await userEnv(userId), code => rebuild(userId, code));
   return { ...state(userId), bot, style: style.name };
 }
