@@ -57,13 +57,15 @@ export function requireSuper(req, res, next) {
 }
 
 export async function bootstrapSuperadmin() {
-  const username = process.env.SUPERADMIN_USERNAME?.trim().toLowerCase()
+  // Usernames are stored in lowercase and compared that way: MKO signs in as typed
+  const label = process.env.SUPERADMIN_USERNAME?.trim()
+  const username = label?.toLowerCase()
   const password = process.env.SUPERADMIN_PASSWORD
   if (!username || !password) return console.warn('[auth] SUPERADMIN_USERNAME / SUPERADMIN_PASSWORD not set: no super admin account')
 
   const reset = process.env.RESET_SUPERADMIN_PASSWORD === 'true'
   if (!reset && await prisma.user.findUnique({ where: { username }, select: { id: true } })) {
-    return console.log(`[auth] super admin "${username}" already exists, kept as is`)
+    return console.log(`[auth] super admin "${label}" already exists, kept as is`)
   }
   const passwordHash = await hashPassword(password)
   await prisma.user.upsert({
@@ -71,7 +73,7 @@ export async function bootstrapSuperadmin() {
     update: { passwordHash, role: 'superadmin', isActive: true },
     create: { username, passwordHash, role: 'superadmin' },
   })
-  console.log(`[auth] super admin "${username}" ${reset ? 'password reset from the variables' : 'created'}`)
+  console.log(`[auth] super admin "${label}" ${reset ? 'password reset from the variables' : 'created'}`)
 }
 
 // Wrong passwords per IP: 10 tries, then blocked 15 minutes

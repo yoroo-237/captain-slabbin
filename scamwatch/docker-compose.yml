@@ -26,7 +26,7 @@ services:
       DATABASE_URL: postgresql://scamwatch:${POSTGRES_PASSWORD:-scamwatch}@db:5432/scamwatch
       IP_SALT: ${IP_SALT:-change-me}
       JWT_SECRET: ${JWT_SECRET:-local-dev-secret-change-me}
-      SUPERADMIN_USERNAME: ${SUPERADMIN_USERNAME:-mko}
+      SUPERADMIN_USERNAME: ${SUPERADMIN_USERNAME:-MKO}
       SUPERADMIN_PASSWORD: ${SUPERADMIN_PASSWORD:-}
       BTC_HD_SEED: ${BTC_HD_SEED:-}
       ETH_HD_SEED: ${ETH_HD_SEED:-}

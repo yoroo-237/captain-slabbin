@@ -65,7 +65,7 @@ Certaines valeurs viennent du `.env` de la plateforme bots, d'autres **doivent**
 | `PUBLIC_URL` | `https://scamwatch.captainslabbin.shop` | **non** : l'adresse de ScamWatch |
 | `IP_SALT` | chaîne aléatoire¹, **à ne plus jamais changer** ensuite | nouvelle |
 | `JWT_SECRET` | chaîne aléatoire de 32 caractères ou plus¹ | **non**, nouvelle |
-| `SUPERADMIN_USERNAME` | `mko` (la casse est ignorée : `MKO` marche aussi à la connexion) | oui |
+| `SUPERADMIN_USERNAME` | `MKO` | oui |
 | `SUPERADMIN_PASSWORD` | mot de passe de départ du super admin² | au choix |
 | `BTC_HD_SEED` | phrase BIP39 de 12 mots¹ (BTC, LTC, DOGE) | **non**, nouvelle |
 | `ETH_HD_SEED` | autre phrase BIP39 de 12 mots¹ | **non**, nouvelle |
@@ -89,13 +89,13 @@ Gardez une copie des deux seeds hors ligne : elles contrôlent les fonds dépos�
 ² Le compte super admin est créé **une seule fois**, au premier démarrage, à partir de ces deux variables. Ensuite il reste tel quel en base : un mot de passe changé dans **Mon compte** survit aux redéploiements, et modifier la variable ne change plus rien. Mot de passe perdu : ajoutez `RESET_SUPERADMIN_PASSWORD=true`, redéployez (le mot de passe de `SUPERADMIN_PASSWORD` est remis), puis **retirez** la variable.
 
 ### 1.4 Vérifier
-Ouvrez `https://scamwatch.captainslabbin.shop/api/health` : la réponse doit être `{"ok":true}`. Dans les logs Railway, la ligne `[auth] super admin "mko" created` confirme la création du compte au premier démarrage ; aux démarrages suivants, `already exists, kept as is`.
+Ouvrez `https://scamwatch.captainslabbin.shop/api/health` : la réponse doit être `{"ok":true}`. Dans les logs Railway, la ligne `[auth] super admin "MKO" created` confirme la création du compte au premier démarrage ; aux démarrages suivants, `already exists, kept as is`.
 
 ---
 
 ## 2. Premier passage dans l'admin
 
-1. Ouvrez `https://scamwatch.captainslabbin.shop/#login` et connectez-vous avec `mko` et votre mot de passe. Vous arrivez sur l'espace **Admin**.
+1. Ouvrez `https://scamwatch.captainslabbin.shop/#login` et connectez-vous avec `MKO` et votre mot de passe. Vous arrivez sur l'espace **Admin**.
 2. Onglet **Réglages** :
    - **Prix d'un jeton (USD)** : 1 $ par défaut ;
    - **Jetons par signalement** : 1 par défaut (0 = gratuit) ;
@@ -145,7 +145,7 @@ Un appel sans signature valide est refusé.
 - [ ] La même capture envoyée deux fois sur un compte est refusée, et rien n'est débité.
 - [ ] Un compte de la liste blanche ne peut pas être signalé et n'apparaît pas dans la liste publique.
 - [ ] Dans **Modération**, les captures s'ouvrent, et Confirmer / Rejeter mettent à jour la liste publique (badge « Confirmé », compte rejeté masqué).
-- [ ] Après un redéploiement, la connexion `mko` fonctionne toujours et les réglages sont conservés.
+- [ ] Après un redéploiement, la connexion `MKO` fonctionne toujours et les réglages sont conservés.
 
 ---
 
