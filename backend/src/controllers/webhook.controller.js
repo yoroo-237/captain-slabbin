@@ -2,6 +2,7 @@ import { withTenant } from '../tenant.js';
 import crypto from 'crypto';
 import { prisma } from '../db.js';
 import { walletService } from '../services/wallet.service.js';
+import { cryptoService } from '../services/crypto.service.js';
 import { ok } from '../utils/response.js';
 import { env } from '../config/env.js';
 import { findBot, primaryBot, rememberChat, tg, notifyNewMessage, replyFromStaffChat, claimInbox } from '../services/telegram.service.js';
@@ -37,6 +38,15 @@ export const webhookController = {
     if (cryptoAmount <= 0) {
       console.warn(`[Webhook BlockCypher] Zero value for deposit #${deposit.id}`);
       return res.json(ok('Zero value received'));
+    }
+
+    // A bot order's payments add up: the address's total received is the amount, whatever
+    // the transaction this call reports (so a repeated call never counts twice)
+    if (deposit.orderId) {
+      const seen = await cryptoService.checkDepositOnChain(deposit);
+      if (!seen.confirmed) return res.json(ok('Awaiting confirmation'));
+      await walletService.confirmDeposit(deposit.id, seen.cryptoAmount, null, { cumulative: true });
+      return res.json(ok('Order payment received'));
     }
 
     // Credited in crypto (net of the deposit commission) — no price needed
@@ -88,7 +98,7 @@ export const webhookController = {
         continue;
       }
 
-      await walletService.confirmDeposit(deposit.id, ethAmount);
+      await walletService.confirmDeposit(deposit.id, ethAmount, null, { txHash: transfer.hash || null });
       console.log(`[Webhook Alchemy] Deposit #${deposit.id} confirmed: ${ethAmount} ETH`);
     }
 
@@ -179,6 +189,7 @@ ${menu.text}` };
       case 'w':    return shop.walletScreen(user);
       case 'dep':  return shop.depositScreen(user, a);
       case 'o':    return commands ? board.ordersBoard(user) : shop.ordersScreen(user);
+      case 'ord':  return board.orderScreen(user, a);
       case 'co':   return customOrderScreen(from);
       default:     return menuScreen(account);
     }

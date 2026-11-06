@@ -87,7 +87,8 @@ export const DEFAULT_LOOK = {
     payFromWallet: '💳 <b>Payment Method:</b>\nPaid from your wallet when you place the order.',
     walletShort: '⚠️ Add <b>{missing}</b> to your wallet to place this order.',
     refundAsk: '✏️ <b>SEND ME YOUR {coin} REFUND ADDRESS:</b>',
-    coinAsk: '💬 Choose the currency of your refund address:',
+    coinAsk: '💬 Choose the currency of your payment (it is also the currency of your refund address):',
+    payWait: 'You have {minutes} minutes to send the full payment (it can confirm on the blockchain later). Several payments within {minutes} minutes are OK. If your payment is detected after {minutes} minutes, the order is cancelled and the payment is refunded to your refund address.',
     myCartTitle: '🛒 <b>My Cart</b>',
     vendor: '',                             // "(by …)" under each product of My Cart, and on its shipping line
     vouchersTitle: '🛒 <b>Applied Vouchers</b>',
@@ -129,6 +130,7 @@ export const DEFAULT_LOOK = {
     refundOptional: 'Refund Address (optional)',
     addOrderNotes: 'Add Order Notes',
     editPayment: 'Edit Payment Method',
+    selectPayment: 'Select Payment Method >',
     emptyCart: 'Empty Cart',
     editShipping: 'Edit Shipping Details',
     applyVouchers: 'Apply Vouchers',

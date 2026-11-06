@@ -68,6 +68,7 @@ model User {
   pushSubscriptions PushSubscription[]
   // Bots platform: the owner (staff user) this belongs to; 0 = the platform itself (see src/tenant.js)
   tenantId          Int                @default(0)
+  refundRequests    RefundRequest[]
 
   @@unique([telegramId, tenantId])
   @@index([tenantId])
@@ -180,7 +181,9 @@ model Order {
   orderNumber     String       @unique
   userId          Int
   user            User         @relation(fields: [userId], references: [id])
-  status          String       @default("processing") // processing | shipped | delivered | cancelled | refunded
+  status          String       @default("processing") // awaiting_payment | processing | shipped | delivered | cancelled | refunded
+  // Bot checkout: the payment window of an awaiting_payment order (30 minutes)
+  expiresAt       DateTime?
   paymentMethod   String
   totalAmount     Decimal      @db.Decimal(10, 2)
   shippingFee     Decimal      @default(0) @db.Decimal(10, 2)
@@ -256,9 +259,35 @@ model Deposit {
   confirmedAt      DateTime?
   hookId           String?
   ethIndex         Int?
+  // The order this deposit pays (bot checkout), if any
+  orderId          Int?         @unique
+  // Transactions already counted (a bot order's payments add up; each counts once)
+  txSeen           Json         @default("[]")
   transactionId    Int?         @unique
   transaction      Transaction? @relation(fields: [transactionId], references: [id])
   createdAt        DateTime     @default(now())
+}
+
+// Bot checkout: money to give back (a payment after the 30 minutes, a short payment on an
+// order that expired, a surplus). Created pending, with the amount already taken off the
+// customer's holding; an admin approves it (sent from the deposit address) or rejects it.
+model RefundRequest {
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  user      User      @relation(fields: [userId], references: [id])
+  orderId   Int?
+  depositId Int
+  currency  String
+  amount    Decimal   @db.Decimal(18, 8)
+  address   String?
+  reason    String
+  status    String    @default("pending") // pending | sending | manual | refunded | rejected
+  txHash    String?
+  error     String?
+  createdAt DateTime  @default(now())
+  decidedAt DateTime?
+
+  @@index([status])
 }
 
 model Transaction {

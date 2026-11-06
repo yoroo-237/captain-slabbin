@@ -5,6 +5,7 @@
 **/dist
 **/dist-bots
 backend/uploads
+backend/data
 tools/tg-explorer/sessions
 tools/tg-explorer/captures
 tools/tg-explorer/.venv

@@ -42,7 +42,14 @@ const hashIp = (ip) => crypto.createHash('sha256').update(`${SALT}:${ip}`).diges
 
 // Liste blanche : un compte y figure par son @username ou par son ID numérique
 const whereTarget = (t) => (t.username ? { username: t.username } : { tgId: t.tgId })
-const isWhitelisted = async (t) => !!(await prisma.whitelistEntry.findFirst({ where: whereTarget(t), select: { id: true } }))
+const targetKeys = (t) => [t.username && { username: t.username }, t.tgId && { tgId: t.tgId }].filter(Boolean)
+// Les deux identifiants comptent, y compris celui que seule la fiche connue du compte possède
+// (signalé par @username alors que seul son ID est en liste blanche, et inversement)
+const isWhitelisted = async (t) => {
+  const known = await prisma.target.findMany({ where: { OR: targetKeys(t) }, select: { username: true, tgId: true } })
+  const keys = [t, ...known].flatMap(targetKeys)
+  return !!(await prisma.whitelistEntry.findFirst({ where: { OR: keys }, select: { id: true } }))
+}
 
 // Filtre Prisma qui écarte les comptes en liste blanche des listes publiques.
 // Les champs nuls sont gardés à part : en SQL, "NULL NOT IN (...)" n'est jamais vrai.
@@ -339,12 +346,23 @@ app.post('/api/reports', requireUser, async (req, res) => {
     throw err
   }
 
-  const typed = proof ? true : await requestCapture(saved.id)
+  // Payment and reports are saved: a capture that fails to start must not look like a failed send,
+  // or the user would pay again by retrying. The type stays as it is until a later capture.
+  let typed = !!proof
+  let captureQueued = !proof && captureEnabled()
+  if (!proof) {
+    try {
+      typed = await requestCapture(saved.id)
+    } catch (err) {
+      captureQueued = false
+      console.error(`[capture] request failed for target ${saved.id}:`, err.message)
+    }
+  }
   res.status(201).json({
     ok: true, targetId: saved.id, reportCount: saved.reportCount, tokensSpent: tokens, count,
     scheduled: later, intervalMinutes: Math.round(intervalMs / 6_000) / 10,
     type: finalType, withProof: !!proof, proofs: withProof,
-    capturing: !typed && captureEnabled(),
+    capturing: !typed && captureQueued,
   })
 })
 
@@ -430,7 +448,7 @@ app.get('/api/admin/targets/:id', async (req, res) => {
     where: { targetId: id },
     orderBy: { createdAt: 'desc' },
     select: {
-      id: true, status: true, error: true, kind: true, title: true, about: true, texts: true, messages: true, detectedType: true, createdAt: true, finishedAt: true, photo: true,
+      id: true, status: true, error: true, kind: true, title: true, about: true, texts: true, messages: true, routes: true, detectedType: true, createdAt: true, finishedAt: true, photo: true,
       media: { select: { id: true, position: true }, orderBy: { position: 'asc' } },
     },
   })

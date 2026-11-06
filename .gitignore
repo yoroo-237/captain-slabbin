@@ -25,3 +25,7 @@ Thumbs.db
 
 # Bots dashboard build
 frontend/dist-bots/
+
+# Capture engine (backend/src/tg): Telegram sessions and captured bot data are sensitive
+backend/data/sessions/
+backend/data/captures/

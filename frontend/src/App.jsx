@@ -35,6 +35,7 @@ const AdminDashboard = lazyPage(() => import('./pages/admin/AdminDashboard.jsx')
 const AdminUsers = lazyPage(() => import('./pages/admin/AdminUsers.jsx'))
 const AdminUserDetail = lazyPage(() => import('./pages/admin/AdminUserDetail.jsx'))
 const AdminDeposits = lazyPage(() => import('./pages/admin/AdminDeposits.jsx'))
+const AdminRefunds = lazyPage(() => import('./pages/admin/AdminRefunds.jsx'))
 const AdminTransactions = lazyPage(() => import('./pages/admin/AdminTransactions.jsx'))
 const AdminOrders = lazyPage(() => import('./pages/admin/AdminOrders.jsx'))
 const AdminOrderDetail = lazyPage(() => import('./pages/admin/AdminOrderDetail.jsx'))
@@ -153,6 +154,7 @@ export default function App() {
                 <Route path="users" element={<AdminUsers />} />
                 <Route path="users/:id" element={<AdminUserDetail />} />
                 <Route path="deposits" element={<AdminDeposits />} />
+                <Route path="refunds" element={<AdminRefunds />} />
                 <Route path="transactions" element={<AdminTransactions />} />
                 <Route path="orders" element={<AdminOrders />} />
                 <Route path="orders/:id" element={<AdminOrderDetail />} />

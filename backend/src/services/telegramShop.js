@@ -291,7 +291,7 @@ export async function depositScreen(user, currency) {
   }
 }
 
-const STATUS = { processing: '⏳ Processing', shipped: '🚚 Shipped', delivered: '✅ Delivered', cancelled: '✖️ Cancelled', refunded: '↩️ Refunded' };
+const STATUS = { awaiting_payment: '⌛ Awaiting payment', processing: '⏳ Processing', shipped: '🚚 Shipped', delivered: '✅ Delivered', cancelled: '✖️ Cancelled', refunded: '↩️ Refunded' };
 
 export async function ordersScreen(user) {
   const orders = await prisma.order.findMany({ where: { userId: user.id }, orderBy: { placedAt: 'desc' }, take: 5, include: { items: true } });

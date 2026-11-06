@@ -51,6 +51,21 @@ async function getHdMnemonic() {
 }
 
 export const cryptoService = {
+  // The coins the admin has set up to receive payments (Admin → Settings → Crypto):
+  // BTC / LTC / DOGE need the HD seed, ETH its seed, XMR its address. The bot's
+  // checkout offers these and nothing else.
+  async payableCoins() {
+    const rows = await prisma.siteSetting.findMany({ where: { key: { in: ['btc_hd_seed', 'xmr_address'] } } });
+    const set = v => { const t = String(v ?? '').trim(); return t && !t.startsWith('<') ? t : ''; };
+    const val = k => set(rows.find(r => r.key === k)?.value);
+    const coins = [];
+    if (val('btc_hd_seed') || set(env.btcHdSeed)) coins.push('BTC', 'LTC', 'DOGE');
+    // ETH payments are seen through the Alchemy webhook: without it nothing would be detected
+    if (set(env.ethHdSeed) && set(env.alchemy.apiKey) && set(env.alchemy.webhookId) && set(env.alchemy.authToken)) coins.push('ETH');
+    if (val('xmr_address') || set(env.xmrAddress)) coins.push('XMR');
+    return coins;
+  },
+
   async generateAddress(currency, depositId) {
     switch (currency) {
       case 'BTC':
@@ -421,5 +436,75 @@ export const cryptoService = {
       }
     }
     return results;
+  },
+
+  // Sends `amount` (crypto) from a deposit's own address to `destination`, the network fee
+  // taken off what is sent; whatever else is on the address stays there (the commission,
+  // the rest of the deposit). BTC / LTC / DOGE / ETH only: XMR has no key here.
+  // Returns { txHash, sent }.
+  async refundFromDeposit(dep, amount, destination) {
+    const qty = Number(amount);
+    if (!(qty > 0)) throw appError('Nothing to refund', 400);
+    if (dep.currency === 'ETH') {
+      if (!env.ethHdSeed || !env.alchemy.apiKey) throw appError('ETH is not configured', 500);
+      if (!isAddress(destination)) throw appError('Invalid ETH refund address', 400);
+      if (dep.ethIndex == null) throw appError('This deposit has no ETH key index', 400);
+      const provider = new JsonRpcProvider(`https://eth-mainnet.g.alchemy.com/v2/${env.alchemy.apiKey}`);
+      const wallet   = HDNodeWallet.fromPhrase(env.ethHdSeed, undefined, `m/44'/60'/0'/0/${dep.ethIndex}`).connect(provider);
+      const feeData  = await provider.getFeeData();
+      const gasPrice = feeData.gasPrice ?? feeData.maxFeePerGas;
+      if (!gasPrice) throw appError('Could not fetch gas price from Alchemy', 500);
+      const gasCost  = 21000n * gasPrice;
+      const want     = parseEther(qty.toFixed(8));
+      const balance  = await provider.getBalance(wallet.address);
+      if (balance < want) throw appError('The deposit address holds less than the amount to refund', 409);
+      const value = want - gasCost;
+      if (value <= 0n) throw appError('The amount is too small to cover the network fee', 409);
+      const tx = await wallet.sendTransaction({ to: destination, value, gasLimit: 21000n, gasPrice });
+      return { txHash: tx.hash, sent: formatEther(value) };
+    }
+
+    const currency = dep.currency;
+    const chain = CHAIN_MAP[currency];
+    if (!chain) throw appError(`${currency} refunds are sent by hand from the shop's wallet`, 400);
+    if (!env.blockcypherToken) throw appError('BLOCKCYPHER_TOKEN not configured', 500);
+    if (!this.isValidUtxoAddress(currency, destination)) throw appError(`Invalid ${currency} refund address`, 400);
+
+    const network = BTC_NETWORKS[currency];
+    const dust = DUST_SATS[currency];
+    const { child, address } = await this.deriveUtxoKey(currency, dep.id);
+    if (address !== dep.address) throw appError('The deposit address does not match the wallet seed', 409);
+
+    let feePerByte = { BTC: 10, LTC: 10, DOGE: 1000 }[currency];
+    try {
+      const { data: info } = await axios.get(`https://api.blockcypher.com/v1/${chain}?token=${env.blockcypherToken}`);
+      feePerByte = Math.ceil((info.low_fee_per_kb || feePerByte * 1000) / 1000);
+    } catch { /* fallback */ }
+    const feeFor = (inputs, outputs) => feePerByte * (10 + inputs * 148 + outputs * 34);
+
+    const { data } = await axios.get(`https://api.blockcypher.com/v1/${chain}/addrs/${address}?unspentOnly=true&token=${env.blockcypherToken}`);
+    const utxos = data.txrefs || [];
+    const totalSats = utxos.reduce((sum, u) => sum + u.value, 0);
+    const wantSats = Math.round(qty * 1e8);
+    if (totalSats < wantSats) throw appError('The deposit address holds less than the amount to refund', 409);
+
+    // The rest goes back to the deposit address, unless it is dust (then it goes with the refund)
+    let change = totalSats - wantSats;
+    let fee = feeFor(utxos.length, change >= dust ? 2 : 1);
+    if (change < dust) change = 0;
+    const send = (change ? wantSats : totalSats) - fee;
+    if (send < dust) throw appError('The amount is too small to cover the network fee', 409);
+
+    const psbt = new bitcoin.Psbt({ network });
+    for (const utxo of utxos) {
+      const { data: txData } = await axios.get(`https://api.blockcypher.com/v1/${chain}/txs/${utxo.tx_hash}?includeHex=true&token=${env.blockcypherToken}`);
+      psbt.addInput({ hash: utxo.tx_hash, index: utxo.tx_output_n, nonWitnessUtxo: Buffer.from(txData.hex, 'hex') });
+    }
+    psbt.addOutput({ address: destination, value: send });
+    if (change) psbt.addOutput({ address, value: change });
+    for (let i = 0; i < utxos.length; i++) psbt.signInput(i, child);
+    psbt.finalizeAllInputs();
+    const { data: pushed } = await axios.post(`https://api.blockcypher.com/v1/${chain}/txs/push?token=${env.blockcypherToken}`, { tx: psbt.extractTransaction().toHex() });
+    return { txHash: pushed.tx?.hash, sent: trimAmount(send) };
   },
 };

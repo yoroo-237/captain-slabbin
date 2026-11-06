@@ -14,6 +14,7 @@ import webhookRoutes      from './webhook.routes.js';
 import adminRoutes        from './admin/index.js';
 import { captureFiles }   from './admin/capture.routes.js';
 import gateRoutes         from './gate.routes.js';
+import qrRoutes           from './qr.routes.js';
 import telegramRoutes     from './telegram.routes.js';
 import messageRoutes      from './message.routes.js';
 import categoryRoutes     from './category.routes.js';
@@ -39,6 +40,7 @@ router.use('/content',       contentRoutes);
 router.use('/reviews',       reviewRoutes);
 router.use('/webhooks',      webhookRoutes);
 router.use('/capture-files', captureFiles);
+router.use('/qr',            qrRoutes);
 router.use('/admin',         adminRoutes);
 
 export default router;

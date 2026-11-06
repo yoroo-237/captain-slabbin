@@ -19,8 +19,9 @@ Standalone project of this repository, with its own Railway project, served on i
     then sends `POST /api/reports` with its `captureId`. Paid only once the proof is in. The same
     content counts once per account (`proofHash` = `cap:` + content hash); no per-user limit.
   - Without proof: sent and paid at once, a background capture (reused for 24 h) fills the type.
-    Batches and spreading (0 to 1440 minutes, steps of 15) work in both modes; a batch with proof
-    shares one capture (ranked proof hashes, so that capture serves one send only).
+    Batches and spreading (0 to 1440 minutes, steps of 15) work in both modes. No proof is shared in
+    a batch: the capture is the first report's proof only, the same link or file in two reports is
+    refused, and at least a third of the reports must carry their own proof.
   - The Telegram account is connected from Admin → Settings (API ID, API hash, phone, code, 2FA
     password; `capture/connect.py`). No environment variable: the session is stored in Postgres,
     encrypted with a key derived from `JWT_SECRET`. Until it is connected, the checkbox is off and

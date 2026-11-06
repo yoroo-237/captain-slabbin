@@ -2,13 +2,13 @@ import { prisma } from '../db.js';
 import { escapeHtml } from './telegram.service.js';
 import { look, activeBot, catalog } from './telegramStyle.js';
 import { money, shelfArt, image } from './telegramCatalog.js';
-import { getUserBalance } from './balance.service.js';
-import { orderService } from './order.service.js';
+import { cryptoService } from './crypto.service.js';
+import { orderService, PAY_WINDOW_MIN } from './order.service.js';
 import { priceCart } from './pricing.service.js';
 import { checkVoucher, voucherLabel } from './voucher.service.js';
 import { isPgpMessage } from './pgp.service.js';
 import { REFUND_COINS, validRefund, refundNote, keepRefundOnAccount } from './refund.service.js';
-import { renderInvoice } from './replicaInvoice.js';
+import { env } from '../config/env.js';
 
 // The "commands" layout: a menu-board bot navigated with typed commands, like a
 // classic Telegram shop (modelled on the bots it was copied from).
@@ -345,7 +345,7 @@ export async function reviewsBoard(id, index = 0) {
 async function minimumFor(user) {
   const m = look().minimums;
   if (!m) return 0;
-  const done = await prisma.order.count({ where: { userId: user.id, status: { notIn: ['cancelled', 'refunded'] } } });
+  const done = await prisma.order.count({ where: { userId: user.id, status: { notIn: ['awaiting_payment', 'cancelled', 'refunded'] } } });
   return Number(done ? m.next : m.first) || 0;
 }
 
@@ -515,16 +515,20 @@ export async function saveRefund(from, user, text) {
   return summaryScreen(user);
 }
 
-// Edit Payment Method: the coin of the refund address, then the address
-export function coinScreen() {
+// Select / Edit Payment Method: the coins the admin has set up (Admin → Settings → Crypto);
+// the coin paid with is also the one of the refund address
+export async function coinScreen() {
+  const coins = await cryptoService.payableCoins();
+  if (!coins.length) return { text: errorText('No payment method is available right now. Please message the shop.'), keyboard: [[toCart()]] };
   return {
     text: [look().texts.payTitle, '', look().texts.coinAsk].join('\n'),
-    keyboard: [...pairs(Object.entries(COINS).map(([k, name]) => ({ text: name, callback_data: `ckcur:${k}` }))), [toCart()]],
+    keyboard: [...pairs(coins.map(k => ({ text: `${k} - ${COINS[k]}`, callback_data: `ckcur:${k}` }))), [toCart()]],
   };
 }
 
 export async function pickCoin(from, user, coin) {
-  if (COINS[coin]) await saveCheckout(user, { refundCurrency: coin, refund: null });
+  if (!(await cryptoService.payableCoins()).includes(coin)) return coinScreen();
+  await saveCheckout(user, { refundCurrency: coin, refund: null });
   return paymentScreen(from, user);
 }
 
@@ -612,7 +616,7 @@ export async function summaryScreen(user, error = null) {
   if (!lines.length) return cartBoard(user);
   const c = checkoutOf(user);
   const vendor = texts.vendor ? escapeHtml(texts.vendor) : '';
-  const [{ shippingFee, offer, discount, total, subtotal }, { balance }, minimum] = await Promise.all([priced(user, lines), getUserBalance(user.id), minimumFor(user)]);
+  const [{ shippingFee, offer, discount, total, subtotal }, minimum] = await Promise.all([priced(user, lines), minimumFor(user)]);
   const below = minimum && subtotal < minimum;
   // One block per product, its packs under it, as the original lists them
   const products = [...new Set(lines.map(l => l.productId))].map(id => lines.filter(l => l.productId === id));
@@ -646,26 +650,22 @@ export async function summaryScreen(user, error = null) {
       ],
     };
   }
+  // Shipping done: the payment method comes next (Select Payment Method), then Place Order
+  const chosen = !!c.refund;
   return {
     text: [
       ...head,
       '',
       '📦 <b>Shipping Details:</b>',
       shownAddress(c),
-      '',
-      texts.payFromWallet,
-      ...(c.refund ? [`Refund address (${COINS[coinOf(c)]}):`, `<code>${escapeHtml(c.refund)}</code>`] : []),
+      ...(chosen ? ['', texts.payTitle + ':', `${coinOf(c)} - ${COINS[coinOf(c)]}`, 'Refund address:', escapeHtml(c.refund)] : []),
       ...(c.orderNote ? ['', '📝 <b>Order Notes:</b>', escapeHtml(c.orderNote)] : []),
-      '',
-      `💰 Wallet  <b>${money(balance)}</b>`,
-      ...(balance < total ? [fill(texts.walletShort, { missing: usd(Math.round((total - balance) * 100) / 100) })] : []),
     ].join('\n'),
     keyboard: [
-      [back('menu'), { text: labels.placeOrder, callback_data: 'cpay' }],
-      [{ text: labels.addOrderNotes, callback_data: 'ckon' }, ...(balance < total ? [{ text: labels.addFunds, callback_data: 'w' }] : [])],
+      [back('menu'), chosen ? { text: labels.placeOrder, callback_data: 'cpay' } : { text: labels.selectPayment, callback_data: 'ckpm' }],
+      [{ text: labels.addOrderNotes, callback_data: 'ckon' }, ...(chosen ? [{ text: labels.editPayment, callback_data: 'ckpm' }] : [])],
       [{ text: labels.emptyCart, callback_data: 'cclr' }, { text: labels.editShipping, callback_data: 'ckedit' }],
-      // Optional: where the shop sends a refund, should one be needed
-      [{ text: labels.applyVouchers, callback_data: 'ck' }, { text: labels.refundOptional, callback_data: 'ckpm' }],
+      [{ text: labels.applyVouchers, callback_data: 'ck' }],
     ],
   };
 }
@@ -679,7 +679,34 @@ export async function clearCart(user) {
 // One payment at a time per customer: a double tap never makes two orders
 const paying = new Set();
 
-// Place Order: paid from the wallet, as everywhere in the shop
+// The order waiting for its payment: the QR code, the exact amount, the address and the
+// 30 minutes (the original's "Next step" screen)
+function pendingScreen({ order, deposit, gross, coin }) {
+  const uri = ['ETH', 'XMR'].includes(coin) ? deposit.address : `${COIN_URI[coin]}:${deposit.address}?amount=${Number(gross).toFixed(8)}`;
+  const image = env.publicUrl ? `${env.publicUrl.replace(/\/$/, '')}/api/qr?d=${encodeURIComponent(uri)}` : undefined;
+  return {
+    text: [
+      `Order <code>${escapeHtml(order.orderNumber)}</code>`,
+      '',
+      '<b>Next step:</b>',
+      '',
+      'Send',
+      `<code>${Number(gross).toFixed(8)}</code> ${coin}`,
+      'to',
+      `<code>${escapeHtml(deposit.address)}</code>`,
+      '',
+      fill(look().texts.payWait, { minutes: PAY_WINDOW_MIN }),
+      '',
+      `Order details: /ord_${order.orderNumber.replace(/-/g, '_').toLowerCase()}`,
+    ].join('\n'),
+    keyboard: [[back('menu')]],
+    ...(image ? { image } : {}),
+  };
+}
+const COIN_URI = { BTC: 'bitcoin', LTC: 'litecoin', DOGE: 'dogecoin' };
+
+// Place Order: no wallet. The order is created awaiting payment, with its own deposit
+// address; the payment (commission taken from it) confirms the order, or 30 minutes cancel it.
 export async function cartPay(user, from = null) {
   if (paying.has(user.id)) return null;
   paying.add(user.id);
@@ -688,27 +715,23 @@ export async function cartPay(user, from = null) {
     if (!lines.length) return cartBoard(user);
     const c = checkoutOf(user);
     if (!shippingDone(c)) return from ? shipScreen(from, user) : summaryScreen(user);
+    // The payment method comes first: the coin to pay with, and the refund address
+    if (!c.refund) return await coinScreen();
+    const coin = coinOf(c);
     const minimum = await minimumFor(user);
     const subtotal = subtotalOf(lines);
     if (minimum && subtotal < minimum) return summaryScreen(user, `The minimum order is ${money(minimum)}${minimum === Number(look().minimums?.first) ? ' on a first order' : ''}. Add ${money(minimum - subtotal)} more.`);
-    const { shippingFee, total } = await priced(user, lines);
-    const { balance } = await getUserBalance(user.id);
-    if (balance < total) {
-      return {
-        text: [...errorLine(`Your wallet has ${money(balance)} and this order is ${money(total)}.`), `Add at least <b>${money(total - balance)}</b> to your wallet, then come back to /cart and tap Place Order.`].join('\n'),
-        keyboard: [[{ text: '➕ Add funds', callback_data: 'w' }], [toCart()]],
-      };
-    }
-    // Product notes, order notes and the refund address travel with the order
+    const { shippingFee } = await priced(user, lines);
+    // Product notes, order notes and the refund address travel with the order. The address
+    // comes first: the note is cut at 2000 characters, and refunds read it from there.
     const notes = [
+      refundNote(coin, c.refund),
       ...new Set(lines.filter(l => l.note).map(l => `${l.product.name}: ${l.note}`)),
       ...(c.orderNote ? [`Order notes: ${c.orderNote}`] : []),
-      ...(c.refund ? [refundNote(coinOf(c), c.refund)] : []),
     ];
-    const { order, payments, newBalance } = await orderService.createOrder(user.id, {
-      channel: 'bot',
+    const placed = await orderService.placePendingOrder(user.id, {
+      coin,
       items: lines.map(l => ({ productId: l.productId, quantity: l.qty, option: l.option })),
-      paymentMethod: 'wallet',
       note: notes.join('\n') || null,
       shipping: { name: c.pgp ? 'PGP encrypted' : c.name, address: addressLines(c).join('\n'), fee: shippingFee },
       voucher: c.voucher || null,
@@ -717,40 +740,10 @@ export async function cartPay(user, from = null) {
     await saveCart(user, []);
     // The shipping details and refund address are kept for the next order
     await saveCheckout(user, { voucher: null, orderNote: null });
-    // A replica renders the invoice in the original bot's own layout; any other style,
-    // or a template that fails, uses the standard invoice below
-    const invoiceText = renderInvoice(look().invoice, {
-      order: order.orderNumber,
-      items: order.items.map(i => ({ qty: i.quantity, name: i.name, option: i.option, price: Number(i.price), lineTotal: Number(i.price) * i.quantity })),
-      subtotal,
-      shipping: Number(order.shippingFee),
-      voucherCode: order.voucherCode, discount: Number(order.discount || 0),
-      total: Number(order.totalAmount),
-      paid: payments.map(p => `${p.amount} ${p.currency}`).join(' + '),
-      wallet: Number(newBalance),
-    }, money);
-    if (invoiceText) return { text: invoiceText, keyboard: [[back('menu')]] };
-    return {
-      text: [
-        `Order <code>${escapeHtml(order.orderNumber)}</code>`,
-        '',
-        '✅ <b>Paid from your wallet</b>',
-        `<code>${payments.map(p => `${p.amount} ${p.currency}`).join(' + ')}</code>`,
-        '',
-        ...order.items.map(i => `${i.quantity} × ${escapeHtml(i.name)}  ·  ${money(Number(i.price) * i.quantity)}`),
-        ...(order.voucherCode ? [`🎟 ${escapeHtml(order.voucherCode)}  −${money(order.discount)}`] : []),
-        `Shipping  ${Number(order.shippingFee) > 0 ? money(order.shippingFee) : 'free'}`,
-        `<b>Total  ${money(order.totalAmount)}</b>`,
-        '',
-        look().texts.paidNote,
-        `💰 Wallet  <b>${money(newBalance)}</b>`,
-        '',
-        'Order details: /orders',
-      ].join('\n'),
-      keyboard: [[back('menu')]],
-    };
+    return pendingScreen({ ...placed, coin });
   } catch (err) {
-    return { text: errorText(escapeHtml(err.message || 'The payment did not go through.')), keyboard: [[toCart()]] };
+    console.error(`[Telegram] Place Order failed for user ${user.id}:`, err.message);
+    return { text: errorText(escapeHtml(err.message || 'The order could not be placed.')), keyboard: [[toCart()]] };
   } finally {
     paying.delete(user.id);
   }
@@ -758,7 +751,7 @@ export async function cartPay(user, from = null) {
 
 // ─── My Orders ───────────────────────────────────────────────────────────────
 
-const ORDER_STATUS = { processing: 'Processing', shipped: 'Shipped', delivered: 'Delivered', cancelled: 'Cancelled', refunded: 'Refunded' };
+const ORDER_STATUS = { awaiting_payment: 'Awaiting payment', processing: 'Processing', shipped: 'Shipped', delivered: 'Delivered', cancelled: 'Cancelled', refunded: 'Refunded' };
 
 // /orders, like the original: "My Orders", then the latest orders of this catalog
 export async function ordersBoard(user) {
@@ -779,6 +772,31 @@ export async function ordersBoard(user) {
     ].join('\n'),
     keyboard: [[back('menu')]],
   };
+}
+
+// /ord_<number>: one order, with its payment instructions while it awaits payment
+export async function orderScreen(user, number) {
+  const order = await prisma.order.findFirst({ where: { orderNumber: String(number), userId: user.id }, include: { items: true } });
+  if (!order) return { text: errorText('Order not found.'), keyboard: [[back('menu')]] };
+  const lines = [
+    `Order <code>${escapeHtml(order.orderNumber)}</code>`,
+    `<i>${ORDER_STATUS[order.status] || escapeHtml(order.status)}</i> · ${new Date(order.placedAt).toLocaleString('en-US')}`,
+    '',
+    ...order.items.map(i => `${i.quantity} × ${escapeHtml(i.name)}  ·  ${money(Number(i.price) * i.quantity)}`),
+    `Shipping  ${Number(order.shippingFee) > 0 ? money(order.shippingFee) : 'free'}`,
+    ...(order.voucherCode ? [`🎟 ${escapeHtml(order.voucherCode)}  −${money(order.discount)}`] : []),
+    `<b>Total  ${money(order.totalAmount)}</b>`,
+    ...(order.trackingNumber ? ['', `Tracking: <code>${escapeHtml(order.trackingNumber)}</code>${order.carrier ? ` (${escapeHtml(order.carrier)})` : ''}`] : []),
+  ];
+  if (order.status === 'awaiting_payment') {
+    const dep = await prisma.deposit.findUnique({ where: { orderId: order.id } });
+    const coin = order.payments?.[0]?.currency;
+    if (dep && coin) {
+      const left = Math.max(0, Math.ceil((new Date(order.expiresAt) - Date.now()) / 60000));
+      lines.push('', '<b>Next step:</b>', 'Send', `<code>${Number(dep.amountExpected).toFixed(8)}</code> ${coin}`, 'to', `<code>${escapeHtml(dep.address)}</code>`, '', `⏳ ${left} minute(s) left to send the full payment.`);
+    }
+  }
+  return { text: lines.join('\n'), keyboard: [[back('menu')]] };
 }
 
 // A typed answer to the checkout's last question, or null
@@ -802,6 +820,7 @@ export async function resolveCommand(cmd) {
   if (c === pre) return 'menu';
   if (/^p\d+$/.test(c)) return `p:${c.slice(1)}:1`;
   if (c === 'orders') return 'o';
+  { const m = /^ord_(ord_\d{4}_\d+)$/.exec(c); if (m) return `ord:${m[1].toUpperCase().replace(/_/g, '-')}`; }
   if (c === 'wallet') return 'w';
   if (c === 'cart') return 'cart';
   if (c === cmdName(look().customOrderCommand) || c === `${pre}_create_custom_order` || c === 'create_custom_order') {

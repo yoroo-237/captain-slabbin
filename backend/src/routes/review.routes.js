@@ -45,7 +45,7 @@ r.get('/product/:productId', requireGate, async (req, res) => {
 
 async function boughtIt(userId, productId) {
   return !!(await prisma.order.findFirst({
-    where: { userId, status: { notIn: ['cancelled', 'refunded'] }, items: { some: { productId } } },
+    where: { userId, status: { notIn: ['awaiting_payment', 'cancelled', 'refunded'] }, items: { some: { productId } } },
     select: { id: true },
   }));
 }

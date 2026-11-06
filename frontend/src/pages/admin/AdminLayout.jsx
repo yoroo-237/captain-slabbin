@@ -17,6 +17,7 @@ const NAV_ITEMS = [
   { section: 'Users & Finance' },
   { label: 'Users', path: '/admin/users' },
   { label: 'Deposits', path: '/admin/deposits' },
+  { label: 'Refunds', path: '/admin/refunds', badge: 'refunds' },
   { label: 'Transactions', path: '/admin/transactions' },
   { section: 'Support' },
   { label: 'Messages', path: '/admin/messages', badge: 'messages' },
@@ -51,7 +52,7 @@ function decodeJwt(token) {
 // What waits for staff (unread messages, orders to process, open tickets), refreshed
 // every 30 s, when the tab regains focus and the moment a push arrives
 function useBadges(enabled) {
-  const [badges, setBadges] = useState({ messages: 0, orders: 0, tickets: 0 })
+  const [badges, setBadges] = useState({ messages: 0, orders: 0, tickets: 0, refunds: 0 })
   const load = useCallback(() => { adminFetch('/admin/badges').then(setBadges).catch(() => {}) }, [])
   useEffect(() => {
     if (!enabled) return undefined

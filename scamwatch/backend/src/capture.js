@@ -16,7 +16,7 @@ import { runPython, captureDir } from './python.js'
 import { telegramCreds } from './telegram.js'
 
 const SCRIPT = process.env.CAPTURE_SCRIPT || path.join(captureDir, 'capture.py')
-const TIMEOUT_MS = 180_000 // a bot conversation: /start, then up to 8 buttons pressed
+const TIMEOUT_MS = 180_000 // safety stop: capture.py ends by itself first (TIME_BUDGET_S)
 const REUSE_MS = 24 * 3600_000 // type of a report without proof
 const PROOF_REUSE_MS = 10 * 60_000 // a proof is a fresh look at the account
 export const PROOF_VALID_MS = 60 * 60_000 // a finished proof must be sent within this time

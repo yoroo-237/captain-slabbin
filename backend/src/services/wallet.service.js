@@ -43,7 +43,9 @@ export const walletService = {
     };
   },
 
-  async createDeposit(userId, currency) {
+  // `orderId` / `minutes` / `expected`: a bot order's own deposit (30-minute window,
+  // the gross amount asked for); without them, a wallet top-up.
+  async createDeposit(userId, currency, { orderId = null, minutes = null, expected = null } = {}) {
     const validCurrencies = ['BTC', 'LTC', 'DOGE', 'ETH', 'XMR'];
     if (!validCurrencies.includes(currency)) throw appError('Unsupported currency', 400);
 
@@ -51,10 +53,10 @@ export const walletService = {
       where: { key: { in: ['deposit_expiry_hours'] } },
     });
     const expiryHours = parseInt(settings.find(s => s.key === 'deposit_expiry_hours')?.value || '12', 10);
-    const expiresAt   = new Date(Date.now() + expiryHours * 60 * 60 * 1000);
+    const expiresAt   = new Date(Date.now() + (minutes ? minutes * 60 * 1000 : expiryHours * 60 * 60 * 1000));
 
     const deposit = await prisma.deposit.create({
-      data: { userId, currency, expiresAt },
+      data: { userId, currency, expiresAt, orderId, amountExpected: expected },
     });
 
     let addrResult;
@@ -77,17 +79,20 @@ export const walletService = {
   // taken here: the customer's holding grows by the net amount only, and the
   // commission stays on the deposit address for the super admin's reserve sweep.
   // The USD price is informative only, so a missing price never blocks a credit.
-  async confirmDeposit(depositId, cryptoAmount, note = null) {
+  // `opts.cumulative`: the amount is the address's total received so far (a bot order's payments add up);
+  // `opts.txHash`: the one transaction it comes from, counted once.
+  async confirmDeposit(depositId, cryptoAmount, note = null, opts = {}) {
     // A blockchain webhook has no owner in context: credit as the customer's owner
     // (bots platform), so their notifications go through that owner's bots
     if (env.platform === 'bots' && currentTenant() === null) {
       const owner = await prisma.deposit.findUnique({ where: { id: depositId }, select: { user: { select: { tenantId: true } } } });
-      if (owner) return withTenant(owner.user.tenantId, () => this.confirmDeposit(depositId, cryptoAmount, note));
+      if (owner) return withTenant(owner.user.tenantId, () => this.confirmDeposit(depositId, cryptoAmount, note, opts));
     }
     const gross = balanceService.round8(Number(cryptoAmount));
     if (!(gross > 0)) throw appError('Received amount must be positive', 400);
 
     const deposit = await prisma.deposit.findUniqueOrThrow({ where: { id: depositId } });
+    if (deposit.orderId) return this.receiveOrderPayment(deposit, gross, opts, note);
     if (deposit.status === 'confirmed') throw appError('This deposit is already confirmed', 409);
 
     const price = await getCachedUsdPrice(deposit.currency);
@@ -135,13 +140,62 @@ export const walletService = {
     return txn;
   },
 
+  // A bot order's deposit: several payments add up. Each one is credited (net of the commission)
+  // as it arrives; once the order has what it needs, settlePendingOrder takes its price.
+  async receiveOrderPayment(deposit, gross, { cumulative = false, txHash = null } = {}, note = null) {
+    if (txHash && Array.isArray(deposit.txSeen) && deposit.txSeen.includes(txHash)) return null;
+    const delta = balanceService.round8(cumulative ? gross - Number(deposit.amountReceived) : gross);
+    if (!(delta > 0)) return null;
+    const price = await getCachedUsdPrice(deposit.currency);
+    const pct   = await balanceService.getCommissionPct();
+    const { commission, net } = balanceService.splitDeposit(delta, pct);
+    const netUsd = price ? balanceService.round2(net * price) : 0;
+
+    const txn = await prisma.$transaction(async (tx) => {
+      // Guarded by the amount read above: two reports of the same payment credit it once
+      const { count } = await tx.deposit.updateMany({
+        where: { id: deposit.id, amountReceived: deposit.amountReceived },
+        data: {
+          amountReceived: { increment: delta }, commissionAmount: { increment: commission }, netAmount: { increment: net },
+          usdCredited: { increment: netUsd }, commissionPct: pct,
+          ...(deposit.status === 'awaiting' ? { status: 'partial' } : {}),
+          ...(txHash ? { txSeen: [...(Array.isArray(deposit.txSeen) ? deposit.txSeen : []), txHash] } : {}),
+        },
+      });
+      if (count === 0) return null;
+      const t = await tx.transaction.create({
+        data: {
+          frontendId: formatTxnId(), userId: deposit.userId, type: 'deposit', amount: netUsd, currency: deposit.currency,
+          cryptoAmount: net, rate: price || null, status: 'confirmed',
+          note: note || `${delta} ${deposit.currency} received for an order, ${pct}% deposit fee (${commission} ${deposit.currency})`,
+        },
+      });
+      if (!deposit.transactionId) await tx.deposit.update({ where: { id: deposit.id }, data: { transactionId: t.id } });
+      await balanceService.credit(tx, deposit.userId, deposit.currency, net);
+      return t;
+    });
+    if (!txn) return null;
+    const fresh = await prisma.deposit.findUniqueOrThrow({ where: { id: deposit.id } });
+    const { orderService } = await import('./order.service.js');
+    await orderService.settlePendingOrder(deposit.orderId, { currency: deposit.currency, net: Number(fresh.netAmount), deltaNet: net, depositId: deposit.id });
+    return txn;
+  },
+
   async cleanupExpiredDeposits() {
-    const toExpire = await prisma.deposit.findMany({
+    const lapsed = await prisma.deposit.findMany({
       where: {
         status:    { in: ['awaiting', 'partial'] },
         expiresAt: { lt: new Date() },
       },
     });
+    // An order still awaiting payment is about to be cancelled, which keeps its deposit watched
+    // for 24 hours: expired now, a late payment would never be seen, nor refunded
+    const orderIds = lapsed.map(d => d.orderId).filter(Boolean);
+    const open = orderIds.length
+      ? await prisma.order.findMany({ where: { id: { in: orderIds }, status: 'awaiting_payment' }, select: { id: true } })
+      : [];
+    const openIds = new Set(open.map(o => o.id));
+    const toExpire = lapsed.filter(d => !openIds.has(d.orderId));
 
     if (toExpire.length === 0) return { cleaned: 0 };
 

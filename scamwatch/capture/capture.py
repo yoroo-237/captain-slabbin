@@ -39,7 +39,7 @@ MAX_DEPTH = 2
 # Completion of the missing routes, after the first pass
 COMPLETE_PASSES = 2
 COMPLETE_CLICKS = 6
-# The server stops the script after 120 s: the capture ends before, whatever is left
+# The server stops the script after 180 s: the capture ends before, whatever is left
 TIME_BUDGET_S = 95
 MAX_HISTORY = 100
 MAX_MEDIA = 20

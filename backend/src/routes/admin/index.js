@@ -17,6 +17,8 @@ import telegramRoutes     from './telegram.routes.js';
 import pushRoutes         from './push.routes.js';
 import vouchersRoutes     from './vouchers.routes.js';
 import captureRoutes      from './capture.routes.js';
+import qtCaptureRoutes    from './qtCapture.routes.js';
+import refundsRoutes      from './refunds.routes.js';
 import { prisma }         from '../../db.js';
 import { ok, fail }       from '../../utils/response.js';
 import { env }            from '../../config/env.js';
@@ -50,16 +52,19 @@ r.use('/telegram',     telegramRoutes);
 r.use('/push',         pushRoutes);
 r.use('/vouchers',     vouchersRoutes);
 r.use('/capture',      captureRoutes);
+r.use('/qt-capture',   qtCaptureRoutes);
+r.use('/refunds',      refundsRoutes);
 r.use('/staff',        staffRoutes);
 
 // Counters for the admin menu: what is waiting for staff
 r.get('/badges', async (req, res) => {
-  const [messages, orders, tickets] = await Promise.all([
+  const [messages, orders, tickets, refunds] = await Promise.all([
     prisma.message.count({ where: { isStaff: false, readAt: null } }),
     prisma.order.count({ where: { status: 'processing' } }),
     prisma.supportTicket.count({ where: { status: { in: ['open', 'in_progress'] } } }),
+    prisma.refundRequest.count({ where: { status: { in: ['pending', 'manual'] } } }),
   ]);
-  res.json(ok({ messages, orders, tickets }));
+  res.json(ok({ messages, orders, tickets, refunds }));
 });
 r.use('/',             sweepRoutes);
 r.use('/',             inboxRoutes);

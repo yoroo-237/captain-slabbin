@@ -11,7 +11,7 @@ const base = new PrismaClient({
 // slugs, voucher codes and settings get the owner's prefix, so two owners can
 // both have a "flower" shelf or a WELCOME10 code. Without an owner nothing changes.
 const OWN = new Set(['User', 'TelegramBot', 'BotStyle', 'Product', 'Category', 'Voucher', 'SweepLog']);
-const VIA_USER = new Set(['Order', 'Deposit', 'Transaction', 'SupportTicket', 'Notification', 'Message', 'WalletHolding', 'Review', 'ApiKey', 'PushSubscription']);
+const VIA_USER = new Set(['Order', 'Deposit', 'Transaction', 'SupportTicket', 'Notification', 'Message', 'WalletHolding', 'Review', 'ApiKey', 'PushSubscription', 'RefundRequest']);
 const READS = new Set(['findUnique', 'findUniqueOrThrow', 'findFirst', 'findFirstOrThrow', 'findMany', 'count', 'aggregate', 'groupBy']);
 const WHERE_OPS = new Set([...READS, 'update', 'updateMany', 'delete', 'deleteMany', 'upsert']);
 

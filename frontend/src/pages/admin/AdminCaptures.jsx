@@ -6,6 +6,7 @@ import { useTask, taskName, lineKind } from '../../bots/CapturePage.jsx'
 import Simulator from '../../bots/Simulator.jsx'
 import FidelityCheck from '../../bots/FidelityCheck.jsx'
 import { UiProvider } from '../../bots/ui.jsx'
+import QtCaptureCard from './QtCaptureCard.jsx'
 import '../../bots/bots.css'
 
 // Admin → Bot captures: keeps the replica styles up to date. Only the bot a style
@@ -188,6 +189,8 @@ export default function AdminCaptures() {
         </div>
       </div>
       {error && <div className="admin-alert admin-alert-error">{error}</div>}
+
+      <QtCaptureCard />
 
       <TelegramAccount />
 

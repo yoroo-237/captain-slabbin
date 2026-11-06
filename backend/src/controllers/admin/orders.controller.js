@@ -4,6 +4,7 @@ import { parsePaginationParams, buildPagination } from '../../utils/pagination.j
 import { appError } from '../../utils/formatters.js';
 import { dmUser, escapeHtml } from '../../services/telegram.service.js';
 import { orderShopWhere } from '../../utils/shops.js';
+import { orderService } from '../../services/order.service.js';
 
 const STATUS_TEXT = { processing: 'is being prepared', shipped: 'has shipped', delivered: 'was delivered', cancelled: 'was cancelled', refunded: 'was refunded' };
 
@@ -62,8 +63,17 @@ export const adminOrdersController = {
     if (!VALID_STATUSES.includes(status)) {
       throw appError(`Invalid status. Valid values: ${VALID_STATUSES.join(', ')}`, 400);
     }
+    const id = parseInt(req.params.id, 10);
+    // An unpaid bot order is never prepared or shipped. Cancelling it gives its stock and voucher back.
+    if ((await prisma.order.findUnique({ where: { id }, select: { status: true } }))?.status === 'awaiting_payment') {
+      if (status !== 'cancelled') throw appError('This order is not paid yet: it can only be cancelled.', 409);
+      await orderService.cancelPendingOrder(id, null);
+      const cancelled = await prisma.order.findUniqueOrThrow({ where: { id } });
+      tellCustomer(cancelled);
+      return res.json(ok(cancelled));
+    }
     const order = await prisma.order.update({
-      where: { id: parseInt(req.params.id, 10) },
+      where: { id },
       data:  { status },
     });
     tellCustomer(order);
@@ -73,8 +83,12 @@ export const adminOrdersController = {
   async updateTracking(req, res) {
     const { trackingNumber, carrier } = req.body;
     if (!trackingNumber) throw appError('trackingNumber is required', 400);
+    const id = parseInt(req.params.id, 10);
+    if ((await prisma.order.findUnique({ where: { id }, select: { status: true } }))?.status === 'awaiting_payment') {
+      throw appError('This order is not paid yet: it cannot be shipped.', 409);
+    }
     const order = await prisma.order.update({
-      where: { id: parseInt(req.params.id, 10) },
+      where: { id },
       data:  { trackingNumber: trackingNumber.trim(), carrier: carrier?.trim() || null, status: 'shipped' },
     });
     tellCustomer(order);

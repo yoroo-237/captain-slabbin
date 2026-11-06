@@ -65,10 +65,16 @@ export const walletController = {
       return res.json(ok({ deposit, blockchainResult: null }));
     }
 
+    // A bot order's ETH payments are counted by transaction, from the Alchemy webhook alone:
+    // read here as well, the same payment would be credited twice
+    if (deposit.orderId && deposit.currency === 'ETH') {
+      return res.json(ok({ deposit, blockchainResult: null }));
+    }
+
     const result = await cryptoService.checkDepositOnChain(deposit);
 
     if (result.confirmed) {
-      await walletService.confirmDeposit(deposit.id, result.cryptoAmount);
+      await walletService.confirmDeposit(deposit.id, result.cryptoAmount, null, { cumulative: true });
     }
 
     const updated = await prisma.deposit.findUnique({ where: { id: deposit.id } });

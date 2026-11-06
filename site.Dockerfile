@@ -25,7 +25,8 @@ ENV NODE_ENV=production \
     PYTHON=/opt/tg/bin/python \
     CAPTURE_TOOL_DIR=/app/tools/tg-explorer \
     CAPTURES_DIR=/data/captures \
-    TG_SESSIONS_DIR=/data/sessions
+    TG_SESSIONS_DIR=/data/sessions \
+    QT_CAPTURE_DIR=/data/qt-capture
 
 WORKDIR /app/backend
 # Migrations and seed before each start (the database is reachable at runtime)
