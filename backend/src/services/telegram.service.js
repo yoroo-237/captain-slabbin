@@ -2,6 +2,7 @@ import axios from 'axios';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { readFile, readdir } from 'fs/promises';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../db.js';
 import { unscoped } from '../tenant.js';
 import { env } from '../config/env.js';
@@ -316,9 +317,11 @@ export async function applyStyle(botId, styleId) {
   // Switching catalog: clear carts/checkout left from the previous style so the new
   // one starts clean (the old lines pointed at products the replica no longer sells)
   if ((lookOf(style).catalog || null) !== prevCatalog) {
+    // Json fields need Prisma.DbNull, not JS null; reset all of this bot's users
+    // (idempotent) rather than filter on a Json column
     await prisma.user.updateMany({
-      where: { telegramBotId: bot.id, OR: [{ telegramCart: { not: [] } }, { telegramCheckout: { not: null } }] },
-      data: { telegramCart: [], telegramCheckout: null },
+      where: { telegramBotId: bot.id },
+      data: { telegramCart: [], telegramCheckout: Prisma.DbNull },
     }).catch(err => console.error(`[Telegram] @${bot.username} cart reset:`, err.message));
   }
   // Telegram's refusal is reported, not hidden: the admin must know the photo didn't change

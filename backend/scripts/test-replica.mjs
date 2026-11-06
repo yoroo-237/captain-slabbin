@@ -47,6 +47,10 @@ check('invoice: renders items + total, escapes html, no leftover tokens',
 check('invoice: no template → null (fallback)', renderInvoice(null, {}) === null);
 check('invoice: hand template drops empty voucher line',
   !/🎟/.test(renderInvoice({ template: 'T\n{voucher}\nTotal {total}', item: '{name}' }, { total: 5 }, money)));
+check('invoice: template HTML-escaped for parse_mode',
+  renderInvoice({ template: 'Terms & Co <x>\n{total}', item: '{name}' }, { total: 5 }, money).includes('Terms &amp; Co &lt;x&gt;'));
+check('invoice: extracted template keeps paragraph spacing',
+  /\n\n/.test(extractInvoiceTemplate([{ raw: 'Header line\n\nItem ×1 — $5.00\nTotal: $5.00\n\nFooter note' }])?.template || ''));
 
 // ── Personal-info review ──────────────────────────────────────────────────────
 check('review: btc + email + handle detected, email≠handle', (() => {
@@ -69,6 +73,9 @@ const byKey = Object.fromEntries(m.pages.map(p => [p.key, p]));
 check('merge: edited page kept, new added, unedited-removed dropped', byKey.A.html === 'mine' && byKey.C && !byKey.B);
 check('merge: edited profile kept', m.profile.name === 'My Shop');
 check('merge: unedited page takes upstream change', mergeReplicaLook(structuredClone(v1), v2).pages.find(p => p.key === 'A').html === 'Welcome v2');
+const del = structuredClone(v1); del.pages = del.pages.filter(p => p.key !== 'B');
+check('merge: hand-deleted page stays deleted on re-import',
+  !mergeReplicaLook(del, { replica: true, home: 'A', catalog: 'c', pages: [page('A', 'Welcome'), page('B', 'Menu')], profile: { name: 'Orig' } }).pages.some(p => p.key === 'B'));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

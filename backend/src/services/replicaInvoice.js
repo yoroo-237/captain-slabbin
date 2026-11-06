@@ -26,16 +26,19 @@ function fill(tpl, map) {
 // money: the shop's price formatter (so amounts read exactly like the rest of the bot)
 export function renderInvoice(invoice, ctx, money = v => `$${Number(v || 0).toFixed(2)}`) {
   if (!invoice?.template) return null;
+  // The template and item pattern are the original's plain text: escape them for the
+  // HTML parse_mode (a bare '&' or '<' in a 'Terms & Conditions' footer would otherwise
+  // make Telegram reject the whole message). The substituted values are escaped too.
   const itemTpl = invoice.item || '{qty} × {name}  ·  {line_total}';
-  const items = (ctx.items || []).map(i => fill(itemTpl, {
+  const items = (ctx.items || []).map(i => fill(esc(itemTpl), {
     qty: i.qty, name: esc(i.name), option: esc(i.option || ''), price: money(i.price), line_total: money(i.lineTotal),
   })).join(invoice.sep || '\n');
-  return fill(invoice.template, {
+  return fill(esc(invoice.template), {
     items,
     order: esc(ctx.order || ''),
     subtotal: money(ctx.subtotal || 0),
     shipping: Number(ctx.shipping) > 0 ? money(ctx.shipping) : (invoice.freeShipping || 'free'),
-    voucher: ctx.voucherCode ? fill(invoice.voucher || '🎟 {code}  −{amount}', { code: esc(ctx.voucherCode), amount: money(ctx.discount || 0) }) : '',
+    voucher: ctx.voucherCode ? fill(esc(invoice.voucher || '🎟 {code}  −{amount}'), { code: esc(ctx.voucherCode), amount: money(ctx.discount || 0) }) : '',
     total: money(ctx.total || 0),
     paid: ctx.paid ? esc(ctx.paid) : '',
     wallet: ctx.wallet != null ? money(ctx.wallet) : '',
@@ -77,11 +80,10 @@ export function extractInvoiceTemplate(screens) {
   const item = '{qty} × {name}  ·  {line_total}';
   void blockEnd;
 
-  const template = [header, '', '{items}', shipLine, totalLine, '', footer]
-    .filter(l => l !== '')
-    .join('\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+  // Header and footer are paragraphs (blank line between); the items/shipping/total
+  // stay one block. Empty parts drop out without collapsing the paragraph spacing.
+  const body = ['{items}', shipLine, totalLine].filter(Boolean).join('\n');
+  const template = [header, body, footer].filter(Boolean).join('\n\n');
 
   // `source` keeps the original's exact invoice text so the editor can show it next to
   // the draft for the user to match by hand.

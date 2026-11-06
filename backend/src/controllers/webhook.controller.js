@@ -294,11 +294,9 @@ ${menu.text}` };
     // A reply-keyboard button, or text the original answered: its page
     const trigger = !cmd ? (look().pages || []).find(p => (p.triggers || []).includes(text)) : null;
     if (trigger) return dispatch(m.from, `pg:${trigger.key}`);
+    // /wallet, /orders and /cart are already resolved by resolveCommand above
     if (cmd === '/menu' || cmd === '/categories') return dispatch(m.from, 'menu');
     if (cmd === '/deals' || cmd === '/firesale') return dispatch(m.from, 'cat:fire-sale:1');
-    if (cmd === '/wallet') return dispatch(m.from, 'w');
-    if (cmd === '/orders') return dispatch(m.from, 'o');
-    if (cmd === '/cart') return dispatch(m.from, 'cart');
     // Text that opens no screen is a message to the shop
     if (!cmd && priv && await toShop(m, { open: true })) return;
     return show(chatId, home());

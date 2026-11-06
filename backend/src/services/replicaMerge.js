@@ -30,10 +30,13 @@ export function mergeReplicaLook(existing = {}, incoming = {}) {
   const existingByKey = new Map((existing.pages || []).map(p => [p.key, p]));
   const incomingKeys = new Set((incoming.pages || []).map(p => p.key));
   const pages = [];
-  // Fresh capture order, each page: the user's edit wins, else the new version
+  // Fresh capture order, each page: the user's edit wins, else the new version.
+  // A page the user deleted by hand (it was in the last import but is gone now) stays
+  // deleted; only a genuinely new captured page (never imported before) is added.
   for (const p of incoming.pages || []) {
     const cur = existingByKey.get(p.key);
-    pages.push(cur && sha(cur) !== basePages[p.key] ? cur : p);
+    if (cur) pages.push(sha(cur) !== basePages[p.key] ? cur : p);
+    else if (!(p.key in basePages)) pages.push(p);
   }
   // Pages gone from the capture: kept only if the user added or edited them
   for (const p of existing.pages || []) {
