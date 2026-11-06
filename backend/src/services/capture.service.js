@@ -57,6 +57,8 @@ function emit(userId, event, data) {
   for (const res of w.clients) res.write(msg);
 }
 export const state = userId => { const t = ws(userId).task; return { running: !!t, name: t?.name || null }; };
+// Empties the journal on every open page; a running task keeps going and writes on
+export function clearLog(userId) { ws(userId).log = []; emit(userId, 'cleared', {}); return state(userId); }
 
 // then(code): runs when the task ends, for a task that hands over to the next
 function run(userId, name, cmd, args, cwd, childEnv = CHILD_ENV, then = null) {

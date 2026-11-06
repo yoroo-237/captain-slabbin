@@ -37,6 +37,7 @@ export function useTask() {
       if (event === 'init') { apply(data.state); setLines(data.log) }
       if (event === 'line') setLines(l => [...l.slice(-2999), data])
       if (event === 'state') apply(data)
+      if (event === 'cleared') setLines([])
     }
     async function connect() {
       while (alive) {
@@ -517,7 +518,10 @@ export default function CapturePage() {
         <section className="panel journal dark">
           <div className="row-head">
             <h2><span className="idx">02</span>{L('Journal', 'Journal')}</h2>
-            {busy && <span className="mono" style={{ color: 'var(--muted-dark)' }}>{taskName(state.name)}</span>}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {busy && <span className="mono" style={{ color: 'var(--muted-dark)' }}>{taskName(state.name)}</span>}
+              {lines.length > 0 && <button type="button" className="btn sm" onClick={() => api('/log/clear', {}).catch(e => setError(e.message))}>{L('Vider', 'Clear')}</button>}
+            </div>
           </div>
           <Console lines={lines} />
         </section>

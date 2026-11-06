@@ -164,21 +164,26 @@ export async function state(userId) {
   return { running: !!w.task, task: w.task?.name || null, log: w.log.slice(-200), capture: await summary(userId), source: SOURCE_BOT };
 }
 
-export async function apply(user, { botId, fresh = false } = {}) {
+// Empties the journal; a running task keeps going and writes on
+export async function clearLog(userId) { ws(userId).log = []; return state(userId); }
+
+// `botId` is optional: without it the style is made and no bot is touched
+export async function apply(user, { botId = null, fresh = false } = {}) {
   const userId = Number(user.sub);
-  if (!Number.isInteger(Number(botId))) throw bad('Pick the Telegram bot to apply the style to.');
+  const wanted = botId === null || botId === '' ? null : Number(botId);
+  if (wanted !== null && !Number.isInteger(wanted)) throw bad('Pick a valid Telegram bot.');
   busy(userId);
-  const bot = await prisma.telegramBot.findUnique({ where: { id: Number(botId) }, select: { id: true, username: true } });
-  if (!bot) throw bad('Bot not found.');
+  const bot = wanted === null ? null : await prisma.telegramBot.findUnique({ where: { id: wanted }, select: { id: true, username: true } });
+  if (wanted !== null && !bot) throw bad('Bot not found.');
   await fs.mkdir(capturesOf(userId), { recursive: true });
   await fs.rm(stopFile(userId), { force: true });
   const args = ['src/tg/cli.js', 'explore', SOURCE_BOT, '--captures-dir', capturesOf(userId), '--stop-file', stopFile(userId),
     '--profile', PROFILE, '--max-actions', '20000', ...(fresh === true ? ['--fresh'] : [])];
-  say(userId, `== Capture of @${SOURCE_BOT} up to the quantity selection, then the "${STYLE_NAME}" style is applied to @${bot.username || bot.id}`);
+  say(userId, `== Capture of @${SOURCE_BOT} up to the quantity selection, then the "${STYLE_NAME}" style is ${bot ? `applied to @${bot.username || bot.id}` : 'made (no bot picked)'}`);
   run(userId, 'capture', args, await childEnv(userId), async code => {
     if (code !== 0) { say(userId, '-- Capture incomplete: no style was applied.'); return; }
     const tenant = tenantOfStaff(user);
-    run(userId, 'style', ['scripts/import-bot-capture.js', captureDir(userId), '--name', STYLE_NAME, '--apply-to', String(bot.id), '--refresh-bots'],
+    run(userId, 'style', ['scripts/import-bot-capture.js', captureDir(userId), '--name', STYLE_NAME, ...(bot ? ['--apply-to', String(bot.id)] : []), '--refresh-bots'],
       { ...process.env, TENANT_ID: tenant ? String(tenant) : '' });
   });
   return state(userId);

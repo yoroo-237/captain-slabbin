@@ -8,7 +8,7 @@ import {
   telegramStatus, inspectBot, linkBot, applyStyle, setPrimary, changeChat, unlinkBot, sendTelegram,
   setPostChat, setShelves, postProduct, setBotPhoto, setStylePhoto, styleFromBot, findBot, setPgpKey, inboxLink,
 } from '../../services/telegram.service.js';
-import { DEFAULT_LOOK, neutralLook } from '../../services/telegramStyle.js';
+import { DEFAULT_LOOK, neutralLook, isLockedStyle } from '../../services/telegramStyle.js';
 
 // Admin → Telegram: link several bots by pasting their tokens, choose the
 // primary one (staff notifications) and its chat, give each bot a style and its
@@ -149,14 +149,21 @@ r.post('/styles', async (req, res) => {
 
 // Saving a style re-applies it to the bots that use it
 r.put('/styles/:id', async (req, res) => {
-  const style = await prisma.botStyle.update({ where: { id: Number(req.params.id) }, data: styleData(req.body), include: { bots: { select: { id: true } } } });
+  const id = Number(req.params.id);
+  const data = styleData(req.body);
+  const current = await prisma.botStyle.findUnique({ where: { id }, select: { name: true, tenantId: true } });
+  if (isLockedStyle(current) && data.name !== current.name) throw appError(`The ${current.name} style cannot be renamed.`, 403);
+  const style = await prisma.botStyle.update({ where: { id }, data, include: { bots: { select: { id: true } } } });
   const failed = [];
   for (const b of style.bots) await applyStyle(b.id, style.id).catch(err => failed.push(err.message));
   res.json(ok({ style, reapplied: style.bots.length - failed.length, failed }));
 });
 
 r.delete('/styles/:id', async (req, res) => {
-  await prisma.botStyle.delete({ where: { id: Number(req.params.id) } });
+  const id = Number(req.params.id);
+  const style = await prisma.botStyle.findUnique({ where: { id }, select: { name: true, tenantId: true } });
+  if (isLockedStyle(style)) throw appError(`The ${style.name} style cannot be deleted.`, 403);
+  await prisma.botStyle.delete({ where: { id } });
   res.json(ok({ deleted: true }));
 });
 

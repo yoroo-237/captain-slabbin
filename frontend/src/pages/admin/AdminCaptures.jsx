@@ -240,7 +240,10 @@ export default function AdminCaptures() {
       <div className="admin-card">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
           <h2 className="admin-card-title" style={{ margin: 0 }}>Progress {busy && <span style={{ fontWeight: 400, color: '#777', fontSize: 14 }}>· {taskName(state.name)} running</span>}</h2>
-          {busy && <button type="button" className="admin-btn admin-btn-danger admin-btn-sm" onClick={() => cap('/stop', {}).catch(e => setError(e.message))}>Stop</button>}
+          <div style={{ display: 'flex', gap: 8 }}>
+            {lines.length > 0 && <button type="button" className="admin-btn admin-btn-secondary admin-btn-sm" onClick={() => cap('/log/clear', {}).catch(e => setError(e.message))}>Clear</button>}
+            {busy && <button type="button" className="admin-btn admin-btn-danger admin-btn-sm" onClick={() => cap('/stop', {}).catch(e => setError(e.message))}>Stop</button>}
+          </div>
         </div>
         <Journal lines={lines} />
         <p style={muted}>Stopping keeps what was captured and leaves the style as it was; the next update resumes from there.</p>

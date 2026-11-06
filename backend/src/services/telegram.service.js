@@ -5,7 +5,7 @@ import { readFile, readdir } from 'fs/promises';
 import { prisma } from '../db.js';
 import { unscoped } from '../tenant.js';
 import { env } from '../config/env.js';
-import { lookOf, isShopStyle } from './telegramStyle.js';
+import { lookOf, isShopStyle, isLockedStyle, LOCKED_STYLE, LOCKED_STYLE_SOURCE } from './telegramStyle.js';
 import { pushStaff } from './push.service.js';
 import { readPublicKey, keyFingerprint } from './pgp.service.js';
 import { staffButton, staffLoginEnabled, siteDomain } from './staffLogin.service.js';
@@ -81,15 +81,21 @@ export async function ensureDefaultStyle() {
 export async function ensurePresetStyles() {
   const dir = new URL('../../prisma/presets/', import.meta.url);
   let files = [];
-  try { files = (await readdir(dir)).filter(f => f.endsWith('.json')); } catch { return; }
+  try { files = (await readdir(dir)).filter(f => f.endsWith('.json')); } catch { /* none: QT Market is still made below */ }
   for (const f of files) {
     try {
       const { name, source = null, look } = JSON.parse(await readFile(new URL(f, dir), 'utf8'));
-      if (name && look && !(await prisma.botStyle.findFirst({ where: { name } }))) {
+      // tenantId 0: an owner's copy of that name does not stand in for the shared style
+      if (name && look && !(await prisma.botStyle.findFirst({ where: { name, tenantId: 0 } }))) {
         await prisma.botStyle.create({ data: { name, source, look } });
         console.log(`[Telegram] style "${name}" added`);
       }
     } catch (err) { console.error(`[Telegram] style preset ${f}:`, err.message); }
+  }
+  // Always there, even empty when its preset could not be read
+  if (!(await prisma.botStyle.findFirst({ where: { name: LOCKED_STYLE, tenantId: 0 } }))) {
+    await prisma.botStyle.create({ data: { name: LOCKED_STYLE, source: LOCKED_STYLE_SOURCE, look: {} } });
+    console.log(`[Telegram] style "${LOCKED_STYLE}" added (empty)`);
   }
 }
 
@@ -179,7 +185,7 @@ async function installNavigation(bot) {
 export async function telegramStatus() {
   const [bots, styles] = await Promise.all([
     prisma.telegramBot.findMany({ orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }], include: { style: true, _count: { select: { users: true } } } }),
-    prisma.botStyle.findMany({ orderBy: { id: 'asc' }, select: { id: true, name: true, source: true, look: true } }),
+    prisma.botStyle.findMany({ orderBy: { id: 'asc' }, select: { id: true, name: true, source: true, look: true, tenantId: true } }),
   ]);
   const rows = await Promise.all(bots.map(async bot => {
     const base = {
@@ -205,9 +211,9 @@ export async function telegramStatus() {
   }));
   // (a style's look can be large: only the catalog it sells goes to the admin)
   return {
-    bots: rows, styles: styles.map(({ look, capture, ...s }) => {
+    bots: rows, styles: styles.map(({ look, capture, tenantId, ...s }) => {
       const from = String(capture?.bot || String(s.source || '').replace(/^@/, '')).replace(/^@/, '');
-      return { ...s, catalog: look?.catalog || null, replicaOf: look?.replica ? capture?.bot || null : null,
+      return { ...s, locked: isLockedStyle({ name: s.name, tenantId }), catalog: look?.catalog || null, replicaOf: look?.replica ? capture?.bot || null : null,
         sourceBot: /^[A-Za-z][A-Za-z0-9_]{2,63}$/.test(from) ? from : null, replica: !!look?.replica };
     }),
     captures: env.capture.enabled,

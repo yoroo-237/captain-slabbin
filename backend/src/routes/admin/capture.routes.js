@@ -13,6 +13,7 @@ r.use(requireAdmin);
 // Everything below is the signed-in member's own: task, journal, captures
 r.get('/state', (req, res) => res.json(ok(capture.state(req.user.sub))));
 r.get('/events', (req, res) => capture.subscribe(req.user.sub, req, res));
+r.post('/log/clear', (req, res) => res.json(ok(capture.clearLog(req.user.sub))));
 r.get('/captures', async (req, res) => res.json(ok({ captures: await capture.listCaptures(req.user.sub), key: capture.filesKey(req.user.sub) })));
 // Fidelity check: each crossroad's routes, captured and copied into the replica; then
 // run again the routes picked

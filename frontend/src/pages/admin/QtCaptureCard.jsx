@@ -68,10 +68,11 @@ export default function QtCaptureCard() {
   })
   const apply = fresh => guard(async () => {
     const bot = bots.find(b => String(b.id) === String(target))
-    const msg = `Capture @QTMARKETBOT${fresh ? ' from scratch' : ''} (up to the quantity selection, with its profile photo and description), then apply the "QT Market" style to @${bot?.username || '…'}?`
-    if (!(await askConfirm(msg, { okLabel: fresh ? 'Restart and apply' : 'Capture and apply', danger: fresh }))) return
-    setSt(await call('/apply', 'POST', { botId: Number(target), fresh }))
+    const msg = `Capture @QTMARKETBOT${fresh ? ' from scratch' : ''} (up to the quantity selection, with its profile photo and description), then ${bot ? `apply the "QT Market" style to @${bot.username || bot.id}` : 'make the "QT Market" style'}?`
+    if (!(await askConfirm(msg, { okLabel: fresh ? 'Restart' : (bot ? 'Capture and apply' : 'Capture'), danger: fresh }))) return
+    setSt(await call('/apply', 'POST', { botId: bot ? bot.id : null, fresh }))
   })
+  const clearLog = () => call('/log/clear', 'POST', {}).then(setSt).catch(e => setError(e.message))
 
   const running = !!st?.running
   const cap = st?.capture
@@ -127,13 +128,13 @@ export default function QtCaptureCard() {
             <label className="admin-label">Apply the style to</label>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <select className="admin-input" style={{ maxWidth: 320 }} value={target} onChange={e => setTarget(e.target.value)} disabled={running}>
-                {bots.length === 0 && <option value="">No Telegram bot yet</option>}
+                <option value="">No bot: only make the style</option>
                 {bots.map(b => <option key={b.id} value={b.id}>@{b.username || b.id}</option>)}
               </select>
-              <button type="button" className="admin-btn admin-btn-primary" disabled={running || working || !target} onClick={() => apply(false)}>
-                {running ? `${st.task} running…` : 'Capture and apply'}
+              <button type="button" className="admin-btn admin-btn-primary" disabled={running || working} onClick={() => apply(false)}>
+                {running ? `${st.task} running…` : target ? 'Capture and apply' : 'Capture'}
               </button>
-              <button type="button" className="admin-btn admin-btn-secondary" disabled={running || working || !target} onClick={() => apply(true)}
+              <button type="button" className="admin-btn admin-btn-secondary" disabled={running || working} onClick={() => apply(true)}
                 title="Discard the saved capture and start again at /start">Restart</button>
               {running && <button type="button" className="admin-btn admin-btn-danger" onClick={() => call('/stop', 'POST', {}).then(setSt).catch(e => setError(e.message))}>Stop</button>}
             </div>
@@ -148,6 +149,7 @@ export default function QtCaptureCard() {
         </div>
       ) : <div style={muted}>No capture of @QTMARKETBOT on this server yet.</div>}
 
+      {st?.log?.length > 0 && <div style={{ textAlign: 'right', marginTop: 12 }}><button type="button" className="admin-btn admin-btn-secondary admin-btn-sm" onClick={clearLog}>Clear</button></div>}
       {st?.log?.length > 0 && (
         <pre ref={logRef} style={{ marginTop: 12, maxHeight: 240, overflow: 'auto', background: '#0e1621', color: '#cfd8e3', padding: 12, borderRadius: 8, fontSize: 12, whiteSpace: 'pre-wrap' }}>
           {st.log.join('\n')}

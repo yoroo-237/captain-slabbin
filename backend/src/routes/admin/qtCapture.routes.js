@@ -18,4 +18,5 @@ r.post('/account/sign-in', async (req, res) => res.json(ok(await qt.signIn(req.u
 r.post('/account/sign-out', async (req, res) => res.json(ok(await qt.signOut(req.user.sub))));
 r.post('/apply', async (req, res) => res.status(202).json(ok(await qt.apply(req.user, req.body || {}))));
 r.post('/stop', async (req, res) => res.json(ok(await qt.stop(req.user.sub))));
+r.post('/log/clear', async (req, res) => res.json(ok(await qt.clearLog(req.user.sub))));
 export default r;

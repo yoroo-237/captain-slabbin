@@ -180,6 +180,12 @@ export function mergeLook(base, over) {
 // speak as another brand.
 export const isShopStyle = style => !style || style.name === 'Captain Slabbin';
 
+// The built-in QT Market style is always there, even empty: it cannot be deleted or renamed,
+// and it is what allows @QTMARKETBOT to be captured. An owner's own copy stays theirs.
+export const LOCKED_STYLE = 'QT Market';
+export const LOCKED_STYLE_SOURCE = '@QTMARKETBOT';
+export const isLockedStyle = style => style?.name === LOCKED_STYLE && !style.tenantId;
+
 export function neutralLook(name) {
   const l = structuredClone(DEFAULT_LOOK);
   const safe = String(name).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

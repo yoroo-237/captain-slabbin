@@ -401,8 +401,8 @@ function StylesTab({ bots, styles, captures, shelves, busy, act, post, reload })
                   </button>
                 )}
                 <button type="button" className="admin-btn admin-btn-secondary admin-btn-sm" disabled={!!busy} onClick={() => open(s.id)}>Edit</button>
-                <button type="button" className="admin-btn admin-btn-danger admin-btn-sm" disabled={!!busy}
-                  onClick={async () => await askConfirm(`Delete the style "${s.name}"? Bots using it keep their current profile and go back to the default copy.`, { okLabel: 'Delete', danger: true }) && act('delete', () => adminFetch(`/admin/telegram/styles/${s.id}`, { method: 'DELETE' }), 'Style deleted.')}>Delete</button>
+                {!s.locked && <button type="button" className="admin-btn admin-btn-danger admin-btn-sm" disabled={!!busy}
+                  onClick={async () => await askConfirm(`Delete the style "${s.name}"? Bots using it keep their current profile and go back to the default copy.`, { okLabel: 'Delete', danger: true }) && act('delete', () => adminFetch(`/admin/telegram/styles/${s.id}`, { method: 'DELETE' }), 'Style deleted.')}>Delete</button>}
               </span>
             </div>
           ))}
