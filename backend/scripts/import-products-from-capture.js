@@ -160,8 +160,11 @@ for (const p of usable) {
   // Found again by its name (the oldest one, should copies exist), else by its slug
   const existing = await prisma.product.findFirst({ where: { source, name: { equals: data.name, mode: 'insensitive' } }, orderBy: { id: 'asc' }, include: { images: true } })
     || await prisma.product.findUnique({ where: { slug }, include: { images: true } });
+  // A product found again keeps its stock (sales) and whether it is on sale (the admin's
+  // choice): only what the bot shows (name, description, prices, shelf) follows the capture
+  const { stock: _stock, isActive: _active, ...shown } = data;
   const product = existing
-    ? await prisma.product.update({ where: { id: existing.id }, data })
+    ? await prisma.product.update({ where: { id: existing.id }, data: shown })
     : await prisma.product.create({ data: { ...data, slug } });
   const cover = existing?.images.slice().sort((a, b) => a.position - b.position)[0];
   if (!cover) {

@@ -328,9 +328,15 @@ async function styleToRebuild(user, styleId) {
   // A replica is rebuilt; a shop style (its own catalog and checkout) only gets
   // the information pages and the welcome and menu pictures
   const replica = !!style.look?.replica;
+  // The catalog the style sells (QT Market: 'qt'): its products follow the capture too
+  const catalog = style.look?.catalog || null;
+  const products = catalog ? code => {
+    if (code !== 0) return;
+    return importCapture(user, { bot, kind: 'products', dry: false, catalog, refresh: true });
+  } : null;
   return { style, bot, rebuild: async (userId, code) => {
     if (code !== 0) { emit(userId, 'line', `-- Capture inachevée : le style « ${style.name} » n'a pas été modifié.`); return; }
-    await importCapture(user, { bot, kind: 'style', dry: false, name: style.name, refresh: true, merge: !replica });
+    await importCapture(user, { bot, kind: 'style', dry: false, name: style.name, refresh: true, merge: !replica, then: products });
   } };
 }
 
@@ -348,7 +354,8 @@ export async function refreshStyle(user, styleId, { fresh = false } = {}) {
   return { ...state(userId), bot, style: style.name };
 }
 
-export async function importCapture(user, { bot, kind, dry, name, applyTo, catalog, refresh = false, merge = false }) {
+// then(code): the next task once this import ends (the products after the style)
+export async function importCapture(user, { bot, kind, dry, name, applyTo, catalog, refresh = false, merge = false, then = null }) {
   // On the site a capture only ever updates the style it came from (refreshStyle)
   if (!freeCaptures() && !refresh) throw Object.assign(new Error('On this dashboard a capture only updates its own style: use "Update from the bot".'), { status: 403 });
   if (!IMPORTS[kind]) throw bad('Invalid import.');
@@ -373,7 +380,7 @@ export async function importCapture(user, { bot, kind, dry, name, applyTo, catal
   const tenant = tenantOfStaff(user);
   run(userId, `Import ${kind === 'style' ? 'du style' : 'des produits'}`, process.execPath,
     [path.join('scripts', IMPORTS[kind]), dir, ...extra, ...(dry === false ? [] : ['--dry'])], BACKEND,
-    { ...process.env, TENANT_ID: tenant ? String(tenant) : '' });
+    { ...process.env, TENANT_ID: tenant ? String(tenant) : '' }, then);
   return state(userId);
 }
 
