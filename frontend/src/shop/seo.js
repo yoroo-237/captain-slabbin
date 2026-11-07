@@ -7,6 +7,7 @@ import { useEffect } from 'react'
 
 export const SITE_NAME = 'Captain Slabbin'
 export const DEFAULT_DESCRIPTION = 'Captain Slabbin: top shelf flower, concentrates, moonrocks, disposables, prerolls, edibles and more. Pay with crypto in one tap, discreet tracked shipping across the US. Adults 21+ only.'
+export const KEYWORDS = 'Kush, Weed, Zaza, Calikush, Exotic, Exotic small, Autentic, Pre-Roll, Edibles, Carts, Wax, Disposables, Muha meds, OG Fryd, Wholemelt, Moonrock, Vapes, Hash, Boutiq V5, Packman, Switch, THC, Ace Ultra, Cherry, Concentrates, Prerolls, Replicas, Mushrooms, Hash stash, Indoor /mixed Light, Distro, Flower, Cannabis, Americancannabis, Cannaexpress'
 export const DEFAULT_IMAGE = '/brand/og.jpg'
 
 const origin = () => window.location.origin
@@ -36,6 +37,7 @@ export function useSeo({ title, description = DEFAULT_DESCRIPTION, path, image =
     document.title = full
     const url = origin() + (path ?? window.location.pathname)
     meta('name', 'description', description)
+    meta('name', 'keywords', noindex ? null : KEYWORDS)
     meta('name', 'robots', noindex ? 'noindex, nofollow' : 'index, follow, max-image-preview:large')
     link('canonical', noindex ? null : url)
     for (const lang of ['en-us', 'x-default']) {
@@ -76,6 +78,7 @@ export const storeLd = settings => ({
   image: abs(DEFAULT_IMAGE),
   description: DEFAULT_DESCRIPTION,
   slogan: 'Top shelf. Delivered.',
+  keywords: KEYWORDS,
   areaServed: { '@type': 'Country', name: 'United States' },
   currenciesAccepted: 'USD',
   paymentAccepted: 'Bitcoin, Litecoin, Ethereum, Dogecoin, Monero',

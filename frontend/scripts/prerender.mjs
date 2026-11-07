@@ -17,6 +17,7 @@ const API = (process.env.VITE_API_URL || SITE.replace(/^https:\/\/(www\.)?/, 'ht
 const NAME = 'Captain Slabbin'
 const TAGLINE = 'Top shelf. Delivered.'
 const DESCRIPTION = 'Captain Slabbin: top shelf flower, concentrates, moonrocks, disposables, prerolls, edibles and shrooms. Pay with crypto in one tap, discreet tracked shipping nationwide across the US. Adults 21+.'
+const KEYWORDS = 'Kush, Weed, Zaza, Calikush, Exotic, Exotic small, Autentic, Pre-Roll, Edibles, Carts, Wax, Disposables, Muha meds, OG Fryd, Wholemelt, Moonrock, Vapes, Hash, Boutiq V5, Packman, Switch, THC, Ace Ultra, Cherry, Concentrates, Prerolls, Replicas, Mushrooms, Hash stash, Indoor /mixed Light, Distro, Flower, Cannabis, Americancannabis, Cannaexpress'
 const OG = '/brand/og.jpg'
 
 const SHELF_ART = {
@@ -62,6 +63,7 @@ function head({ title, description = DESCRIPTION, path, image = OG, jsonLd = [],
   return [
     `<title>${esc(full)}</title>`,
     `<meta name="description" content="${esc(description)}" />`,
+    noindex ? '' : `<meta name="keywords" content="${esc(KEYWORDS)}" />`,
     `<meta name="robots" content="${noindex ? 'noindex, nofollow' : 'index, follow, max-image-preview:large'}" />`,
     noindex ? '' : `<link rel="canonical" href="${url}" />`,
     noindex ? '' : `<link rel="alternate" hreflang="en-us" href="${url}" />`,
@@ -94,6 +96,7 @@ const store = settings => ({
   image: abs(OG),
   description: DESCRIPTION,
   slogan: TAGLINE,
+  keywords: KEYWORDS,
   areaServed: { '@type': 'Country', name: 'United States' },
   currenciesAccepted: 'USD',
   paymentAccepted: 'Bitcoin, Litecoin, Ethereum, Dogecoin, Monero',
@@ -129,7 +132,7 @@ const pages = [
   ['/', {
     title: 'Top shelf weed, carts and edibles shipped across the USA', path: '/',
     jsonLd: [store(settings), { '@context': 'https://schema.org', '@type': 'WebSite', name: NAME, url: SITE + '/', inLanguage: 'en-US' }],
-  }, `<h1>${NAME}: ${TAGLINE}</h1><p>${esc(DESCRIPTION)}</p><p>${shelfLinks}</p><p><a href="/faq">FAQ</a> · <a href="/about">About</a></p>`],
+  }, `<h1>${NAME}: ${TAGLINE}</h1><p>${esc(DESCRIPTION)}</p><p>${shelfLinks}</p><p><a href="/faq">FAQ</a> · <a href="/about">About</a></p><p>${esc(KEYWORDS)}</p>`],
   ['/about', {
     title: 'About the crew: an online shop shipping across the USA', path: '/about',
     description: 'Who is Captain Slabbin: a small crew running an online shop for adults 21+, with top shelf products, crypto checkout and discreet tracked shipping across the US.',
