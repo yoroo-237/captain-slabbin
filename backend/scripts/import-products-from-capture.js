@@ -94,18 +94,30 @@ const priceOf = text => {
 
 const products = [];
 const seen = new Set();
+const TIER = /^(.+?)\s*—\s*\$/;
+// A product page reached by a button (Next >, < Previous) and not by its /p command: the
+// screen it was opened from, to find its shelf
+const openedFrom = new Map();
+for (const st of steps) for (const k of st.screens || []) if (st.from && k !== st.from && !openedFrom.has(k)) openedFrom.set(k, st.from);
+const groupOfKey = new Map();
 for (const s of [...screens].sort((a, b) => a.order - b.order)) {
-  const cmd = (s.sources || []).find(x => /^\/p\d+_\w+$/.test(x));
-  if (!cmd || seen.has(cmd)) continue;
-  seen.add(cmd);
-  const group = cmd.split('_')[1];
+  let cmd = (s.sources || []).find(x => /^\/p\d+_\w+$/.test(x));
+  // Its product page shows its packs (1x—$10⁵⁰…) and its vendor (-- by …)
+  const page = !cmd && /^--\s*by\s/m.test(s.raw || '') && (s.buttons || []).flat().some(b => TIER.test(b.text || ''));
+  if (!cmd && !page) continue;
+  if (cmd && seen.has(cmd)) continue;
+  if (cmd) seen.add(cmd);
+  let group = cmd ? cmd.split('_')[1] : null;
+  for (let k = s.key, n = 0; !group && k && n < 50; k = openedFrom.get(k), n++) group = groupOfKey.get(k) || null;
+  if (group) groupOfKey.set(s.key, group);
+  if (!cmd) cmd = `[${s.key}]`;
   const lines = s.raw.split('\n');
   const name = lines[0].trim();
   const from = lines.findIndex(l => new RegExp(`^\\s*/${prefixOf}\\s*$`).test(l));
   const to = lines.findIndex(l => l.trim().startsWith('🛒'));
   const description = from >= 0 ? lines.slice(from + 1, to > from ? to : undefined).join('\n').trim() : '';
   const options = (s.buttons || []).flat().map(b => {
-    const m = b.text.match(/^(.+?)\s*—\s*\$/);
+    const m = b.text.match(TIER);
     const price = m && priceOf(b.text);
     return m && price != null ? { label: m[1].trim(), price } : null;
   }).filter(Boolean);
@@ -127,8 +139,13 @@ const usable = [...byName.values()];
 
 console.log(`Shelves: ${allShelves.length} (${topCmds.length} on the menu), products found: ${products.length}, with a price: ${usable.length}`);
 for (const c of allShelves) console.log(`  ${parentOf.has(c) ? '   └' : ' '} ${labelFor(c, texts)}  [${source}-${slugOf(c)}]  ${products.filter(p => p.shelf === c).length} products`);
-const skipped = products.filter(p => !(p.name && p.options.length));
-if (skipped.length) console.log(`Without a name or price (skipped): ${skipped.map(p => p.cmd).join(' ')}`);
+// Seen nowhere with its packs: a product already in the capture account's cart shows its
+// cart total instead of its prices
+const skipped = products.filter(p => !(p.name && p.options.length) && !byName.has(String(p.name).toLowerCase()));
+const inCartOnly = skipped.filter(p => p.inCart);
+if (inCartOnly.length) console.log(`In the capture account's cart, so shown without prices (skipped): ${inCartOnly.length} — ${inCartOnly.map(p => p.name).join(' · ')}. Empty that cart in the bot, then capture these pages again.`);
+const noPrice = skipped.filter(p => !p.inCart);
+if (noPrice.length) console.log(`Without a name or price (skipped): ${noPrice.map(p => p.cmd).join(' ')}`);
 const orphans = usable.filter(p => !p.shelf);
 if (orphans.length) console.log(`Not seen on a shelf in this capture (an existing product keeps its shelf): ${orphans.length}`);
 if (dry) { console.log('Dry run: nothing written.'); process.exit(0); }
@@ -151,7 +168,8 @@ for (const cmd of [...allShelves].sort((a, b) => Number(parentOf.has(a)) - Numbe
 
 let created = 0, updated = 0, newPhotos = 0;
 for (const p of usable) {
-  const slug = `${cmdName(p.name).slice(0, 60)}-${p.group.toLowerCase()}${p.cmd.match(/^\/p(\d+)_/)[1]}`;
+  const code = p.cmd.match(/^\/p(\d+)_/);
+  const slug = code && p.group ? `${cmdName(p.name).slice(0, 60)}-${p.group.toLowerCase()}${code[1]}` : `${cmdName(p.name).slice(0, 60)}-${source}`;
   const shelf = p.shelf ? categoryId.get(p.shelf) ?? null : null;
   const data = {
     name: p.name.slice(0, 200), description: p.description || null, price: p.options[0].price, unitLabel: p.options[0].label,

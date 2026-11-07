@@ -57,7 +57,8 @@ export default function FidelityCheck({ bot, busy, tick, onRetried, rebuild }) {
   const load = useCallback(async () => {
     setLoading(true); setError('')
     try {
-      const r = await adminFetch(`/admin/capture/captures/${encodeURIComponent(bot)}/check${style ? `?style=${style}` : ''}`)
+      const q = new URLSearchParams({ ...(style ? { style } : {}), ...(rebuild ? { catalog: rebuild } : {}) }).toString()
+      const r = await adminFetch(`/admin/capture/captures/${encodeURIComponent(bot)}/check${q ? `?${q}` : ''}`)
       setReport(r); setPicked(new Map())
     } catch (e) { setError(e.message) } finally { setLoading(false) }
   }, [bot, style])
@@ -79,6 +80,17 @@ export default function FidelityCheck({ bot, busy, tick, onRetried, rebuild }) {
       onRetried?.()
     } catch (e) { notify(e.message, 'err') }
   }
+
+  // The catalog's photos (a style that sells products captured from its bot)
+  async function uploadMissing() {
+    try {
+      await adminFetch(`/admin/capture/styles/${rebuild}/images`, { method: 'POST', body: '{}' })
+      notify(L('Import des images lancé : suivez le journal plus haut.', 'Image upload started: follow the journal above.'), 'info')
+      onRetried?.()
+    } catch (e) { notify(e.message, 'err') }
+  }
+  const photos = report?.images
+  const byStatus = st => (photos?.missing || []).filter(p => p.status === st)
 
   const s = report?.summary
   const rep = s?.replica
@@ -128,6 +140,40 @@ export default function FidelityCheck({ bot, busy, tick, onRetried, rebuild }) {
               <li><Pill map={STATUS} value="missing" /> {s.missing}</li>
             </ul>
           </div>
+
+          {photos && (
+            <div className="fc-photos" style={{ margin: '12px 0' }}>
+              <h3 style={{ margin: '0 0 4px' }}>{L('Photos des produits', 'Product photos')} <span className="count">{photos.withPhoto} / {photos.products}</span></h3>
+              {photos.missing.length === 0 ? <p className="small muted">{L('Chaque produit du catalogue a sa photo.', 'Every product of the catalog has its photo.')}</p> : (
+                <>
+                  {byStatus('upload').length > 0 && (
+                    <p className="small">
+                      <b>{byStatus('upload').length}</b> {L('photo(s) déjà dans la capture, pas encore en ligne :', 'photo(s) already in the capture, not online yet:')} {byStatus('upload').map(p => p.name).join(' · ')}{' '}
+                      <button className="btn sm primary" disabled={busy || !rebuild} onClick={uploadMissing}>{L('Les envoyer', 'Upload them')}</button>
+                    </p>
+                  )}
+                  {byStatus('recapture').length > 0 && (
+                    <div className="small">
+                      <b>{byStatus('recapture').length}</b> {L('page(s) capturée(s) sans image : cochez-les puis « Relancer » pour les capturer à nouveau', 'page(s) captured without their picture: tick them, then “Run again” to capture them again')}
+                      <ul style={{ margin: '4px 0', paddingLeft: 18 }}>
+                        {byStatus('recapture').map(p => (
+                          <li key={p.id}>
+                            {p.retry ? <input type="checkbox" checked={picked.has(`img|${p.id}`)} onChange={() => toggle(`img|${p.id}`, p.retry)} aria-label={L(`Recapturer ${p.name}`, `Capture ${p.name} again`)} /> : null}{' '}
+                            {p.name}{!p.retry && <span className="muted"> · {L('chemin inconnu', 'way unknown')}</span>}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {byStatus('absent').length > 0 && (
+                    <p className="small muted">
+                      <b>{byStatus('absent').length}</b> {L('produit(s) introuvable(s) dans cette capture (retirés du bot, ou pages pas encore atteintes : « Update ») :', 'product(s) not found in this capture (gone from the bot, or pages not reached yet: “Update”):')} {byStatus('absent').map(p => p.name).join(' · ')}
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          )}
 
           <div className="fc-bar">
             <label className="fc-check"><input type="checkbox" checked={all} onChange={e => setAll(e.target.checked)} /> {L('Tout afficher (sinon : seulement ce qui manque)', 'Show everything (else: only what is missing)')}</label>

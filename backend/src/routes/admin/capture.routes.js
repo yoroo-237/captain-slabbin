@@ -17,7 +17,7 @@ r.post('/log/clear', (req, res) => res.json(ok(capture.clearLog(req.user.sub))))
 r.get('/captures', async (req, res) => res.json(ok({ captures: await capture.listCaptures(req.user.sub), key: capture.filesKey(req.user.sub) })));
 // Fidelity check: each crossroad's routes, captured and copied into the replica; then
 // run again the routes picked
-r.get('/captures/:bot/check', async (req, res) => res.json(ok(await capture.checkFidelity(req.user.sub, req.params.bot, req.query.style))));
+r.get('/captures/:bot/check', async (req, res) => res.json(ok(await capture.checkFidelity(req.user.sub, req.params.bot, req.query.style, req.query.catalog))));
 r.post('/captures/:bot/retry', async (req, res) => res.status(202).json(ok(await capture.retryRoutes(req.user, req.params.bot, req.body?.items, req.body?.styleId))));
 r.delete('/captures/:bot', async (req, res) => { await capture.removeCapture(req.user.sub, req.params.bot); res.json(ok({ removed: true })); });
 

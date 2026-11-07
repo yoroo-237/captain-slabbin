@@ -400,16 +400,52 @@ export async function importCapture(user, { bot, kind, dry, name, applyTo, catal
 // ---- fidelity check: every route of every crossroad, captured and copied -------
 // The replica styles made from this bot (the member's own), the one checked:
 // `styleId` when given, else the latest
-export async function checkFidelity(userId, bot, styleId) {
+export async function checkFidelity(userId, bot, styleId, catalogStyleId) {
   const dir = captureDir(userId, bot);
   const data = JSON.parse(await fs.readFile(path.join(dir, 'data.json'), 'utf8').catch(() => { throw bad('Capture not found.'); }));
   let saved = {};
   try { saved = JSON.parse(await fs.readFile(path.join(dir, 'state.json'), 'utf8')); } catch { /* an old capture: no ways back */ }
   const name = normalizeBot(data.bot || bot).toLowerCase();
-  const styles = (await prisma.botStyle.findMany({ orderBy: { id: 'desc' } }))
-    .filter(s => s.look?.replica && sourceBotOf(s)?.toLowerCase() === name);
+  const all = await prisma.botStyle.findMany({ orderBy: { id: 'desc' } });
+  const styles = all.filter(s => s.look?.replica && sourceBotOf(s)?.toLowerCase() === name);
   const style = styles.find(s => s.id === Number(styleId)) || styles[0] || null;
-  return { ...checkCapture(data, saved, style), styles: styles.map(s => ({ id: s.id, name: s.name })) };
+  const seller = catalogStyleId ? all.find(s => s.id === Number(catalogStyleId) && sourceBotOf(s)?.toLowerCase() === name) : null;
+  return { ...checkCapture(data, saved, style), styles: styles.map(s => ({ id: s.id, name: s.name })),
+    images: seller?.look?.catalog ? await productPhotos(dir, data, seller.look.catalog) : null };
+}
+
+// The photos of the catalog a style sells (QT Market: 'qt'), against the capture: each
+// product without a photo is either fixable from the saved capture ("Missing images"),
+// or its page has to be captured again (its route, to run again), or not captured at all
+const TIER_BUTTON = /^(.+?)\s*—\s*\$/;
+async function productPhotos(dir, data, catalog) {
+  const products = await prisma.product.findMany({ where: { source: catalog }, orderBy: { name: 'asc' },
+    select: { id: true, name: true, isActive: true, images: { select: { id: true }, take: 1 } } });
+  // A product's pages in the capture, by name (the first line of its page)
+  const pages = new Map();
+  for (const s of data.screens || []) {
+    if (!(s.buttons || []).flat().some(b => TIER_BUTTON.test(b.text || '')) && !/Product total in/.test(s.raw || '')) continue;
+    const k = String(s.raw || '').split('\n')[0].trim().toLowerCase();
+    if (k) pages.set(k, [...(pages.get(k) || []), s]);
+  }
+  const onDisk = async file => !!file && fs.access(path.join(dir, 'media', file)).then(() => true, () => false);
+  // How a screen was opened: the button of the screen before it, else its command
+  const routeOf = s => {
+    const st = (data.steps || []).find(x => x.from && (x.screens || []).includes(s.key) && x.from !== s.key && /^\[.*\]$/.test(x.action));
+    if (st) return { screen: st.from, label: st.action.slice(1, -1) };
+    const cmd = (s.sources || []).find(x => x.startsWith('/'));
+    return cmd ? { cmd } : null;
+  };
+  const missing = [];
+  for (const p of products.filter(x => !x.images.length)) {
+    const seen = pages.get(p.name.trim().toLowerCase()) || [];
+    let withFile = null;
+    for (const s of seen) if (await onDisk(s.media)) { withFile = s; break; }
+    if (withFile) missing.push({ id: p.id, name: p.name, active: p.isActive, status: 'upload' });
+    else if (seen.length) missing.push({ id: p.id, name: p.name, active: p.isActive, status: 'recapture', retry: routeOf(seen[0]) || undefined });
+    else missing.push({ id: p.id, name: p.name, active: p.isActive, status: 'absent' });
+  }
+  return { catalog, products: products.length, withPhoto: products.length - missing.length, missing };
 }
 
 // Runs again the routes picked in the check (buttons of a screen, commands, typed
