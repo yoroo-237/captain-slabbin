@@ -28,6 +28,8 @@ const SAVE_EVERY = 10;
 const RECONNECT_TRIES = 20, RECONNECT_WAIT = 30; // seconds between two tries when the network is down
 // An action that never ends is dropped after this delay: the capture goes on
 const STEP_TIMEOUT = 120;
+// A slow bot (QT Market) edits the page well after the click: its change is waited for this long
+const EDIT_WAIT = 15;
 
 const sleep = s => new Promise(r => setTimeout(r, s * 1000));
 const b64 = buf => Buffer.from(buf).toString('base64');
@@ -518,7 +520,27 @@ export class Explorer {
     return this.waitButton(label, data);
   }
 
+  // What a message shows: changes when the bot edits it
+  async snapshot(msgId) {
+    const m = await this.getMsg(msgId);
+    if (!m) return null;
+    const keys = (m.replyMarkup?.rows || []).map(r => r.buttons.map(b => [b.text, b.data ? b64(b.data) : null]));
+    return JSON.stringify([m.editDate || 0, m.message || '', keys]);
+  }
+
+  // After a click: until the pressed message changes or the bot sends a new one, at most
+  // EDIT_WAIT seconds (a page read too early is the old one, and its next pages are never found)
+  async waitChange(msgId, before) {
+    for (let waited = 0; waited < EDIT_WAIT; waited += 1.5) {
+      if (before !== null && (await this.snapshot(msgId)) !== before) return;
+      const latest = await this.client.getMessages(this.peer, { limit: 1 });
+      if (latest?.[0] && latest[0].id > this.lastId && !latest[0].out) return;
+      await sleep(1.5);
+    }
+  }
+
   async callback(msgId, data) {
+    this.before = [msgId, await this.snapshot(msgId)];
     try {
       const answer = await this.client.invoke(new Api.messages.GetBotCallbackAnswer({ peer: this.peer, msgId, data }));
       return answer.message || (answer.url ? `url: ${answer.url}` : null);
@@ -557,6 +579,7 @@ export class Explorer {
     const label = labelOf(action);
     const manual = this.manual.has(action);
     let error = null, alert = null, pressed = null;
+    this.before = null;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         [alert, pressed] = await this.perform(action);
@@ -575,6 +598,7 @@ export class Explorer {
       }
     }
     await sleep(this.args.wait);
+    if (pressed && !error && this.before?.[0] === pressed) await this.waitChange(pressed, this.before[1]);
     if (token !== this.token) return; // abandoned after its delay
 
     // The way to the screens obtained: the button's screen, plus that button
@@ -757,7 +781,8 @@ export class Explorer {
     const seen = [], seenButtons = [];
     for (const s of this.seen) { const k = JSON.parse(s); (k.length === 3 ? seenButtons : seen).push(k); }
     const state = { queue: this.queue, seen, seen_buttons: seenButtons, per_prefix: this.perPrefix, media_cache: this.mediaCache,
-      last_id: this.lastId, ignored: this.ignored, paths: this.paths, origin: this.origin, label_results: this.labelResults };
+      last_id: this.lastId, ignored: this.ignored, paths: this.paths, origin: this.origin, label_results: this.labelResults,
+      edit_waited: true };
     fs.writeFileSync(path.join(this.out, 'state.json'), JSON.stringify(state));
     this.writeData();
   }
@@ -779,6 +804,7 @@ export class Explorer {
     this.paths = state.paths || {};
     this.origin = state.origin || {};
     this.labelResults = state.label_results || {};
+    if (!state.edit_waited) this.markReadTooEarly();
     this.templates = new Set([...this.screens.values()].map(s => this.template(s.html || '', s.buttons || [])));
     for (const [kind, value] of state.seen) this.seen.add(this.seenKey(kind, value));
     for (const item of state.seen_buttons || []) this.seen.add(JSON.stringify(item));
@@ -794,6 +820,20 @@ export class Explorer {
       this.queue.push(action);
     }
     this.log(`Reprise : ${this.steps.length} actions déjà jouées, ${this.queue.length} en attente${dropped ? ` (${dropped} retours en double retirés)` : ''}.`);
+  }
+
+  // A capture made before the wait for the edit (waitChange): a button that opened nothing,
+  // or only the screen it was pressed on, was likely read too early (the next pages of a
+  // product list). Marked failed, once, so that the completion presses it again.
+  markReadTooEarly() {
+    let n = 0;
+    for (const s of this.steps) {
+      if (!String(s.action).startsWith('[') || (s.screens || []).some(k => k !== s.from)) continue;
+      s.error = 'ReadTooEarly';
+      delete this.labelResults[norm(s.action.slice(1, -1))];
+      n++;
+    }
+    if (n) this.log(`${n} bouton(s) lu(s) trop tôt par l'ancienne version : rejoué(s) à la complétion.`);
   }
 
   // What the bot shows of itself: name, description, menu commands, photo. Used by the replica.
