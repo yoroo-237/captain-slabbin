@@ -51,6 +51,13 @@ RECONNECT_TRIES, RECONNECT_WAIT = 20, 30  # secondes entre deux essais quand le 
 # Une action qui ne finit pas (Telegram ou le bot ne répond pas) est abandonnée après ce
 # délai : la capture continue avec la suivante au lieu de caler
 STEP_TIMEOUT = 120
+# Un bot lent (QT Market) modifie la page bien après le clic : on attend ce changement
+EDIT_WAIT = 15
+# Jamais pressés par le parcours ni la complétion : les paliers de quantité d'un produit
+# (« 1oz—$50⁰⁰ », ils mettent le produit au panier) et ce qui les suit (comme la règle
+# « manual » de QT Market dans backend/src/tg/profiles.js)
+HAND_ONLY = re.compile(r"—\s*\$\s*\d|^\W*remove product from cart|^\W*add product notes|"
+                       r"^\W*enter shipping details|^\W*apply vouchers?", re.I)
 DEFAULT_CAPTURES = Path(__file__).with_name("captures")
 
 
@@ -119,6 +126,9 @@ class Explorer:
         key = ("cb", action[2]) if kind == "cb" else ("send", action[1])
         label = action[-1] if kind == "cb" else action[1]
         if key in self.seen:
+            return
+        if HAND_ONLY.search(label or ""):
+            self.seen.add(key)
             return
         if kind == "cb":
             # Le même bouton sur le même écran (données différentes à chaque affichage) : une fois
@@ -602,6 +612,29 @@ class Explorer:
             self.last_id = max(self.last_id, latest[0].id)
         return await self.wait_button(label, data)
 
+    async def snapshot(self, msg_id):
+        """Ce que montre un message : change quand le bot le modifie."""
+        m = await self.client.get_messages(self.bot, ids=msg_id)
+        if not m:
+            return None
+        rows = getattr(m.reply_markup, "rows", None) or []
+        keys = [[b.text, base64.b64encode(b.data).decode() if getattr(b, "data", None) else None] for r in rows for b in r.buttons]
+        return json.dumps([str(m.edit_date or ""), m.message or "", keys], ensure_ascii=False)
+
+    async def wait_change(self, msg_id, before):
+        """Après un clic : jusqu'à ce que le message pressé change ou que le bot en envoie un
+        nouveau, EDIT_WAIT secondes au plus (une page relue trop tôt est l'ancienne, et
+        ses pages suivantes ne sont jamais trouvées)."""
+        waited = 0.0
+        while waited < EDIT_WAIT:
+            if before is not None and await self.snapshot(msg_id) != before:
+                return
+            latest = await self.client.get_messages(self.bot, limit=1)
+            if latest and latest[0].id > self.last_id and not latest[0].out:
+                return
+            await asyncio.sleep(1.5)
+            waited += 1.5
+
     async def perform(self, action):
         alert = None
         if action[0] in ("cmd", "text"):
@@ -614,6 +647,7 @@ class Explorer:
             msg_id, data = found
             self.seen.add(("cb", data))
             self.origin[base64.b64encode(data).decode()] = screen
+            self.before = (msg_id, await self.snapshot(msg_id))
             try:
                 answer = await self.client(functions.messages.GetBotCallbackAnswerRequest(peer=self.bot, msg_id=msg_id, data=data))
             except errors.BotResponseTimeoutError:
@@ -627,6 +661,7 @@ class Explorer:
                 found = await self.go_back_to(data, _label)
                 if found:
                     msg_id, data = found
+            self.before = (msg_id, await self.snapshot(msg_id))
             try:
                 answer = await self.client(functions.messages.GetBotCallbackAnswerRequest(
                     peer=self.bot, msg_id=msg_id, data=data))
@@ -641,6 +676,7 @@ class Explorer:
     async def step(self, action):
         label = label_of(action)
         error = alert = pressed = None
+        self.before = None
         for attempt in range(2):
             try:
                 alert, pressed = await self.perform(action)
@@ -662,6 +698,8 @@ class Explorer:
                     error += " (nouvel essai plus tard)"
                 break
         await asyncio.sleep(self.args.wait)
+        if pressed and not error and self.before and self.before[0] == pressed:
+            await self.wait_change(pressed, self.before[1])
 
         # Le chemin des écrans obtenus : celui de l'écran du bouton, plus ce bouton
         start = None
@@ -812,7 +850,8 @@ class Explorer:
                 return
             report = self.check()
             s = report["summary"]
-            items = [it for it in retry_items(report) if json.dumps(it, sort_keys=True) not in tried]
+            items = [it for it in retry_items(report) if json.dumps(it, sort_keys=True) not in tried
+                     and not HAND_ONLY.search(it.get("label") or it.get("text") or "")]
             if not items:
                 print(f"Chemins : {s['covered']}/{s['routes']} couverts ({s['coverage']} %), rien à compléter.")
                 return
@@ -851,6 +890,7 @@ class Explorer:
             "per_prefix": self.per_prefix, "media_cache": self.media_cache,
             "last_id": self.last_id, "ignored": self.ignored,
             "paths": self.paths, "origin": self.origin, "label_results": self.label_results,
+            "edit_waited": True,
         }
         (self.out / "state.json").write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
         self.write_data()
@@ -871,6 +911,8 @@ class Explorer:
         self.last_id, self.ignored = state["last_id"], state["ignored"]
         self.paths, self.origin = state.get("paths", {}), state.get("origin", {})
         self.label_results = state.get("label_results", {})
+        if not state.get("edit_waited"):
+            self.mark_read_too_early()
         self.templates = {self.template(s.get("html", ""), s.get("buttons", [])) for s in self.screens.values()}
         # Les données de callback sont des octets, encodés en base64 dans le JSON
         for action in state["queue"]:
@@ -884,7 +926,12 @@ class Explorer:
         # Une file enregistrée par une ancienne version garde un retour par écran : un seul par libellé
         played = {s["action"] for s in self.steps}
         queued, self.queue, dropped = list(self.queue), deque(), 0
+        tiers = 0
         for action in queued:
+            # Paliers de quantité mis en file par une ancienne version : jamais pressés
+            if action[0] in ("cb", "goto") and HAND_ONLY.search(action[3] or ""):
+                tiers += 1
+                continue
             if action[0] == "cb" and BACK.search(action[3] or ""):
                 key = ("back", action[3].strip())
                 if key in self.seen or f"[{action[3]}]" in played:
@@ -893,7 +940,26 @@ class Explorer:
                 self.seen.add(key)
             self.queue.append(action)
         print(f"Reprise : {len(self.steps)} actions déjà jouées, {len(self.queue)} en attente"
-              f"{f' ({dropped} retours en double retirés)' if dropped else ''}.")
+              f"{f' ({dropped} retours en double retirés)' if dropped else ''}"
+              f"{f' ({tiers} paliers de quantité retirés : jamais pressés)' if tiers else ''}.")
+
+    def mark_read_too_early(self):
+        """Capture faite avant l'attente de la modification (wait_change) : un bouton qui n'a
+        rien ouvert, ou seulement l'écran où il était, a sans doute été relu trop tôt (les
+        pages suivantes d'une liste de produits). Marqué en échec, une fois, pour que la
+        complétion le rejoue."""
+        n = 0
+        for s in self.steps:
+            action = str(s.get("action", ""))
+            if not action.startswith("[") or HAND_ONLY.search(action):
+                continue
+            if any(k != s.get("from") for k in s.get("screens") or []):
+                continue
+            s["error"] = "ReadTooEarly"
+            self.label_results.pop(self.norm(action[1:-1]), None)
+            n += 1
+        if n:
+            print(f"{n} bouton(s) lu(s) trop tôt par l'ancienne version : rejoué(s) à la complétion.")
 
     async def read_profile(self):
         """Ce que le bot montre de lui-même : nom, description, commandes du menu, photo.
