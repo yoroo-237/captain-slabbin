@@ -354,6 +354,19 @@ export async function refreshStyle(user, styleId, { fresh = false } = {}) {
   return { ...state(userId), bot, style: style.name };
 }
 
+// "Missing images": the style and its products imported again from the capture already on
+// the server, without browsing the bot. An image already online is not sent again
+// (uploads.json); a page or a product without its picture gets it.
+export async function reimportImages(user, styleId) {
+  const userId = Number(user.sub);
+  const { style, bot, rebuild } = await styleToRebuild(user, styleId);
+  busy(userId);
+  await fs.access(path.join(captureDir(userId, bot), 'data.json')).catch(() => { throw bad('No capture of this bot on this server yet: run Update first.'); });
+  emit(userId, 'line', `== Images manquantes de « ${style.name} » : import depuis la capture enregistrée (sans parcourir @${bot})`);
+  await rebuild(userId, 0);
+  return { ...state(userId), bot, style: style.name };
+}
+
 // then(code): the next task once this import ends (the products after the style)
 export async function importCapture(user, { bot, kind, dry, name, applyTo, catalog, refresh = false, merge = false, then = null }) {
   // On the site a capture only ever updates the style it came from (refreshStyle)

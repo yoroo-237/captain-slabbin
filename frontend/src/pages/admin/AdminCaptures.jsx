@@ -179,6 +179,14 @@ export default function AdminCaptures() {
     setError('')
     try { await cap(`/styles/${s.id}/refresh`, fresh ? { fresh: true } : {}) } catch (e) { setError(e.message) }
   }
+  // Without browsing the bot: what the saved capture holds is imported again, only the
+  // images not yet online are uploaded
+  const images = async s => {
+    const msg = `Upload the missing images of "${s.name}" from the capture already on this server? @${s.sourceBot} is not browsed: ${s.catalog ? 'its pages and its products' : 'its pages'} get the pictures they lack, and images already online are not sent again.`
+    if (!(await askConfirm(msg, { okLabel: 'Upload' }))) return
+    setError('')
+    try { await cap(`/styles/${s.id}/images`, {}) } catch (e) { setError(e.message) }
+  }
 
   return (
     <div>
@@ -211,6 +219,7 @@ export default function AdminCaptures() {
                   </select>
                   <button type="button" className="admin-btn admin-btn-primary" disabled={busy} onClick={() => update(s)}>{busy ? 'Updating…' : 'Update'}</button>
                   <button type="button" className="admin-btn admin-btn-secondary" disabled={busy} onClick={() => update(s, true)} title="Discard the saved capture and capture the bot again from /start">Restart</button>
+                  {c && <button type="button" className="admin-btn admin-btn-secondary" disabled={busy} onClick={() => images(s)} title="Upload the images still missing, from the saved capture, without browsing the bot">Missing images</button>}
                   {c && <button type="button" className={`admin-btn ${view === 'sim' ? 'admin-btn-primary' : 'admin-btn-secondary'}`} onClick={() => toggleView('sim')}>Simulate</button>}
                   {c && <button type="button" className={`admin-btn ${view === 'check' ? 'admin-btn-primary' : 'admin-btn-secondary'}`} onClick={() => toggleView('check')}>Check</button>}
                 </div>

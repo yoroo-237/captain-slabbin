@@ -33,6 +33,7 @@ r.post('/explore', async (req, res) => res.status(202).json(ok(await capture.exp
 r.post('/stop', async (req, res) => res.json(ok(await capture.stop(req.user.sub))));
 r.post('/import', async (req, res) => res.status(202).json(ok(await capture.importCapture(req.user, req.body || {}))));
 r.post('/styles/:id/refresh', async (req, res) => res.status(202).json(ok(await capture.refreshStyle(req.user, req.params.id, { fresh: req.body?.fresh === true }))));
+r.post('/styles/:id/images', async (req, res) => res.status(202).json(ok(await capture.reimportImages(req.user, req.params.id))));
 
 export default r;
 
