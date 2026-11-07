@@ -26,14 +26,14 @@ const SHELF_ART = {
 }
 // Keep in step with SHELF_COPY in src/shop/seo.js
 const SHELF_COPY = {
-  'fire-sale': "The Captain's Chest: this week's Fire Sale deals on flower, concentrates, disposables and more, marked down while they last.",
-  flower: 'Top shelf flower, hand-picked for nose, bag appeal and potency. Exotic and classic strains by the pound, packed fresh and shipped discreetly across the US.',
-  concentrates: 'Premium extracts: live badder, crumble, diamonds and sauce. Clean, potent concentrates sorted by tier, with bulk pricing for repeat buyers.',
-  moonrocks: 'Moonrocks: dense flower coated in concentrate and kief, stronger by nature. Classic and flavored rocks by the pound.',
-  disposables: 'Disposable vapes and carts, ready to enjoy: authentic and replica lines, single units or bulk, shipped discreetly.',
-  prerolls: 'Prerolls ready to light: infused packs, hash holes and classics. Roll it, light it, enjoy.',
-  edibles: 'Edibles that are tasty and potent: gummies, chocolate bars and more, clearly dosed.',
-  mush: 'Shrooms: whole caps and stems by the ounce. Explore higher, with clear weights and discreet shipping.',
+  'fire-sale': "The Captain's Chest: this week's Fire Sale deals on weed, exotic flower, concentrates, wax, disposables, carts and more, marked down while they last.",
+  flower: "Top shelf weed and cannabis flower: Kush, Zaza, Calikush, exotic and exotic small buds, indoor and mixed light, hand-picked for nose, bag appeal and THC. Packed fresh by the pound, authentic and distro quantities, shipped discreetly across the US.",
+  concentrates: "Concentrates for sale: wax, hash, hash stash, wholemelt, live badder, crumble, diamonds and sauce. Clean, potent THC extracts sorted by tier, with bulk pricing for repeat buyers.",
+  moonrocks: "Moonrock and moonrocks: dense cannabis flower coated in concentrate and kief, stronger by nature. Classic and flavored rocks, Cherry and more, by the pound.",
+  disposables: "Disposables, vapes and carts: Muha Meds, OG Fryd, Packman, Switch, Ace Ultra, Cherry, Boutiq V5 and replicas. Authentic and replica lines, single units or bulk THC vapes, shipped discreetly.",
+  prerolls: "Pre-roll and prerolls ready to light: infused packs, hash holes, Kush and Zaza prerolls and classics. Roll it, light it, enjoy.",
+  edibles: "Edibles that are tasty and potent: THC gummies, chocolate bars and more, clearly dosed. Shop edibles online with discreet shipping across the US.",
+  mush: "Mushrooms and shrooms: whole caps and stems by the ounce. Explore higher, with clear weights and discreet shipping.",
 }
 const DEFAULT_SHELVES = [
   ['flower', 'Flower'], ['concentrates', 'Concentrates'], ['moonrocks', 'Moonrocks'], ['disposables', 'Disposables'],
