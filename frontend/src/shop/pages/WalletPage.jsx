@@ -20,6 +20,10 @@ export default function WalletPage() {
   const [txns, setTxns] = useState([])
   const [tab, setTab] = useState('deposits')
   const [adding, setAdding] = useState(false)
+  // A deposit still waiting for its payment: its address and QR code can be shown again
+  // until it expires (12 hours), not only right after it was requested
+  const [reopened, setReopened] = useState(null)
+  const open = d => ['awaiting', 'partial'].includes(d.status) && d.address && (!d.expiresAt || new Date(d.expiresAt) > Date.now())
 
   const loadLists = useCallback(() => {
     apiFetch('/wallet/deposits').then(d => setDeposits(d.deposits || [])).catch(() => {})
@@ -92,7 +96,7 @@ export default function WalletPage() {
         {tab === 'deposits' ? (
           deposits.length === 0 ? <p className="muted">No deposits yet. Your first one shows up here as soon as you request an address.</p> : (
             <div className="table-wrap"><table className="t">
-              <thead><tr><th>Date</th><th>Coin</th><th>Received</th><th>Credited</th><th>Status</th></tr></thead>
+              <thead><tr><th>Date</th><th>Coin</th><th>Received</th><th>Credited</th><th>Status</th><th /></tr></thead>
               <tbody>{deposits.map(d => (
                 <tr key={d.id}>
                   <td>{fmtDate(d.createdAt)}</td>
@@ -100,6 +104,7 @@ export default function WalletPage() {
                   <td className="num">{Number(d.amountReceived) > 0 ? `${fmtCrypto(d.amountReceived)} ${d.currency}` : '-'}</td>
                   <td className="num">{Number(d.netAmount) > 0 ? `${fmtCrypto(d.netAmount)} ${d.currency}` : '-'}</td>
                   <td><span className={'status ' + d.status}>{d.status}</span></td>
+                  <td>{open(d) && <button className="btn btn-outline btn-sm" onClick={() => setReopened(d)}>Show</button>}</td>
                 </tr>
               ))}</tbody>
             </table></div>
@@ -124,19 +129,20 @@ export default function WalletPage() {
         )}
       </div>
 
-      {adding && <AddFunds feePct={info?.commissionPct} onClose={() => { setAdding(false); loadLists(); refreshBalance() }} />}
+      {(adding || reopened) && <AddFunds key={reopened?.id || 'new'} feePct={info?.commissionPct} initial={reopened}
+        onClose={() => { setAdding(false); setReopened(null); loadLists(); refreshBalance() }} />}
     </div>
   )
 }
 
-function AddFunds({ feePct, onClose }) {
+function AddFunds({ feePct, onClose, initial = null }) {
   const { refreshBalance } = useApp()
   const [currency, setCurrency] = useState('BTC')
   const [agreed, setAgreed] = useState(false)
-  const [deposit, setDeposit] = useState(null)
+  const [deposit, setDeposit] = useState(initial)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [status, setStatus] = useState('awaiting')
+  const [status, setStatus] = useState(initial?.status || 'awaiting')
   const [copied, setCopied] = useState(false)
   const [left, setLeft] = useState('')
   const poll = useRef(null)

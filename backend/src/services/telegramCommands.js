@@ -681,9 +681,13 @@ const paying = new Set();
 
 // The order waiting for its payment: the QR code, the exact amount, the address and the
 // 30 minutes (the original's "Next step" screen)
+// The QR code of a payment (its address and amount), served by /api/qr
+function payQr(address, gross, coin) {
+  const uri = ['ETH', 'XMR'].includes(coin) ? address : `${COIN_URI[coin]}:${address}?amount=${Number(gross).toFixed(8)}`;
+  return env.publicUrl ? `${env.publicUrl.replace(/\/$/, '')}/api/qr?d=${encodeURIComponent(uri)}` : undefined;
+}
 function pendingScreen({ order, deposit, gross, coin }) {
-  const uri = ['ETH', 'XMR'].includes(coin) ? deposit.address : `${COIN_URI[coin]}:${deposit.address}?amount=${Number(gross).toFixed(8)}`;
-  const image = env.publicUrl ? `${env.publicUrl.replace(/\/$/, '')}/api/qr?d=${encodeURIComponent(uri)}` : undefined;
+  const image = payQr(deposit.address, gross, coin);
   return {
     text: [
       `Order <code>${escapeHtml(order.orderNumber)}</code>`,
@@ -788,15 +792,18 @@ export async function orderScreen(user, number) {
     `<b>Total  ${money(order.totalAmount)}</b>`,
     ...(order.trackingNumber ? ['', `Tracking: <code>${escapeHtml(order.trackingNumber)}</code>${order.carrier ? ` (${escapeHtml(order.carrier)})` : ''}`] : []),
   ];
+  // While it awaits payment: the instructions and the QR code again, as often as needed
+  let image;
   if (order.status === 'awaiting_payment') {
     const dep = await prisma.deposit.findUnique({ where: { orderId: order.id } });
-    const coin = order.payments?.[0]?.currency;
+    const coin = order.payments?.[0]?.currency || dep?.currency;
     if (dep && coin) {
+      image = payQr(dep.address, dep.amountExpected, coin);
       const left = Math.max(0, Math.ceil((new Date(order.expiresAt) - Date.now()) / 60000));
       lines.push('', '<b>Next step:</b>', 'Send', `<code>${Number(dep.amountExpected).toFixed(8)}</code> ${coin}`, 'to', `<code>${escapeHtml(dep.address)}</code>`, '', `⏳ ${left} minute(s) left to send the full payment.`);
     }
   }
-  return { text: lines.join('\n'), keyboard: [[back('menu')]] };
+  return { text: lines.join('\n'), keyboard: [[back('menu')]], ...(image ? { image } : {}) };
 }
 
 // A typed answer to the checkout's last question, or null
