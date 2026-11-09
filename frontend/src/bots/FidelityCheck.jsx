@@ -16,6 +16,7 @@ const STATUS = {
   failed: ['bad', () => L('échouée', 'failed')],
   missing: ['bad', () => L('manquante', 'missing')],
   ignored: ['mute', () => L('exclue', 'skipped')],
+  hand: ['mute', () => L('jamais pressée (quantité, panier)', 'never pressed (quantity, cart)')],
   link: ['mute', () => L('lien', 'link')],
   disabled: ['mute', () => L('désactivée', 'disabled')],
 }

@@ -826,8 +826,12 @@ class Explorer:
     def add_retries(self, items):
         """Les routes choisies dans la vérification : un bouton d'un écran (on retourne
         sur cet écran puis on appuie), une commande ou un texte ; jouées en premier."""
-        added = 0
+        added = refused = 0
         for item in reversed(items):
+            # Un palier de quantité ou ce qui le suit n'est jamais pressé, même coché à la main
+            if HAND_ONLY.search(item.get("label") or item.get("text") or ""):
+                refused += 1
+                continue
             if item.get("screen") in self.screens and item.get("label"):
                 self.queue.appendleft(("goto", item["screen"], None, item["label"]))
             elif str(item.get("cmd", "")).startswith("/"):
@@ -837,7 +841,8 @@ class Explorer:
             else:
                 continue
             added += 1
-        print(f"{added} route(s) à relancer, jouées en premier.")
+        print(f"{added} route(s) à relancer, jouées en premier."
+              f"{f' {refused} palier(s) de quantité ou étape(s) de panier refusé(s) : jamais pressés.' if refused else ''}")
 
     async def complete(self):
         """Après le parcours : analyse les chemins (routes.py) et relance les routes

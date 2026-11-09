@@ -24,6 +24,9 @@ const plain = html => String(html || '').replace(/<br\s*\/?>/gi, '\n').replace(/
   .replace(/\s+/g, ' ').trim();
 const IMAGE_KINDS = new Set(['photo', 'animation', 'sticker', 'video']);
 const COVERED = new Set(['captured', 'end', 'equivalent']);
+// Never pressed by the capture, so never offered to run again: a product's quantity tiers
+// (« 1oz—$50⁰⁰ » puts it in the cart) and what follows them (explore.py's HAND_ONLY)
+const HAND_ONLY = /—\s*\$\s*\d|^\W*remove product from cart|^\W*add product notes|^\W*enter shipping details|^\W*apply vouchers?/i;
 const PROBLEM = new Set(['pending', 'failed', 'missing']);
 
 export function checkCapture(data, state = {}, style = null) {
@@ -112,13 +115,14 @@ export function checkCapture(data, state = {}, style = null) {
         const target = targetOf(screens, s, b);
         const tried = steps.filter(st => st.action === label && (!st.from || st.from === s.key));
         if (target) { route.status = 'captured'; route.target = { key: target.key, title: titleOf(target) }; }
+        else if (HAND_ONLY.test(b.text || '')) route.status = 'hand';
         else if (ignored.has(b.text) || ignored.has(label)) route.status = 'ignored';
         else if (tried.some(st => !st.error)) { route.status = 'end'; route.alert = tried.find(st => st.alert)?.alert || null; }
         else if (queued.some(q => q.label === label && (!q.from || q.from === s.key))) route.status = 'pending';
         else if (tried.length) { route.status = 'failed'; route.error = tried[tried.length - 1].error; }
         else if (isBack(b) || coveredOn.get(template.get(s.key))?.has(norm(label)) || alwaysSame(b)) route.status = 'equivalent';
         // What can be run again: a typed text, or a button of a screen whose way is known
-        if (!COVERED.has(route.status) && route.status !== 'ignored') {
+        if (!COVERED.has(route.status) && !['ignored', 'hand'].includes(route.status)) {
           if (b.kind === 'keyboard') route.retry = { text: b.text };
           else if (paths[s.key]) route.retry = { screen: s.key, label: b.text };
         }
@@ -162,14 +166,14 @@ export function checkCapture(data, state = {}, style = null) {
 
   const all = crossroads.flatMap(c => c.routes);
   const count = st => all.filter(r => r.status === st).length + commands.filter(c => c.status === st).length;
-  const counted = [...all.filter(r => (ROUTE.has(r.kind) || r.kind === 'command') && !['disabled', 'ignored'].includes(r.status)),
+  const counted = [...all.filter(r => (ROUTE.has(r.kind) || r.kind === 'command') && !['disabled', 'ignored', 'hand'].includes(r.status)),
     ...commands.filter(c => c.status !== 'ignored')];
   const covered = counted.filter(r => COVERED.has(r.status)).length;
   const summary = {
     crossroads: crossroads.filter(c => !c.leaf).length, screens: screens.length, routes: counted.length, covered,
     coverage: counted.length ? Math.round((covered / counted.length) * 100) : 100,
     captured: count('captured'), end: count('end'), equivalent: count('equivalent'), pending: count('pending'),
-    failed: count('failed'), missing: count('missing'), ignored: count('ignored'), links: count('link'),
+    failed: count('failed'), missing: count('missing'), ignored: count('ignored'), hand: count('hand'), links: count('link'),
     textCommands: all.filter(r => r.kind === 'command').length,
     retryable: all.filter(r => r.retry).length + commands.filter(c => c.retry).length,
   };

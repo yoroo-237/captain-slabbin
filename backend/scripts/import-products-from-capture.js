@@ -143,7 +143,7 @@ for (const c of allShelves) console.log(`  ${parentOf.has(c) ? '   └' : ' '} $
 // cart total instead of its prices
 const skipped = products.filter(p => !(p.name && p.options.length) && !byName.has(String(p.name).toLowerCase()));
 const inCartOnly = skipped.filter(p => p.inCart);
-if (inCartOnly.length) console.log(`In the capture account's cart, so shown without prices (skipped): ${inCartOnly.length} — ${inCartOnly.map(p => p.name).join(' · ')}. Empty that cart in the bot, then capture these pages again.`);
+if (inCartOnly.length) console.log(`In the capture account's cart, so shown without prices (skipped): ${[...new Set(inCartOnly.map(p => p.name))].length} — ${[...new Set(inCartOnly.map(p => p.name))].join(' · ')}. Empty that cart in the bot, then capture these pages again.`);
 const noPrice = skipped.filter(p => !p.inCart);
 if (noPrice.length) console.log(`Without a name or price (skipped): ${noPrice.map(p => p.cmd).join(' ')}`);
 const orphans = usable.filter(p => !p.shelf);
