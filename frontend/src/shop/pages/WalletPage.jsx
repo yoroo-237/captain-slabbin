@@ -227,8 +227,8 @@ function AddFunds({ feePct, onClose, initial = null }) {
               ))}
             </div>
             <div className="fee-box">
-              <b>Deposit fee: {fee}%</b>
-              <span>Send 1 {currency} → {fmtCrypto(1 - fee / 100)} {currency} is added to your balance.</span>
+              <b>Deposit fee: {fee/10}%</b>
+              <span>Send 1 {currency} → {fmtCrypto(1 - fee / 1000)} {currency} is added to your balance.</span>
             </div>
             <ul className="rules">
               <li>Send to the address shown next. You can send to it again later: each payment is credited.</li>
@@ -238,7 +238,7 @@ function AddFunds({ feePct, onClose, initial = null }) {
             </ul>
             <label className="check" style={{ marginBottom: 14 }}>
               <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)} />
-              <span>I understand the deposit terms and the {fee}% fee.</span>
+              <span>I understand the deposit terms and the {fee/10}% fee.</span>
             </label>
             {error && <div className="alert alert-error"><Icon.alert /><span>{error}</span></div>}
             <button className="btn btn-primary btn-block btn-lg" disabled={!agreed || busy} onClick={create}>{busy ? 'Generating address…' : `Get my ${currency} address`}</button>
@@ -259,7 +259,7 @@ function AddFunds({ feePct, onClose, initial = null }) {
               <button className="btn btn-outline btn-sm" onClick={copy}>{copied ? <><Icon.check /> Copied</> : <><Icon.copy /> Copy</>}</button>
             </div>
             <div className="summary-row" style={{ marginTop: 10 }}><span><Icon.clock /> Expires in</span><span className="countdown">{left}</span></div>
-            <div className="summary-row"><span>Deposit fee</span><span>{fee}%</span></div>
+            <div className="summary-row"><span>Deposit fee</span><span>{fee/10}%</span></div>
             <div className="alert alert-info" style={{ marginTop: 12, marginBottom: 0 }}>
               {deposit.currency === 'XMR'
                 ? <>Monero deposits are confirmed by our team. After sending, <Link to="/account/messages" style={{ textDecoration: 'underline' }}>message us</Link> the transaction ID.</>
