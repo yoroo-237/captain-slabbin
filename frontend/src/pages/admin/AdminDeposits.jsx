@@ -278,7 +278,7 @@ function SyncBody({ r }) {
       <div>Payments found on the address: <strong>{r.found}</strong></div>
       <div>Credited now: <strong style={{ color: r.credited > 0 ? '#2e7d32' : 'inherit' }}>{r.credited}</strong>{r.newlyReceived > 0 && ` (${r.newlyReceived} ${r.currency})`}</div>
       <div>Total received on this deposit: <strong>{r.amountReceived} {r.currency}</strong></div>
-      <div>Status: <StatusBadge status={r.status} /></div>
+      <div>Status: <StatusBadge type="deposit" value={r.status} /></div>
       {r.pending && <div style={{ color: '#e65100' }}>A payment is still waiting for its first confirmation.</div>}
       {r.failed?.length > 0 && (
         <div className="admin-alert admin-alert-error" style={{ display: 'block', marginTop: 10 }}>
