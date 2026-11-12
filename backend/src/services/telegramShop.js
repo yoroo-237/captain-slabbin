@@ -264,10 +264,7 @@ export async function depositScreen(user, currency) {
   if (!COINS.includes(currency)) return walletScreen(user);
   try {
     const dep = await walletService.createDeposit(user.id, currency);
-    const [min, pct] = await Promise.all([
-      prisma.siteSetting.findUnique({ where: { key: 'min_deposit' } }),
-      getCommissionPct(),
-    ]);
+    const pct = await getCommissionPct();
     const hours = Math.max(1, Math.round((new Date(dep.expiresAt) - Date.now()) / 3600000));
     return {
       text: [
@@ -277,8 +274,7 @@ export async function depositScreen(user, currency) {
         '',
         `<code>${escapeHtml(dep.address)}</code>`,
         '',
-        ...(min?.value ? [`▸ Minimum ${money(min.value)}`] : []),
-        ...(Number(pct) > 0 ? [`▸ ${pct/10}% network & service fee taken from the deposit`] : []),
+        ...(Number(pct) > 0 ? [`▸ ${pct}% network & service fee taken from the deposit`] : []),
         `▸ Valid for ${hours} hours`,
         currency === 'XMR' ? '▸ Checked by hand, usually within a few hours' : '▸ Credited automatically after network confirmation',
         '',

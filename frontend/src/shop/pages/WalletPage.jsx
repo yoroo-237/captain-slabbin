@@ -10,7 +10,7 @@ import { smokePuff } from '../components/smoke.js'
 const URI = { BTC: 'bitcoin', LTC: 'litecoin', DOGE: 'dogecoin', ETH: 'ethereum', XMR: 'monero' }
 
 // The balance is the crypto the customer holds (deposit minus the deposit fee),
-// valued live at the market price. Deposits are made to single-use addresses.
+// valued live at the market price. Each payment to a deposit address is credited.
 export default function WalletPage() {
   const { balance, holdings, refreshBalance } = useApp()
   const { itemCount } = useCart()
@@ -24,6 +24,18 @@ export default function WalletPage() {
   // until it expires (12 hours), not only right after it was requested
   const [reopened, setReopened] = useState(null)
   const open = d => ['awaiting', 'partial'].includes(d.status) && d.address && (!d.expiresAt || new Date(d.expiresAt) > Date.now())
+  const [checking, setChecking] = useState(null)
+  const [checkNote, setCheckNote] = useState('')
+  async function recheck(d) {
+    setChecking(d.id); setCheckNote('')
+    try {
+      const r = await apiFetch(`/wallet/deposits/${d.id}/check`, { method: 'POST' })
+      const n = r.blockchainResult?.credited || 0
+      setCheckNote(n > 0 ? `${n} new payment${n > 1 ? 's' : ''} credited.` : r.blockchainResult?.pending ? 'A payment is waiting for its confirmation.' : 'No new payment on this address.')
+      refreshBalance(); loadLists()
+    } catch (e) { setCheckNote(e.message) }
+    finally { setChecking(null) }
+  }
 
   const loadLists = useCallback(() => {
     apiFetch('/wallet/deposits').then(d => setDeposits(d.deposits || [])).catch(() => {})
@@ -94,7 +106,8 @@ export default function WalletPage() {
           <button role="tab" aria-selected={tab === 'history'} onClick={() => setTab('history')}>Activity</button>
         </div>
         {tab === 'deposits' ? (
-          deposits.length === 0 ? <p className="muted">No deposits yet. Your first one shows up here as soon as you request an address.</p> : (
+          deposits.length === 0 ? <p className="muted">No deposits yet. Your first one shows up here as soon as you request an address.</p> : (<>
+            {checkNote && <div className="alert alert-info" style={{ marginBottom: 12 }}><Icon.wallet /><span>{checkNote}</span></div>}
             <div className="table-wrap"><table className="t">
               <thead><tr><th>Date</th><th>Coin</th><th>Received</th><th>Credited</th><th>Status</th><th /></tr></thead>
               <tbody>{deposits.map(d => (
@@ -104,11 +117,16 @@ export default function WalletPage() {
                   <td className="num">{Number(d.amountReceived) > 0 ? `${fmtCrypto(d.amountReceived)} ${d.currency}` : '-'}</td>
                   <td className="num">{Number(d.netAmount) > 0 ? `${fmtCrypto(d.netAmount)} ${d.currency}` : '-'}</td>
                   <td><span className={'status ' + d.status}>{d.status}</span></td>
-                  <td>{open(d) && <button className="btn btn-outline btn-sm" onClick={() => setReopened(d)}>Show</button>}</td>
+                  <td>
+                    {open(d) ? <button className="btn btn-outline btn-sm" onClick={() => setReopened(d)}>Show</button>
+                      : d.currency !== 'XMR' && d.address && d.address !== 'pending' && (
+                        <button className="btn btn-outline btn-sm" disabled={checking === d.id} onClick={() => recheck(d)}>{checking === d.id ? 'Checking…' : 'Check'}</button>
+                      )}
+                  </td>
                 </tr>
               ))}</tbody>
             </table></div>
-          )
+          </>)
         ) : (
           txns.length === 0 ? <p className="muted">No activity yet.</p> : (
             <div className="table-wrap"><table className="t">
@@ -209,18 +227,18 @@ function AddFunds({ feePct, onClose, initial = null }) {
               ))}
             </div>
             <div className="fee-box">
-              <b>Deposit fee: {fee/10}%</b>
-              <span>Send 1 {currency} → {fmtCrypto(1 - fee / 1000)} {currency} is added to your balance.</span>
+              <b>Deposit fee: {fee}%</b>
+              <span>Send 1 {currency} → {fmtCrypto(1 - fee / 100)} {currency} is added to your balance.</span>
             </div>
             <ul className="rules">
-              <li>Send one transaction to the address shown next. Don’t reuse it.</li>
+              <li>Send to the address shown next. You can send to it again later: each payment is credited.</li>
               <li>Credited after 1 network confirmation; the address expires after 12 hours.</li>
               <li>Your balance holds the crypto, so its USD value follows the market.</li>
               <li>Send only {currency} on its native network. Other assets are lost.</li>
             </ul>
             <label className="check" style={{ marginBottom: 14 }}>
               <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)} />
-              <span>I understand the deposit terms and the {fee/10}% fee.</span>
+              <span>I understand the deposit terms and the {fee}% fee.</span>
             </label>
             {error && <div className="alert alert-error"><Icon.alert /><span>{error}</span></div>}
             <button className="btn btn-primary btn-block btn-lg" disabled={!agreed || busy} onClick={create}>{busy ? 'Generating address…' : `Get my ${currency} address`}</button>
@@ -241,7 +259,7 @@ function AddFunds({ feePct, onClose, initial = null }) {
               <button className="btn btn-outline btn-sm" onClick={copy}>{copied ? <><Icon.check /> Copied</> : <><Icon.copy /> Copy</>}</button>
             </div>
             <div className="summary-row" style={{ marginTop: 10 }}><span><Icon.clock /> Expires in</span><span className="countdown">{left}</span></div>
-            <div className="summary-row"><span>Deposit fee</span><span>{fee/10}%</span></div>
+            <div className="summary-row"><span>Deposit fee</span><span>{fee}%</span></div>
             <div className="alert alert-info" style={{ marginTop: 12, marginBottom: 0 }}>
               {deposit.currency === 'XMR'
                 ? <>Monero deposits are confirmed by our team. After sending, <Link to="/account/messages" style={{ textDecoration: 'underline' }}>message us</Link> the transaction ID.</>

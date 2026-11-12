@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../../utils/api.js'
 import { useApp } from '../../context/AppContext.jsx'
 import { useCart } from '../../context/CartContext.jsx'
@@ -51,6 +51,17 @@ export default function CheckoutPage() {
   const [placed, setPlaced] = useState(null)
   // Optional: where the shop sends money back should the order be refunded
   const [refund, setRefund] = useState({ currency: 'BTC', address: '' })
+  // Paid from the wallet balance, or straight in crypto to the order's own address
+  const [method, setMethod] = useState('wallet')
+  const [coins, setCoins] = useState(null)
+  const [coin, setCoin] = useState('')
+  const [payWindow, setPayWindow] = useState(30)
+  const navigate = useNavigate()
+  useEffect(() => {
+    apiFetch('/orders/payable-coins').then(d => { setCoins(d.coins || []); setPayWindow(d.payWindowMinutes || 30); setCoin(c => c || d.coins?.[0] || '') }).catch(() => setCoins([]))
+  }, [])
+  // Paid in crypto: a refund goes back in the coin paid, so the refund address is that coin's
+  useEffect(() => { if (method === 'crypto' && coin) setRefund(r => (r.currency === coin ? r : { currency: coin, address: '' })) }, [method, coin])
   // The shop's PGP key: the address can then be encrypted on this device before it is sent
   const shopKey = settings?.pgp_public_key?.trim() || ''
   const [encrypt, setEncrypt] = useState(true)
@@ -99,7 +110,8 @@ export default function CheckoutPage() {
   async function placeOrder() {
     setTouched(true)
     if (!addressOk) { document.getElementById('delivery')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return }
-    if (short > 0) return
+    if (method === 'wallet' && short > 0) return
+    if (method === 'crypto' && !coin) return
     setBusy(true); setError('')
     try {
       // An encrypted address is not kept on the device either
@@ -108,6 +120,21 @@ export default function CheckoutPage() {
       if (shipTo && encrypting) {
         const { name, street, apt, city, state, zip } = shipTo
         shipTo = { pgp: await encryptTo(shopKey, [name, street, apt, `${city}, ${state} ${zip}`, 'United States'].filter(Boolean).join('\n')) }
+      }
+      if (method === 'crypto') {
+        const data = await apiFetch('/orders/pay', {
+          method: 'POST',
+          body: JSON.stringify({
+            items: items.map(i => ({ productId: i.id, quantity: i.quantity })),
+            coin,
+            ...(!profileHandle && telegram.trim() ? { telegram: telegram.trim() } : {}),
+            ...(shipTo ? { delivery: shipTo } : {}),
+            ...(refund.address.trim() ? { refund: { currency: coin, address: refund.address.trim() } } : {}),
+          }),
+        })
+        clearCart()
+        navigate(`/account/orders/${data.order.id}/pay`)
+        return
       }
       const data = await apiFetch('/orders', {
         method: 'POST',
@@ -245,7 +272,7 @@ export default function CheckoutPage() {
                   <div className="refund-row">
                     <div className="field" style={{ marginBottom: 0 }}>
                       <label htmlFor="rf-coin">Coin</label>
-                      <select id="rf-coin" className="select" value={refund.currency} onChange={e => setRefund(r => ({ ...r, currency: e.target.value }))}>
+                      <select id="rf-coin" className="select" value={refund.currency} disabled={method === 'crypto'} onChange={e => setRefund(r => ({ ...r, currency: e.target.value }))}>
                         {[['BTC', 'Bitcoin'], ['LTC', 'Litecoin'], ['ETH', 'Ethereum'], ['DOGE', 'Dogecoin'], ['XMR', 'Monero']].map(([k, n]) => <option key={k} value={k}>{n}</option>)}
                       </select>
                     </div>
@@ -254,12 +281,36 @@ export default function CheckoutPage() {
                       <input id="rf-addr" className="input" autoComplete="off" spellCheck={false} placeholder="Leave empty if you prefer" value={refund.address} onChange={e => setRefund(r => ({ ...r, address: e.target.value }))} />
                     </div>
                   </div>
-                  <span className="hint" style={{ display: 'block', marginTop: 8 }}>Paid from your wallet: this is only where we send money back, should your order be refunded. It goes on your order.</span>
+                  <span className="hint" style={{ display: 'block', marginTop: 8 }}>{method === 'crypto' ? `Where we send ${refund.currency} back if a payment arrives late, short or too large, or if the order is refunded.` : 'Paid from your wallet: this is only where we send money back, should your order be refunded. It goes on your order.'}</span>
                 </div>
 
                 <div className="panel step-panel">
                   <div className="panel-title"><span className="n">2</span> Payment</div>
-                  {holdings.length === 0 ? (
+                  <div className="pay-options" role="radiogroup" aria-label="Payment method" style={{ marginBottom: 14 }}>
+                    <label className={'pay-option' + (method === 'wallet' ? ' on' : '')}>
+                      <input type="radio" name="method" checked={method === 'wallet'} onChange={() => setMethod('wallet')} />
+                      <span><b>Wallet balance</b><br /><span className="muted" style={{ fontSize: 12 }}>Paid instantly from your credits</span></span>
+                      <span className="amt"><b>{money(balance)}</b></span>
+                    </label>
+                    <label className={'pay-option' + (method === 'crypto' ? ' on' : '')} style={coins && !coins.length ? { opacity: .55 } : undefined}>
+                      <input type="radio" name="method" checked={method === 'crypto'} disabled={coins && !coins.length} onChange={() => setMethod('crypto')} />
+                      <span><b>Pay with crypto</b><br /><span className="muted" style={{ fontSize: 12 }}>{coins && !coins.length ? 'Unavailable right now' : `Send it from any wallet, ${payWindow} minutes to pay`}</span></span>
+                    </label>
+                  </div>
+                  {method === 'crypto' ? (
+                    <>
+                      <div className="pay-options" role="radiogroup" aria-label="Coin">
+                        {(coins || []).map(c => (
+                          <label key={c} className={'pay-option' + (coin === c ? ' on' : '')}>
+                            <input type="radio" name="coin" checked={coin === c} onChange={() => setCoin(c)} />
+                            <Coin currency={c} />
+                            <span><b>{c}</b></span>
+                          </label>
+                        ))}
+                      </div>
+                      <p className="summary-note">Next you get this order’s own {coin || 'crypto'} address and the exact amount to send, priced now. Pay within {payWindow} minutes, or the order is cancelled and anything received is refunded.{coin === 'XMR' ? ' Monero payments are checked by hand.' : ''}</p>
+                    </>
+                  ) : holdings.length === 0 ? (
                     <div className="alert alert-info" style={{ margin: 0 }}>
                       <Icon.wallet />
                       <span>Your wallet is empty. <Link to="/account/wallet?from=checkout" className="link">Add funds with crypto</Link>. Your cart will be waiting.</span>
@@ -281,11 +332,11 @@ export default function CheckoutPage() {
                       ))}
                     </div>
                   )}
-                  {payHolding?.price && (
+                  {method === 'wallet' && payHolding?.price && (
                     <p className="summary-note">≈ {fmtCrypto(total / payHolding.price)} {payCurrency} at today’s price.</p>
                   )}
-                  <p className="summary-note">The total is converted at the live price when you place the order and that amount is locked in. Once paid, your invoice is sent to the shop on Telegram.</p>
-                  {short > 0 && holdings.length > 0 && (
+                  {method === 'wallet' && <p className="summary-note">The total is converted at the live price when you place the order and that amount is locked in. Once paid, your invoice is sent to the shop on Telegram.</p>}
+                  {method === 'wallet' && short > 0 && holdings.length > 0 && (
                     <div className="alert alert-warn" style={{ marginTop: 12, marginBottom: 0 }}>
                       <Icon.alert />
                       <span>You need <b>{money(short)}</b> more{payHolding ? ` in ${payCurrency}` : ''}. <Link to="/account/wallet?from=checkout" className="link">Add funds</Link></span>
@@ -314,8 +365,9 @@ export default function CheckoutPage() {
             <div className="summary-row"><span>Delivery</span><span className={shipping || !delivery ? '' : 'free'}>{!delivery ? 'None' : shipping ? money(shipping) : 'Free'}</span></div>
             <div className="summary-row total"><span>Total</span><span>{money(total)}</span></div>
             {error && <div className="alert alert-error" style={{ marginTop: 12 }} role="alert"><Icon.alert /><span>{error}</span></div>}
-            <button className="btn btn-primary btn-block btn-lg" style={{ marginTop: 16 }} onClick={placeOrder} disabled={!user || busy || short > 0 || holdings.length === 0}>
-              <Icon.lock /> {busy ? 'Placing order…' : `Place order · ${money(total)}`}
+            <button className="btn btn-primary btn-block btn-lg" style={{ marginTop: 16 }} onClick={placeOrder}
+              disabled={!user || busy || (method === 'wallet' ? (short > 0 || holdings.length === 0) : !coin)}>
+              <Icon.lock /> {busy ? 'Placing order…' : method === 'crypto' ? `Continue to payment · ${money(total)}` : `Place order · ${money(total)}`}
             </button>
             {!user && <p className="summary-note" style={{ textAlign: 'center' }}>Create an account or sign in to continue.</p>}
             {user && touched && !addressOk && <p className="summary-note" style={{ color: 'var(--blood-hi)', textAlign: 'center' }}>Please complete your delivery address.</p>}

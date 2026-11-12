@@ -7,6 +7,8 @@ import { formatTxnId, getUserTier, getCashbackRate, appError } from '../utils/fo
 import * as balanceService from './balance.service.js';
 import { getCachedUsdPrice } from './price.service.js';
 
+const CHAIN_HOOK = ['BTC', 'LTC', 'DOGE'];
+
 export const walletService = {
   async getWalletInfo(userId) {
     const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
@@ -75,12 +77,15 @@ export const walletService = {
     });
   },
 
-  // Credits a deposit from the crypto amount actually received. The commission is
-  // taken here: the customer's holding grows by the net amount only, and the
-  // commission stays on the deposit address for the super admin's reserve sweep.
-  // The USD price is informative only, so a missing price never blocks a credit.
-  // `opts.cumulative`: the amount is the address's total received so far (a bot order's payments add up);
-  // `opts.txHash`: the one transaction it comes from, counted once.
+  // Credits one payment received on a deposit address (the crypto amount actually received).
+  // The commission is taken here: the customer's holding grows by the net amount only, and
+  // the commission stays on the address for the super admin's reserve sweep.
+  //  - a top-up's first payment confirms it;
+  //  - any later payment (the customer sent to the same address again), and every payment of
+  //    an order's deposit, is credited on its own by receivePayment.
+  // `opts.txHash`: the transaction it comes from, counted once whatever reports it (webhook,
+  // the customer's check, the admin's Check chain, a sweep). `opts.adminId`: entered by hand.
+  // No minimum and no maximum: every payment received is credited.
   async confirmDeposit(depositId, cryptoAmount, note = null, opts = {}) {
     // A blockchain webhook has no owner in context: credit as the customer's owner
     // (bots platform), so their notifications go through that owner's bots
@@ -90,10 +95,20 @@ export const walletService = {
     }
     const gross = balanceService.round8(Number(cryptoAmount));
     if (!(gross > 0)) throw appError('Received amount must be positive', 400);
+    const { txHash = null, adminId = null } = opts;
 
     const deposit = await prisma.deposit.findUniqueOrThrow({ where: { id: depositId } });
-    if (deposit.orderId) return this.receiveOrderPayment(deposit, gross, opts, note);
-    if (deposit.status === 'confirmed') throw appError('This deposit is already confirmed', 409);
+    const seen = Array.isArray(deposit.txSeen) ? deposit.txSeen : [];
+    if (txHash && seen.includes(txHash)) return null;
+
+    const firstTopUp = !deposit.orderId && Number(deposit.amountReceived) === 0
+      && (['awaiting', 'partial'].includes(deposit.status) || ((adminId || txHash) && deposit.status === 'expired'));
+    if (!firstTopUp) {
+      // A confirmed top-up only takes payments seen on the blockchain (with their hash):
+      // an amount typed by hand on it could credit a payment twice
+      if (!deposit.orderId && !txHash) throw appError('This deposit is already confirmed', 409);
+      return this.receivePayment(deposit, gross, { txHash, adminId }, note);
+    }
 
     const price = await getCachedUsdPrice(deposit.currency);
     const pct   = await balanceService.getCommissionPct();
@@ -101,17 +116,17 @@ export const walletService = {
     const netUsd = price ? balanceService.round2(net * price) : 0;
 
     const txn = await prisma.$transaction(async (tx) => {
-      // Claim the deposit atomically: the webhook and the customer's on-chain check
-      // can confirm the same deposit concurrently — only one of them may credit it.
+      // Claimed atomically: the webhook and the customer's check may confirm it at the same time
       const { count } = await tx.deposit.updateMany({
-        where: { id: depositId, status: { not: 'confirmed' } },
+        where: { id: depositId, status: deposit.status, amountReceived: 0 },
         data:  {
           status: 'confirmed', confirmedAt: new Date(),
           amountReceived: gross, usdCredited: netUsd,
           commissionPct: pct, commissionAmount: commission, netAmount: net,
+          ...(txHash ? { txSeen: [...seen, txHash] } : {}),
         },
       });
-      if (count === 0) throw appError('This deposit is already confirmed', 409);
+      if (count === 0) return null;
 
       const txn = await tx.transaction.create({
         data: {
@@ -123,7 +138,7 @@ export const walletService = {
           cryptoAmount: net,
           rate:         price || null,
           status:       'confirmed',
-          note:         note || `${gross} ${deposit.currency} received, ${pct/10}% deposit fee (${commission} ${deposit.currency})`,
+          note:         note || `${gross} ${deposit.currency} received, ${pct}% deposit fee (${commission} ${deposit.currency})`,
         },
       });
 
@@ -135,17 +150,27 @@ export const walletService = {
       await balanceService.credit(tx, deposit.userId, deposit.currency, net);
       return txn;
     });
+    if (!txn) {
+      // Someone else confirmed it meanwhile: this payment may still be a new one
+      if (txHash) return this.confirmDeposit(depositId, gross, note, opts);
+      throw appError('This deposit is already confirmed', 409);
+    }
 
     await notificationService.notifyDeposit(deposit.userId, deposit.currency, netUsd, net);
     return txn;
   },
 
-  // A bot order's deposit: several payments add up. Each one is credited (net of the commission)
-  // as it arrives; once the order has what it needs, settlePendingOrder takes its price.
-  async receiveOrderPayment(deposit, gross, { cumulative = false, txHash = null } = {}, note = null) {
-    if (txHash && Array.isArray(deposit.txSeen) && deposit.txSeen.includes(txHash)) return null;
-    const delta = balanceService.round8(cumulative ? gross - Number(deposit.amountReceived) : gross);
+  // One more payment on a deposit: an order's (its payments add up) or a top-up the customer
+  // paid again. Credited to the customer's holding net of the commission; an order is then
+  // settled, or refunded if it is already closed. If the address was already swept, the
+  // sweeps are reopened for the new share only (what they took is kept in *SweptAmount).
+  async receivePayment(deposit, gross, { txHash = null, adminId = null } = {}, note = null) {
+    const seen = Array.isArray(deposit.txSeen) ? deposit.txSeen : [];
+    if (txHash && seen.includes(txHash)) return null;
+    const delta = balanceService.round8(gross);
     if (!(delta > 0)) return null;
+    // Expired: only a payment proven on the blockchain (its hash) or entered by an admin
+    if (deposit.status === 'expired' && !adminId && !txHash) throw appError('This deposit expired', 409);
     const price = await getCachedUsdPrice(deposit.currency);
     const pct   = await balanceService.getCommissionPct();
     const { commission, net } = balanceService.splitDeposit(delta, pct);
@@ -158,8 +183,11 @@ export const walletService = {
         data: {
           amountReceived: { increment: delta }, commissionAmount: { increment: commission }, netAmount: { increment: net },
           usdCredited: { increment: netUsd }, commissionPct: pct,
-          ...(deposit.status === 'awaiting' ? { status: 'partial' } : {}),
-          ...(txHash ? { txSeen: [...(Array.isArray(deposit.txSeen) ? deposit.txSeen : []), txHash] } : {}),
+          ...(['awaiting', 'expired'].includes(deposit.status) ? { status: deposit.orderId ? 'partial' : 'confirmed' } : {}),
+          ...(txHash ? { txSeen: [...seen, txHash] } : {}),
+          // Swept before: everything that was there is gone, the new shares are to sweep
+          ...(deposit.shopSweptAt ? { shopSweptAt: null, shopSweptAmount: deposit.netAmount } : {}),
+          ...(deposit.reserveSweptAt ? { reserveSweptAt: null, reserveSweptAmount: deposit.commissionAmount } : {}),
         },
       });
       if (count === 0) return null;
@@ -167,18 +195,72 @@ export const walletService = {
         data: {
           frontendId: formatTxnId(), userId: deposit.userId, type: 'deposit', amount: netUsd, currency: deposit.currency,
           cryptoAmount: net, rate: price || null, status: 'confirmed',
-          note: note || `${delta} ${deposit.currency} received for an order, ${pct}% deposit fee (${commission} ${deposit.currency})`,
+          note: note || `${delta} ${deposit.currency} received ${deposit.orderId ? 'for an order' : 'again on deposit #' + deposit.id}, ${pct}% deposit fee (${commission} ${deposit.currency})`,
         },
       });
       if (!deposit.transactionId) await tx.deposit.update({ where: { id: deposit.id }, data: { transactionId: t.id } });
       await balanceService.credit(tx, deposit.userId, deposit.currency, net);
       return t;
     });
-    if (!txn) return null;
-    const fresh = await prisma.deposit.findUniqueOrThrow({ where: { id: deposit.id } });
-    const { orderService } = await import('./order.service.js');
-    await orderService.settlePendingOrder(deposit.orderId, { currency: deposit.currency, net: Number(fresh.netAmount), deltaNet: net, depositId: deposit.id });
+    if (!txn) {
+      // The deposit changed meanwhile (another payment credited): try again on fresh data
+      const fresh = await prisma.deposit.findUnique({ where: { id: deposit.id } });
+      if (txHash && fresh && !(fresh.txSeen || []).includes(txHash)) return this.receivePayment(fresh, gross, { txHash, adminId }, note);
+      return null;
+    }
+    if (deposit.orderId) {
+      const fresh = await prisma.deposit.findUniqueOrThrow({ where: { id: deposit.id } });
+      const { orderService } = await import('./order.service.js');
+      await orderService.settlePendingOrder(deposit.orderId, { currency: deposit.currency, net: Number(fresh.netAmount), deltaNet: net, depositId: deposit.id });
+    } else {
+      await notificationService.notifyDeposit(deposit.userId, deposit.currency, netUsd, net);
+    }
     return txn;
+  },
+
+  // Looks at the blockchain for every payment made to a deposit address and credits the ones
+  // not counted yet. Deposits credited before payments were tracked by transaction have an
+  // empty txSeen: their oldest payments, up to the amount already credited, are marked as
+  // counted (not credited again). Returns { credited, pending, found, failed }.
+  async syncDeposit(depositOrId) {
+    let dep = typeof depositOrId === 'object' ? depositOrId : await prisma.deposit.findUnique({ where: { id: depositOrId } });
+    if (!dep || dep.currency === 'XMR' || !dep.address || dep.address === 'pending') return { credited: 0, pending: false, found: 0, failed: [] };
+    // Bots platform: read and credit as the customer's owner
+    if (env.platform === 'bots' && currentTenant() === null) {
+      const owner = await prisma.deposit.findUnique({ where: { id: dep.id }, select: { user: { select: { tenantId: true } } } });
+      if (owner) return withTenant(owner.user.tenantId, () => this.syncDeposit(dep.id));
+    }
+
+    const { payments, pending } = await cryptoService.incomingPayments(dep);
+    let seen = Array.isArray(dep.txSeen) ? dep.txSeen : [];
+    if (!seen.length && Number(dep.amountReceived) > 0) {
+      let acc = 0;
+      const baseline = [];
+      for (const p of payments) {
+        if (acc + p.amount > Number(dep.amountReceived) + 1e-8) break;
+        acc += p.amount;
+        baseline.push(p.hash);
+      }
+      if (baseline.length) {
+        await prisma.deposit.updateMany({ where: { id: dep.id, amountReceived: dep.amountReceived }, data: { txSeen: baseline } });
+        seen = baseline;
+      }
+    }
+
+    let credited = 0;
+    const failed = [];
+    for (const p of payments) {
+      if (seen.includes(p.hash)) continue;
+      try {
+        if (await this.confirmDeposit(dep.id, p.amount, null, { txHash: p.hash })) credited++;
+      } catch (e) {
+        console.warn(`[Deposits] payment ${p.hash} on deposit #${dep.id} not credited:`, e.message);
+        failed.push({ hash: p.hash, amount: p.amount, reason: e.message });
+      }
+      dep = await prisma.deposit.findUnique({ where: { id: dep.id } });
+      seen = Array.isArray(dep.txSeen) ? dep.txSeen : [];
+    }
+    return { credited, pending, found: payments.length, failed };
   },
 
   async cleanupExpiredDeposits() {
@@ -196,6 +278,16 @@ export const walletService = {
       : [];
     const openIds = new Set(open.map(o => o.id));
     const toExpire = lapsed.filter(d => !openIds.has(d.orderId));
+
+    // A paid address keeps its BlockCypher hook 7 days, to see a payment sent to it again;
+    // after that the hook is released (the customer's Check, Check chain or a sweep still find it)
+    const stale = await prisma.deposit.findMany({
+      where: { status: 'confirmed', hookId: { not: null }, confirmedAt: { lt: new Date(Date.now() - 7 * 24 * 3600 * 1000) } },
+    });
+    if (stale.length) {
+      await Promise.allSettled(stale.filter(d => CHAIN_HOOK.includes(d.currency)).map(d => cryptoService.deleteBlockcypherHook(d.hookId, d.currency)));
+      await prisma.deposit.updateMany({ where: { id: { in: stale.map(d => d.id) } }, data: { hookId: null } });
+    }
 
     if (toExpire.length === 0) return { cleaned: 0 };
 

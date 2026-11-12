@@ -25,6 +25,7 @@ import ProductPage from './shop/pages/ProductPage.jsx'
 import CartPage from './shop/pages/CartPage.jsx'
 import CheckoutPage from './shop/pages/CheckoutPage.jsx'
 import WalletPage from './shop/pages/WalletPage.jsx'
+import OrderPayPage from './shop/pages/OrderPayPage.jsx'
 import { LoginPage, CreateAccountPage, TelegramLoginPage, StaffTelegramPage } from './shop/pages/AuthPages.jsx'
 import AboutPage from './shop/pages/AboutPage.jsx'
 import FaqPage from './shop/pages/FaqPage.jsx'
@@ -126,6 +127,7 @@ function Storefront() {
             <Route index element={<AccountOverview />} />
             <Route path="wallet" element={<WalletPage />} />
             <Route path="orders" element={<AccountOrders />} />
+            <Route path="orders/:id/pay" element={<OrderPayPage />} />
             <Route path="messages" element={<AccountMessages />} />
             <Route path="profile" element={<AccountProfile />} />
           </Route>

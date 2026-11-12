@@ -85,9 +85,14 @@ function DepositHeading({ deposit }) {
 
 // ── Confirm (manual credit) ───────────────────────────────────────────────────
 function ConfirmModal({ deposit, onClose, onConfirmed }) {
-  const [form, setForm] = useState({ amount: '', note: '', xmrChecks: false })
+  const [form, setForm] = useState({ amount: '', note: '', xmrChecks: false, unit: 'usd', already: false })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [price, setPrice] = useState(null) // live USD price of the deposit's coin, for the preview
+  useEffect(() => {
+    adminFetch('/wallet/prices').then(r => setPrice(r?.prices?.[deposit.currency] || null)).catch(() => {})
+  }, [deposit.currency])
+  const chainRead = form.already && deposit.currency !== 'XMR'
 
   async function handleConfirm(e) {
     e.preventDefault()
@@ -100,7 +105,11 @@ function ConfirmModal({ deposit, onClose, onConfirmed }) {
     try {
       await adminFetch(`/admin/deposits/${deposit.id}/confirm`, {
         method: 'PATCH',
-        body: JSON.stringify({ amount: parseFloat(form.amount), note: form.note }),
+        body: JSON.stringify({
+          ...(form.amount === '' ? {} : form.unit === 'usd' ? { usdAmount: parseFloat(form.amount) } : { amount: parseFloat(form.amount) }),
+          note: form.note,
+          ...(form.already ? { alreadyCredited: true } : {}),
+        }),
       })
       onConfirmed()
       onClose()
@@ -137,9 +146,29 @@ function ConfirmModal({ deposit, onClose, onConfirmed }) {
       <ErrorBox>{error}</ErrorBox>
 
       <form onSubmit={handleConfirm}>
+        <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: '0.85rem', marginBottom: 12, cursor: 'pointer' }}>
+          <input type="checkbox" checked={form.already} onChange={e => setForm(f => ({ ...f, already: e.target.checked }))} style={{ marginTop: 3 }} />
+          <span><strong>Already credited to the customer</strong> (balance adjusted by hand): only record this deposit as paid, with the amount found on the blockchain. The customer's balance does not change.</span>
+        </label>
         <div className="admin-form-group">
-          <label className="admin-label">{deposit.currency} amount received *</label>
-          <input className="admin-input" type="number" min="0.00000001" step="0.00000001" required autoFocus value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} />
+          <label className="admin-label">Amount received {chainRead ? '(read from the blockchain if empty)' : '*'}</label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input className="admin-input" type="number" min={form.unit === 'usd' ? '0.01' : '0.00000001'} step={form.unit === 'usd' ? '0.01' : '0.00000001'}
+              required={!chainRead} autoFocus placeholder={form.unit === 'usd' ? '0.00' : '0.00000000'}
+              value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} />
+            <select className="admin-input" style={{ width: 110 }} value={form.unit} onChange={e => setForm(f => ({ ...f, unit: e.target.value, amount: '' }))}>
+              <option value="usd">USD</option>
+              <option value="coin">{deposit.currency}</option>
+            </select>
+          </div>
+          {Number(form.amount) > 0 && (
+            <div className="admin-text-muted" style={{ fontSize: 12, marginTop: 6 }}>
+              {!price ? `${deposit.currency} price loading…`
+                : form.unit === 'usd'
+                  ? <>≈ <strong>{(Number(form.amount) / price).toFixed(8)} {deposit.currency}</strong> at ${Number(price).toLocaleString('en-US')} (converted again on confirm)</>
+                  : <>≈ <strong>${(Number(form.amount) * price).toFixed(2)}</strong> at ${Number(price).toLocaleString('en-US')}</>}
+            </div>
+          )}
         </div>
         <div className="admin-form-group">
           <label className="admin-label">Note (optional)</label>
@@ -148,7 +177,7 @@ function ConfirmModal({ deposit, onClose, onConfirmed }) {
         <div className="admin-modal-actions">
           <button type="button" className="admin-btn admin-btn-secondary" onClick={onClose}>Cancel</button>
           <button type="submit" className="admin-btn admin-btn-success" disabled={loading}>
-            {loading ? 'Confirming…' : 'Confirm & Credit'}
+            {loading ? 'Confirming…' : form.already ? 'Record as paid' : 'Confirm & Credit'}
           </button>
         </div>
       </form>
@@ -239,6 +268,26 @@ function WalletBody({ w }) {
         “Total ever received”.
       </p>
     </>
+  )
+}
+
+// Result of Check chain: payments found, credited now, total, and why any was not credited
+function SyncBody({ r }) {
+  return (
+    <div style={{ fontSize: '0.9rem', lineHeight: 1.8 }}>
+      <div>Payments found on the address: <strong>{r.found}</strong></div>
+      <div>Credited now: <strong style={{ color: r.credited > 0 ? '#2e7d32' : 'inherit' }}>{r.credited}</strong>{r.newlyReceived > 0 && ` (${r.newlyReceived} ${r.currency})`}</div>
+      <div>Total received on this deposit: <strong>{r.amountReceived} {r.currency}</strong></div>
+      <div>Status: <StatusBadge status={r.status} /></div>
+      {r.pending && <div style={{ color: '#e65100' }}>A payment is still waiting for its first confirmation.</div>}
+      {r.failed?.length > 0 && (
+        <div className="admin-alert admin-alert-error" style={{ display: 'block', marginTop: 10 }}>
+          <strong>Not credited:</strong>
+          {r.failed.map(f => <div key={f.hash} style={{ fontSize: 12 }}>{f.amount} {r.currency} ({f.hash.slice(0, 12)}…): {f.reason}</div>)}
+        </div>
+      )}
+      {r.found === 0 && !r.pending && <div className="admin-text-muted">No confirmed payment on this address yet.</div>}
+    </div>
   )
 }
 
@@ -339,6 +388,18 @@ export default function AdminDeposits() {
       setInspect({ kind, deposit, loading: false, data, error: '' })
     } catch (e) {
       setInspect({ kind, deposit, loading: false, data: null, error: e.message })
+    }
+  }
+
+  // Rereads the address on the blockchain and credits every payment not counted yet
+  async function openSync(deposit) {
+    setInspect({ kind: 'sync', deposit, loading: true, data: null, error: '' })
+    try {
+      const data = await adminFetch(`/admin/deposits/${deposit.id}/sync`, { method: 'POST' })
+      setInspect({ kind: 'sync', deposit, loading: false, data, error: '' })
+      fetchDeposits()
+    } catch (e) {
+      setInspect({ kind: 'sync', deposit, loading: false, data: null, error: e.message })
     }
   }
 
@@ -521,6 +582,11 @@ export default function AdminDeposits() {
                           Wallet
                         </button>
                       )}
+                      {d.currency !== 'XMR' && hasAddress(d) && (
+                        <button className="admin-btn admin-btn-primary admin-btn-sm" title="Read the address on the blockchain and credit every payment not counted yet" onClick={() => openSync(d)}>
+                          Check chain
+                        </button>
+                      )}
                       {UTXO.includes(d.currency) && hasAddress(d) && (
                         <button className="admin-btn admin-btn-secondary admin-btn-sm" title="Check that the stored address matches the current HD seed" onClick={() => openInspect(d, 'verify')}>
                           Verify
@@ -571,11 +637,12 @@ export default function AdminDeposits() {
 
       {inspect && (
         <InspectModal
-          title={{ usd: 'USD Value', chain: 'Deposit Wallet', verify: 'HD Key Verification' }[inspect.kind]}
+          title={{ usd: 'USD Value', chain: 'Deposit Wallet', verify: 'HD Key Verification', sync: 'Check chain' }[inspect.kind]}
           inspect={inspect}
           onClose={() => setInspect(null)}
         >
-          {data => inspect.kind === 'usd' ? <UsdValueBody v={data} />
+          {data => inspect.kind === 'sync' ? <SyncBody r={data} />
+            : inspect.kind === 'usd' ? <UsdValueBody v={data} />
             : inspect.kind === 'chain' ? <WalletBody w={data} />
             : <VerifyBody v={data} />}
         </InspectModal>

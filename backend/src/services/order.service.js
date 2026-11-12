@@ -18,6 +18,34 @@ export const PAY_WINDOW_MIN = 30;
 // An order number as a Telegram command: ORD-2026-00012 -> ord_2026_00012
 const orderCode = n => String(n).replace(/-/g, '_').toLowerCase();
 
+// The optional refund address of a checkout: checked, kept on the account (BTC / XMR),
+// returned as the line written in the order's notes. `coin`: it must be this coin's.
+async function readRefund(userId, refund, coin = null) {
+  if (!refund?.address) return null;
+  const c = String(refund.currency || coin || '').toUpperCase();
+  if (coin && c !== coin) throw appError(`The refund address must be a ${coin} address, the coin you pay with.`, 400);
+  const address = String(refund.address).trim();
+  if (!validRefund(c, address)) throw appError(`This does not look like a ${REFUND_COINS[c] || 'crypto'} refund address.`, 400);
+  await keepRefundOnAccount(userId, c, address);
+  return refundNote(c, address);
+}
+
+// Optional delivery from the website: a US address, or that address encrypted in the
+// customer's browser to the shop's PGP key (only the shop can read it). null = none.
+function readDelivery(delivery) {
+  if (!delivery) return null;
+  if (delivery.pgp) {
+    const message = String(delivery.pgp).trim();
+    if (message.length > 6000 || !isPgpMessage(message)) throw appError('The encrypted address is not a valid PGP message. Please try again.', 400);
+    return { name: 'PGP encrypted', address: message };
+  }
+  const d = Object.fromEntries(['name', 'street', 'apt', 'city', 'state', 'zip'].map(k => [k, String(delivery[k] || '').trim().slice(0, 120)]));
+  if (!d.name || !d.street || !d.city || !/^[A-Z]{2}$/.test(d.state) || !/^\d{5}(-\d{4})?$/.test(d.zip)) {
+    throw appError('Please complete the delivery address (name, street, city, state and 5-digit ZIP).', 400);
+  }
+  return { name: d.name, address: `${d.street}${d.apt ? `, ${d.apt}` : ''}, ${d.city}, ${d.state} ${d.zip}, US` };
+}
+
 export const orderService = {
   // No customer details are required: the Telegram username/ID is optional (saved
   // to the profile when given at checkout). Delivery is an option: with it the
@@ -30,29 +58,10 @@ export const orderService = {
   // the bot puts it in `note` itself). `channel`: 'site' or 'bot', where it was placed.
   async createOrder(userId, { items, paymentMethod, payCurrency, telegram, delivery, note, shipping, voucher, refund, channel = 'site', source = null }) {
     if (!items?.length)     throw appError('Cart is empty', 400);
-    let refundLine = null;
-    if (refund?.address) {
-      const coin = String(refund.currency || '').toUpperCase();
-      const address = String(refund.address).trim();
-      if (!validRefund(coin, address)) throw appError(`This does not look like a ${REFUND_COINS[coin] || 'crypto'} refund address.`, 400);
-      refundLine = refundNote(coin, address);
-      await keepRefundOnAccount(userId, coin, address);
-    }
+    const refundLine = await readRefund(userId, refund);
     const notes = [note ? String(note).slice(0, 2000) : null, refundLine].filter(Boolean).join('\n') || null;
 
-    let shipTo = null;
-    if (delivery?.pgp) {
-      // Encrypted in the customer's browser to the shop's key: only the shop can read it
-      const message = String(delivery.pgp).trim();
-      if (message.length > 6000 || !isPgpMessage(message)) throw appError('The encrypted address is not a valid PGP message. Please try again.', 400);
-      shipTo = { name: 'PGP encrypted', address: message };
-    } else if (delivery) {
-      const d = Object.fromEntries(['name', 'street', 'apt', 'city', 'state', 'zip'].map(k => [k, String(delivery[k] || '').trim().slice(0, 120)]));
-      if (!d.name || !d.street || !d.city || !/^[A-Z]{2}$/.test(d.state) || !/^\d{5}(-\d{4})?$/.test(d.zip)) {
-        throw appError('Please complete the delivery address (name, street, city, state and 5-digit ZIP).', 400);
-      }
-      shipTo = { name: d.name, address: `${d.street}${d.apt ? `, ${d.apt}` : ''}, ${d.city}, ${d.state} ${d.zip}, US` };
-    }
+    let shipTo = readDelivery(delivery);
     if (shipping) {
       const name = String(shipping.name || '').trim().slice(0, 120);
       const address = String(shipping.address || '').trim().slice(0, 6000);
@@ -171,20 +180,32 @@ export const orderService = {
     };
   },
 
-  // ── Bot checkout: pay the order itself, no wallet ──────────────────────────
+  // ── Pay the order itself, no wallet (bot checkout, and the website's "Pay with crypto") ──
   // Place Order creates the order "awaiting_payment" (stock and voucher held), with its
   // own deposit address and the exact crypto amount. The amount asked for covers the
   // price plus the deposit commission, which confirmDeposit takes when the payment lands.
-  async placePendingOrder(userId, { items, coin, shipping, voucher, note, source = null }) {
+  // Bot: `shipping` { name, address, fee } is required. Website: `delivery` (US address or
+  // PGP) and `refund` (in the coin paid) are optional, like the wallet checkout.
+  async placePendingOrder(userId, { items, coin, shipping, voucher, note, source = null, delivery = null, refund = null, telegram = null, channel = 'bot' }) {
     if (!items?.length) throw appError('Cart is empty', 400);
     if (!(await cryptoService.payableCoins()).includes(coin)) throw appError(`${coin} is not accepted here.`, 400);
-    const name = String(shipping?.name || '').trim().slice(0, 120);
-    const address = String(shipping?.address || '').trim().slice(0, 6000);
-    if (!name || !address) throw appError('Please give your shipping details first.', 400);
+    let shipTo = channel === 'site' ? readDelivery(delivery) : null;
+    if (channel !== 'site') {
+      const n = String(shipping?.name || '').trim().slice(0, 120);
+      const a = String(shipping?.address || '').trim().slice(0, 6000);
+      if (!n || !a) throw appError('Please give your shipping details first.', 400);
+      shipTo = { name: n, address: a };
+    }
+    const name = shipTo?.name || '';
+    const address = shipTo?.address || '';
+    const refundLine = channel === 'site' ? await readRefund(userId, refund, coin) : null;
+    note = [note ? String(note).slice(0, 2000) : null, refundLine].filter(Boolean).join('\n') || null;
+    const handle = String(telegram || '').trim().replace(/^@/, '').slice(0, 64);
+    if (handle) await prisma.user.updateMany({ where: { id: userId, telegramHandle: null }, data: { telegramHandle: handle } });
 
-    const priced = await priceCart(items, { delivery: true });
+    const priced = await priceCart(items, { delivery: !!shipTo });
     const { lines, subtotal } = priced;
-    const shippingFee = shipping.fee != null ? Math.max(0, Number(shipping.fee) || 0) : priced.shippingFee;
+    const shippingFee = shipping?.fee != null ? Math.max(0, Number(shipping.fee) || 0) : priced.shippingFee;
     const offer = voucher ? await checkVoucher(voucher, subtotal, source) : null;
     const discount = offer?.discount || 0;
     const totalAmount = Math.round((subtotal - discount + shippingFee) * 100) / 100;
@@ -230,6 +251,58 @@ export const orderService = {
     }
   },
 
+  // What the customer needs to pay an awaiting order (address, amount, deadline, received)
+  async paymentView(orderId, userId) {
+    const order = await prisma.order.findFirst({ where: { id: orderId, userId }, include: { items: true } });
+    if (!order) throw appError('Order not found', 404);
+    const deposit = await prisma.deposit.findUnique({ where: { orderId } });
+    const due = Array.isArray(order.payments) ? order.payments[0] : null;
+    const pct = await balanceService.getCommissionPct();
+    const netReceived = deposit ? Number(deposit.netAmount) : 0;
+    const remainingNet = due ? Math.max(0, due.amount - netReceived) : 0;
+    const remaining = remainingNet > 0 && pct < 100 ? Math.ceil(remainingNet / (1 - pct / 100) * 1e8 - 1e-6) / 1e8 : 0;
+    return {
+      order: {
+        id: order.id, orderNumber: order.orderNumber, status: order.status, expiresAt: order.expiresAt,
+        totalAmount: Number(order.totalAmount), shippingFee: Number(order.shippingFee), discount: Number(order.discount || 0),
+        name: order.name, shippingAddress: order.shippingAddress, note: order.note,
+        items: order.items.map(i => ({ id: i.id, name: i.name, price: Number(i.price), quantity: i.quantity })),
+      },
+      deposit: deposit && {
+        id: deposit.id, currency: deposit.currency, address: deposit.address, status: deposit.status,
+        amountExpected: deposit.amountExpected != null ? Number(deposit.amountExpected) : null,
+        amountReceived: Number(deposit.amountReceived), netAmount: Number(deposit.netAmount),
+      },
+      currency: due?.currency || deposit?.currency || null,
+      amountDue: deposit?.amountExpected != null ? Number(deposit.amountExpected) : null,
+      remaining,
+      commissionPct: pct,
+      payWindowMinutes: PAY_WINDOW_MIN,
+    };
+  },
+
+  // Reads the blockchain for an awaiting order's payments (each transaction counted once);
+  // XMR is checked by hand.
+  async checkOrderPayment(orderId, userId) {
+    const order = await prisma.order.findFirst({ where: { id: orderId, userId }, select: { id: true, status: true } });
+    if (!order) throw appError('Order not found', 404);
+    const deposit = await prisma.deposit.findUnique({ where: { orderId } });
+    let pending = false;
+    if (order.status === 'awaiting_payment' && deposit && ['awaiting', 'partial'].includes(deposit.status)) {
+      ({ pending } = await walletService.syncDeposit(deposit));
+    }
+    return { ...(await this.paymentView(orderId, userId)), unconfirmed: pending };
+  },
+
+  // The customer cancels an order still waiting for its payment (anything received is refunded)
+  async cancelOwnPendingOrder(orderId, userId) {
+    const order = await prisma.order.findFirst({ where: { id: orderId, userId }, select: { status: true } });
+    if (!order) throw appError('Order not found', 404);
+    if (order.status !== 'awaiting_payment') throw appError('Only an order waiting for its payment can be cancelled here.', 409);
+    await this.cancelPendingOrder(orderId, 'customer');
+    return { cancelled: true };
+  },
+
   // An unpaid order is released: stock back on the shelf, voucher use given back.
   // `why` null = silent (the customer is not told). What was already received is refunded
   // (a request for the admin to approve); the deposit address keeps watching for 24 hours,
@@ -251,7 +324,7 @@ export const orderService = {
     if (dep && Number(dep.netAmount) > 0) {
       await orderRefundService.request({ userId: order.userId, orderId, depositId: dep.id, currency: dep.currency, amount: Number(dep.netAmount), reason: `payment short when the order expired` }).catch(() => {});
     }
-    if (why) {
+    if (why === 'expired') {
       dmUser(order.userId, `⌛ <b>Order ${escapeHtml(order.orderNumber)} expired</b>\nNo full payment was received within ${PAY_WINDOW_MIN} minutes, so the order was cancelled. A payment detected after this is refunded to your refund address.`,
         [{ text: '🛒 Shop now', callback_data: 'menu' }]).catch(() => {});
     }

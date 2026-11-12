@@ -13,47 +13,25 @@ import * as board from '../services/telegramCommands.js';
 import { resolveCommand, customOrderScreen, takeWaiting, clearWaiting, unknownCommandScreen } from '../services/telegramCommands.js';
 
 export const webhookController = {
+  // A payment can reach a deposit address at any time, again and again (an order paid in
+  // several goes, a customer paying the same top-up address twice). The webhooks only say
+  // "something happened on this address": syncDeposit reads the address's payments and
+  // credits each transaction once, by its hash.
+
   // BlockCypher webhook — BTC, LTC, DOGE (confirmed-tx on HD wallet address)
   async blockcypher(req, res) {
-    const body = req.body;
-    const { address, confirmations } = body;
-
+    const { address, confirmations } = req.body || {};
     if (!address) return res.json(ok('No address in payload'));
     if ((confirmations || 0) < 1) return res.json(ok('Awaiting confirmation'));
 
     const deposit = await prisma.deposit.findFirst({
-      where: { address, status: { in: ['awaiting', 'partial'] } },
+      where: { address, status: { in: ['awaiting', 'partial', 'confirmed'] } },
+      orderBy: { id: 'desc' },
     });
-
     if (!deposit) return res.json(ok('No deposit found for this address'));
 
-    // Sum satoshis received at our address from the transaction outputs
-    const outputs = body.outputs || [];
-    const satoshis = outputs
-      .filter(o => Array.isArray(o.addresses) && o.addresses.includes(address))
-      .reduce((sum, o) => sum + (o.value || 0), 0);
-
-    const cryptoAmount = satoshis / 1e8; // satoshis → BTC/LTC/DOGE
-
-    if (cryptoAmount <= 0) {
-      console.warn(`[Webhook BlockCypher] Zero value for deposit #${deposit.id}`);
-      return res.json(ok('Zero value received'));
-    }
-
-    // A bot order's payments add up: the address's total received is the amount, whatever
-    // the transaction this call reports (so a repeated call never counts twice)
-    if (deposit.orderId) {
-      const seen = await cryptoService.checkDepositOnChain(deposit);
-      if (!seen.confirmed) return res.json(ok('Awaiting confirmation'));
-      await walletService.confirmDeposit(deposit.id, seen.cryptoAmount, null, { cumulative: true });
-      return res.json(ok('Order payment received'));
-    }
-
-    // Credited in crypto (net of the deposit commission) — no price needed
-    await walletService.confirmDeposit(deposit.id, cryptoAmount);
-
-    console.log(`[Webhook BlockCypher] Deposit #${deposit.id} auto-confirmed: ${cryptoAmount} ${deposit.currency}`);
-    res.json(ok('Deposit auto-confirmed'));
+    const r = await walletService.syncDeposit(deposit);
+    res.json(ok(`${r.credited} payment(s) credited`));
   },
 
   // Alchemy webhook — ETH
@@ -77,29 +55,17 @@ export const webhookController = {
       return res.status(400).json({ error: 'Invalid payload' });
     }
 
-    const activities = body?.event?.activity || [];
+    // Only native ETH — an ERC-20 transfer to the same address is not an ETH deposit
+    const addresses = new Set((body?.event?.activity || [])
+      .filter(t => t.toAddress && (!t.asset || t.asset === 'ETH'))
+      .map(t => t.toAddress.toLowerCase()));
 
-    for (const transfer of activities) {
-      const toAddress = transfer.toAddress?.toLowerCase();
-      if (!toAddress) continue;
-      // Only native ETH — an ERC-20 transfer to the same address is not an ETH deposit
-      if (transfer.asset && transfer.asset !== 'ETH') continue;
-
+    for (const toAddress of addresses) {
       const deposit = await prisma.deposit.findFirst({
-        where: { address: { equals: toAddress, mode: 'insensitive' }, currency: 'ETH', status: { in: ['awaiting', 'partial'] } },
+        where: { address: { equals: toAddress, mode: 'insensitive' }, currency: 'ETH', status: { in: ['awaiting', 'partial', 'confirmed'] } },
+        orderBy: { id: 'desc' },
       });
-
-      if (!deposit) continue;
-
-      // Alchemy reports `value` in ETH, not USD — convert at the live price
-      const ethAmount = parseFloat(transfer.value || 0);
-      if (!(ethAmount > 0)) {
-        await prisma.deposit.update({ where: { id: deposit.id }, data: { status: 'partial' } });
-        continue;
-      }
-
-      await walletService.confirmDeposit(deposit.id, ethAmount, null, { txHash: transfer.hash || null });
-      console.log(`[Webhook Alchemy] Deposit #${deposit.id} confirmed: ${ethAmount} ETH`);
+      if (deposit) await walletService.syncDeposit(deposit);
     }
 
     res.json(ok('Processed'));

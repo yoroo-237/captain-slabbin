@@ -7,7 +7,7 @@ import axios from 'axios';
 const COINGECKO_IDS = { BTC: 'bitcoin', LTC: 'litecoin', DOGE: 'dogecoin', ETH: 'ethereum', XMR: 'monero' };
 const KRAKEN_PAIRS  = { BTC: 'XBTUSD', LTC: 'LTCUSD', DOGE: 'XDGUSD', ETH: 'ETHUSD', XMR: 'XMRUSD' };
 
-export const PRICE_SOURCE = 'CoinGecko (Kraken fallback)';
+export const PRICE_SOURCE = 'CoinGecko (Coinbase, Kraken fallbacks)';
 
 export async function getUsdPrice(currency) {
   const id = COINGECKO_IDS[currency];
@@ -22,6 +22,16 @@ export async function getUsdPrice(currency) {
     const price = data?.[id]?.usd;
     if (price > 0) return price;
   } catch { /* fall through to backup */ }
+
+  // Fallback: Coinbase spot price (no API key; no XMR there). CoinGecko often throttles
+  // servers that share an IP (Railway).
+  if (currency !== 'XMR') {
+    try {
+      const { data } = await axios.get(`https://api.coinbase.com/v2/prices/${currency}-USD/spot`, { timeout: 6000 });
+      const price = parseFloat(data?.data?.amount);
+      if (price > 0) return price;
+    } catch { /* next source */ }
+  }
 
   // Fallback: Kraken public ticker (no API key). The result key is Kraken's own
   // pair name (e.g. XXBTZUSD), so take the single entry it returns.

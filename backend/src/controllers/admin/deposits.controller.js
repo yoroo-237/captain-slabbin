@@ -4,7 +4,8 @@ import { prisma } from '../../db.js';
 import { env } from '../../config/env.js';
 import { walletService } from '../../services/wallet.service.js';
 import { cryptoService } from '../../services/crypto.service.js';
-import { getUsdPrice, PRICE_SOURCE } from '../../services/price.service.js';
+import { getCachedUsdPrice as getUsdPrice, PRICE_SOURCE } from '../../services/price.service.js';
+import * as balanceService from '../../services/balance.service.js';
 import { ok } from '../../utils/response.js';
 import { parsePaginationParams, buildPagination } from '../../utils/pagination.js';
 import { appError } from '../../utils/formatters.js';
@@ -36,7 +37,72 @@ async function findDeposit(req) {
   return deposit;
 }
 
+// Marks every payment currently on a deposit's address as already counted (txSeen), without
+// crediting anything. Best effort: if the chain can't be read now, the amount-based check of
+// syncDeposit still applies.
+async function markPaymentsCovered(id) {
+  try {
+    const d = await prisma.deposit.findUnique({ where: { id } });
+    if (!d || d.currency === 'XMR' || !d.address || d.address === 'pending') return 0;
+    const { payments } = await cryptoService.incomingPayments(d);
+    const seen = new Set(Array.isArray(d.txSeen) ? d.txSeen : []);
+    payments.forEach(p => seen.add(p.hash));
+    await prisma.deposit.update({ where: { id }, data: { txSeen: [...seen] } });
+    return payments.length;
+  } catch (e) {
+    console.warn(`[Deposits] could not mark the payments of deposit #${id} as covered:`, e.message);
+    return 0;
+  }
+}
+
+// The customer was already credited another way (balance adjusted by hand): the deposit is
+// only recorded as paid. Its amounts come from the chain (or the amount entered for XMR or
+// when the chain can't be read), split with the deposit commission so the sweeps know each
+// side's share. Nothing is credited, no transaction is created.
+async function markAlreadyCredited(id, typedAmount) {
+  const d = await prisma.deposit.findUniqueOrThrow({ where: { id } });
+  if (d.status === 'confirmed') throw appError('This deposit is already confirmed', 409);
+  let hashes = [];
+  let gross = typedAmount > 0 ? typedAmount : 0;
+  if (d.currency !== 'XMR' && d.address && d.address !== 'pending') {
+    try {
+      const { payments } = await cryptoService.incomingPayments(d);
+      if (payments.length) {
+        hashes = payments.map(p => p.hash);
+        gross = Math.round(payments.reduce((s, p) => s + p.amount, 0) * 1e8) / 1e8;
+      }
+    } catch (e) { console.warn(`[Deposits] chain read failed for #${id}:`, e.message); }
+  }
+  if (!(gross > 0)) throw appError('Nothing received on this address yet: enter the amount received.', 422);
+  const pct = await balanceService.getCommissionPct();
+  const { commission, net } = balanceService.splitDeposit(gross, pct);
+  await prisma.deposit.update({
+    where: { id },
+    data: {
+      status: 'confirmed', confirmedAt: new Date(), amountReceived: gross,
+      commissionPct: pct, commissionAmount: commission, netAmount: net,
+      txSeen: [...new Set([...(Array.isArray(d.txSeen) ? d.txSeen : []), ...hashes])],
+    },
+  });
+  return { markedOnly: true, amountReceived: gross, currency: d.currency, payments: hashes.length };
+}
+
 export const adminDepositsController = {
+  // Reads the deposit address on the blockchain and credits every payment not counted yet
+  // (each transaction once, by its hash): the same as the customer's Check, from the admin.
+  async sync(req, res) {
+    const d = await findDeposit(req);
+    if (d.currency === 'XMR') throw appError('XMR deposits share one wallet address: confirm them by hand.', 422);
+    const before = Number(d.amountReceived);
+    const { credited, pending, found, failed } = await walletService.syncDeposit(d);
+    const after = await prisma.deposit.findUniqueOrThrow({ where: { id: d.id } });
+    res.json(ok({
+      credited, pending, found, failed, status: after.status, currency: after.currency,
+      amountReceived: Number(after.amountReceived),
+      newlyReceived: Math.round((Number(after.amountReceived) - before) * 1e8) / 1e8,
+    }));
+  },
+
   async list(req, res) {
     const { page, limit, skip } = parsePaginationParams(req.query);
     const { status, currency } = req.query;
@@ -58,21 +124,28 @@ export const adminDepositsController = {
 
   async confirm(req, res) {
     const id          = parseInt(req.params.id, 10);
-    const { amount, usdAmount, note } = req.body;
+    const { amount, usdAmount, note, alreadyCredited } = req.body;
 
-    // `amount` is the crypto actually received. `usdAmount` is still accepted and
-    // converted at the current price for older clients.
+    // `amount`: the crypto received. `usdAmount`: a dollar amount, converted into the
+    // deposit's coin at the current price (what the admin usually knows).
     let qty = parseFloat(amount);
+    let converted = null;
     if (!(qty > 0) && parseFloat(usdAmount) > 0) {
       const d = await prisma.deposit.findUniqueOrThrow({ where: { id } });
       const price = await getUsdPrice(d.currency);
       if (!price) throw appError(`${d.currency} price unavailable — enter the crypto amount received instead`, 503);
-      qty = parseFloat(usdAmount) / price;
+      qty = Math.round(parseFloat(usdAmount) / price * 1e8) / 1e8;
+      converted = { usd: parseFloat(usdAmount), price, amount: qty, currency: d.currency };
     }
+    if (alreadyCredited === true) return res.json(ok(await markAlreadyCredited(id, qty)));
     if (!(qty > 0)) throw appError('amount (crypto received) must be a positive number', 400);
 
-    const txn = await walletService.confirmDeposit(id, qty, note?.trim() || null);
-    res.json(ok({ message: 'Deposit confirmed and balance credited', transaction: txn }));
+    // No minimum and no maximum
+    const txn = await walletService.confirmDeposit(id, qty, note?.trim() || null, { adminId: req.user.sub });
+    // The admin credited what is on the address now: those payments are covered by this
+    // credit, whatever amount was typed (a later read must never credit them again)
+    const covered = await markPaymentsCovered(id);
+    res.json(ok({ message: 'Deposit confirmed and balance credited', transaction: txn, converted, covered }));
   },
 
   async expire(req, res) {
@@ -176,12 +249,15 @@ export const adminDepositsController = {
       throw appError('Address verification only applies to BTC / LTC / DOGE deposits', 422);
     }
     const { address: derivedAddress } = await cryptoService.deriveUtxoKey(d.currency, d.id);
+    // Signable = one of the configured seeds (setting or env) gives this address at its index
+    const signable = await cryptoService.depositKey(d.currency, d).then(() => true).catch(() => false);
     res.json(ok({
       depositId:     d.id,
       currency:      d.currency,
       storedAddress: d.address,
       derivedAddress,
       match:         d.address === derivedAddress,
+      signable,
       user:          d.user,
     }));
   },

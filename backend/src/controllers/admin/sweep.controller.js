@@ -2,7 +2,9 @@ import { env } from '../../config/env.js';
 import { withTenant } from '../../tenant.js';
 import { isAddress } from 'ethers';
 import { prisma } from '../../db.js';
-import { cryptoService } from '../../services/crypto.service.js';
+import { cryptoService, shopOwed, reserveOwed } from '../../services/crypto.service.js';
+import { walletService } from '../../services/wallet.service.js';
+import { getCachedUsdPrice } from '../../services/price.service.js';
 import { ok } from '../../utils/response.js';
 import { appError } from '../../utils/formatters.js';
 
@@ -73,20 +75,40 @@ async function withLock(currency, fn) {
   finally { running.delete(currency); }
 }
 
-// Marks each swept share on its deposit and logs it. A share that went along
-// because the other one was below dust settles the other side too.
+// Marks each swept share on its deposit and logs it. What a side took is kept in its
+// *SweptAmount (a customer can pay the same address again later). A share that went along
+// because the other one was below dust settles the other side too; a partial sweep (a USD
+// amount was chosen) leaves the deposit open for the rest. Guarded by the amount received:
+// a payment credited meanwhile keeps the deposit open for that new share.
 async function record(kind, currency, results, destination, userId) {
   const now = new Date();
+  const side = (k, tx, dep) => k === 'shop'
+    ? { shopSweptAt: now, shopSweepTx: tx, shopSweptAmount: dep.netAmount }
+    : { reserveSweptAt: now, reserveSweepTx: tx, reserveSweptAmount: dep.commissionAmount };
+  const settle = async (r, data) => {
+    const { count } = await prisma.deposit.updateMany({ where: { id: r.depositId, amountReceived: r.dep.amountReceived }, data });
+    if (!count) {
+      const amounts = Object.fromEntries(Object.entries(data).filter(([k]) => k.endsWith('SweptAmount')));
+      await prisma.deposit.update({ where: { id: r.depositId }, data: amounts });
+    }
+  };
   for (const r of results) {
     if (r.status === 'empty' && r.settle) {
-      await prisma.deposit.update({ where: { id: r.depositId }, data: { shopSweptAt: now, shopSweepTx: 'empty' } });
+      // Really empty (an older sweep emptied it): both sides settled, out of the Pending
+      await settle(r, { ...side('shop', 'empty', r.dep), ...side('reserve', 'empty', r.dep) });
       continue;
     }
     if (r.status !== 'swept') continue;
 
-    const mine  = kind === 'shop' ? { shopSweptAt: now, shopSweepTx: r.txHash } : { reserveSweptAt: now, reserveSweepTx: r.txHash };
-    const other = kind === 'shop' ? { reserveSweptAt: now, reserveSweepTx: 'dust' } : { shopSweptAt: now, shopSweepTx: 'dust' };
-    await prisma.deposit.update({ where: { id: r.depositId }, data: { ...mine, ...(r.settlesOther ? other : {}) } });
+    if (r.partial) {
+      const field = kind === 'shop' ? 'shopSweptAmount' : 'reserveSweptAmount';
+      await prisma.deposit.update({
+        where: { id: r.depositId },
+        data: { [field]: { increment: Math.round(Number(r.taken) * 1e8) / 1e8 }, [kind === 'shop' ? 'shopSweepTx' : 'reserveSweepTx']: r.txHash },
+      });
+    } else {
+      await settle(r, { ...side(kind, r.txHash, r.dep), ...(r.settlesOther ? side(kind === 'shop' ? 'reserve' : 'shop', 'dust', r.dep) : {}) });
+    }
 
     const amount = Number(r.amount);
     await prisma.sweepLog.create({
@@ -107,16 +129,21 @@ async function record(kind, currency, results, destination, userId) {
   }
 }
 
-function summarize(kind, currency, results) {
+function summarize(kind, currency, results, extra = {}) {
   const swept   = results.filter(r => r.status === 'swept');
-  const skipped = results.filter(r => r.status !== 'swept' && r.status !== 'empty');
+  const skipped = results.filter(r => r.status !== 'swept' && !(r.status === 'empty' && !r.settle))
+    .filter(r => r.status !== 'swept')
+    .map(r => (r.status === 'empty' ? { ...r, reason: 'empty (settled)' } : r))
+    .map(({ dep, settle, ...r }) => r);
   const total   = swept.reduce((s, r) => s + Number(r.amount || 0), 0);
   return {
     kind, currency,
     swept:   swept.length,
-    results: swept.map(({ settle, settlesOther, commissionPct, ...r }) => r),
+    results: swept.map(({ settle, settlesOther, commissionPct, dep, taken, ...r }) => r),
     skipped,
     total:   total.toFixed(8).replace(/\.?0+$/, '') || '0',
+    ...extra,
+    ...(extra.price ? { totalUsd: Math.round(total * extra.price * 100) / 100 } : {}),
   };
 }
 
@@ -128,27 +155,77 @@ async function sweep(kind, currency, req) {
   return ownShop(req, kind, () => sweepAs(kind, currency, req));
 }
 
-async function sweepAs(kind, currency, req) {
-  const destination = await getDestination(kind, currency);
-  const results = await withLock(currency, () => currency === 'ETH'
-    ? cryptoService.sweepEthShare(kind, destination)
-    : cryptoService.sweepUtxoShare(kind, currency, destination));
-  await record(kind, currency, results, destination, req.user.sub);
-  return summarize(kind, currency, results);
+// An amount to sweep chosen in USD, turned into the coin at the current price; null = all owed
+async function budgetFor(currency, usd) {
+  if (usd == null || usd === '') return null;
+  const value = Number(usd);
+  if (!(value > 0)) throw appError('The amount to sweep must be a positive USD amount.', 400);
+  const price = await getCachedUsdPrice(currency);
+  if (!price) throw appError(`The ${currency} price is unavailable right now: sweep everything, or try again in a minute.`, 503);
+  return { usd: value, price, coins: Math.floor(value / price * 1e8) / 1e8 };
 }
 
-// Unswept amounts per currency, as recorded when each deposit was credited
+// Deposits not validated yet (awaiting, partial, or expired in the last 30 days) whose address
+// already received payments: credited to the customer first, so a sweep never leaves them out
+// (and never takes money that was not credited).
+async function creditUnvalidated(currency) {
+  const since = new Date(Date.now() - 30 * 24 * 3600 * 1000);
+  const open = await prisma.deposit.findMany({
+    where: {
+      currency, address: { not: 'pending' },
+      OR: [{ status: { in: ['awaiting', 'partial'] } }, { status: 'expired', createdAt: { gt: since } }],
+    },
+    orderBy: { id: 'asc' },
+  });
+  let n = 0;
+  for (const d of open) {
+    try { if ((await walletService.syncDeposit(d)).credited > 0) n++; }
+    catch (e) { console.warn(`[Sweep] could not read deposit #${d.id}:`, e.message); }
+  }
+  return n;
+}
+
+// Credits the payments made to an address since it was read, then reloads the deposit
+const refresh = async dep => {
+  await walletService.syncDeposit(dep).catch(e => console.warn(`[Sweep] could not read deposit #${dep.id}:`, e.message));
+  return prisma.deposit.findUniqueOrThrow({ where: { id: dep.id } });
+};
+
+async function sweepAs(kind, currency, req) {
+  const destination = await getDestination(kind, currency);
+  const budget = await budgetFor(currency, req.body?.usd);
+  const results = await withLock(currency, async () => {
+    const creditedFirst = currency === 'XMR' ? 0 : await creditUnvalidated(currency);
+    const opts = { refresh, budget: budget?.coins ?? null };
+    const list = currency === 'ETH'
+      ? await cryptoService.sweepEthShare(kind, destination, opts)
+      : await cryptoService.sweepUtxoShare(kind, currency, destination, opts);
+    list.creditedFirst = creditedFirst;
+    return list;
+  });
+  await record(kind, currency, results, destination, req.user.sub);
+  return summarize(kind, currency, results, {
+    creditedFirst: results.creditedFirst,
+    ...(budget ? { requestedUsd: budget.usd, requested: budget.coins.toFixed(8).replace(/\.?0+$/, ''), price: budget.price } : {}),
+  });
+}
+
+// What each side is still owed per currency (only what was not swept yet)
 async function pendingTotals(kind) {
-  const field = kind === 'shop' ? 'netAmount' : 'commissionAmount';
-  const rows = await prisma.deposit.groupBy({
-    by: ['currency'],
+  const rows = await prisma.deposit.findMany({
     where: kind === 'shop'
       ? { status: 'confirmed', shopSweptAt: null }
       : { status: 'confirmed', reserveSweptAt: null, commissionAmount: { gt: 0 } },
-    _sum:   { [field]: true },
-    _count: { _all: true },
+    select: { currency: true, netAmount: true, shopSweptAmount: true, commissionAmount: true, reserveSweptAmount: true },
   });
-  return rows.map(r => ({ currency: r.currency, amount: Number(r._sum[field] || 0), deposits: r._count._all }));
+  const by = {};
+  for (const d of rows) {
+    const owed = kind === 'shop' ? shopOwed(d) : reserveOwed(d);
+    by[d.currency] = by[d.currency] || { currency: d.currency, amount: 0, deposits: 0 };
+    by[d.currency].amount = Math.round((by[d.currency].amount + owed) * 1e8) / 1e8;
+    by[d.currency].deposits++;
+  }
+  return Object.values(by);
 }
 
 export const sweepController = {

@@ -83,7 +83,7 @@ export function AccountOverview() {
   )
 }
 
-const STATUS_LABEL = { processing: 'Processing', shipped: 'Shipped', delivered: 'Delivered', cancelled: 'Cancelled', refunded: 'Refunded' }
+const STATUS_LABEL = { awaiting_payment: 'Awaiting payment', processing: 'Processing', shipped: 'Shipped', delivered: 'Delivered', cancelled: 'Cancelled', refunded: 'Refunded' }
 const paidWith = o => Array.isArray(o.payments) && o.payments.length > 0 ? o.payments.map(p => `${fmtCrypto(p.amount)} ${p.currency}`).join(' + ') : null
 
 // A table on wide screens, a stack of cards on phones
@@ -100,7 +100,7 @@ function Orders({ orders }) {
                 <td>{fmtDate(o.placedAt)}</td>
                 <td>{o.items.map(i => `${i.quantity} × ${i.name}`).join(', ')}</td>
                 <td className="num"><b>{money(o.totalAmount)}</b>{paidWith(o) && <div className="muted" style={{ fontSize: 12 }}>{paidWith(o)}</div>}</td>
-                <td><span className={'status ' + o.status}>{STATUS_LABEL[o.status] || o.status}</span></td>
+                <td><span className={'status ' + o.status}>{STATUS_LABEL[o.status] || o.status}</span>{o.status === 'awaiting_payment' && <div><Link to={`/account/orders/${o.id}/pay`} className="link">Pay now</Link></div>}</td>
               </tr>
             ))}
           </tbody>
@@ -110,6 +110,7 @@ function Orders({ orders }) {
         {orders.map(o => (
           <div key={o.id} className="order-card">
             <div className="top"><b>{o.orderNumber}</b><span className={'status ' + o.status}>{STATUS_LABEL[o.status] || o.status}</span></div>
+            {o.status === 'awaiting_payment' && <Link to={`/account/orders/${o.id}/pay`} className="btn btn-primary btn-sm">Pay now</Link>}
             <div className="items">{o.items.map(i => `${i.quantity} × ${i.name}`).join(', ')}</div>
             {o.trackingNumber && <div className="muted" style={{ fontSize: 12 }}><Icon.truck /> {o.carrier ? `${o.carrier} · ` : ''}{o.trackingNumber}</div>}
             <div className="bottom"><span>{fmtDate(o.placedAt)}{paidWith(o) ? ` · ${paidWith(o)}` : ''}</span><b>{money(o.totalAmount)}</b></div>

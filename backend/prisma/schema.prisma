@@ -255,6 +255,10 @@ model Deposit {
   shopSweepTx      String?
   reserveSweptAt   DateTime?
   reserveSweepTx   String?
+  // How much of netAmount / commissionAmount already left the address: a customer can pay
+  // the same address again after a sweep, and only the new share is swept then
+  shopSweptAmount    Decimal    @default(0) @db.Decimal(18, 8)
+  reserveSweptAmount Decimal    @default(0) @db.Decimal(18, 8)
   expiresAt        DateTime
   confirmedAt      DateTime?
   hookId           String?

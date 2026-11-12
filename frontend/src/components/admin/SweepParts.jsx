@@ -49,6 +49,8 @@ export function SweepResult({ result, onClose }) {
           {result.swept > 0
             ? `✓ ${result.swept} address(es) swept — ${result.total} ${result.currency}`
             : `Nothing to sweep (${result.currency})`}
+          {result.swept > 0 && result.totalUsd != null && ` (about $${result.totalUsd.toFixed(2)} sent of the $${result.requestedUsd.toFixed(2)} asked, network fees included)`}
+          {result.creditedFirst > 0 && ` · ${result.creditedFirst} deposit(s) credited to customers first`}
         </span>
         {onClose && <button type="button" className="admin-alert-close" onClick={onClose} aria-label="Dismiss">×</button>}
       </div>

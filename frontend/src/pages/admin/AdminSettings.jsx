@@ -56,6 +56,7 @@ export default function AdminSettings({ tabs = TABS, title = 'Settings', subtitl
   const [sweepConfirm, setSweepConfirm] = useState(null)  // currency awaiting confirmation
   const [sweeping, setSweeping] = useState(null)          // currency being swept
   const [sweepResult, setSweepResult] = useState(null)
+  const [sweepUsd, setSweepUsd] = useState('')            // amount to sweep in USD, '' = everything owed
 
   const loadSweepInfo = useCallback(() => {
     if (!canEdit) return
@@ -103,7 +104,8 @@ export default function AdminSettings({ tabs = TABS, title = 'Settings', subtitl
     setSweepResult(null)
     try {
       const url = currency === 'ETH' ? '/admin/eth/sweep' : `/admin/utxo/sweep/${currency}`
-      setSweepResult(await adminFetch(url, { method: 'POST' }))
+      setSweepResult(await adminFetch(url, { method: 'POST', body: JSON.stringify(sweepUsd ? { usd: Number(sweepUsd) } : {}) }))
+      setSweepUsd('')
       loadSweepInfo()
     } catch (e) {
       setSweepResult({ currency, error: e.message })
@@ -315,14 +317,6 @@ export default function AdminSettings({ tabs = TABS, title = 'Settings', subtitl
                 <label className="admin-label">Deposit Expiry (Hours)</label>
                 <input className="admin-input" type="number" min="1" value={settings.deposit_expiry_hours ?? ''} onChange={e => setS('deposit_expiry_hours', e.target.value)} />
               </div>
-              <div className="admin-form-group">
-                <label className="admin-label">Minimum Deposit ($)</label>
-                <input className="admin-input" type="number" min="0" step="0.01" value={settings.min_deposit ?? ''} onChange={e => setS('min_deposit', e.target.value)} />
-              </div>
-              <div className="admin-form-group">
-                <label className="admin-label">Maximum Deposit ($)</label>
-                <input className="admin-input" type="number" min="0" step="0.01" value={settings.max_deposit ?? ''} onChange={e => setS('max_deposit', e.target.value)} />
-              </div>
             </>
           )}
 
@@ -407,8 +401,10 @@ export default function AdminSettings({ tabs = TABS, title = 'Settings', subtitl
                   {sweepConfirm === id ? (
                     <>
                       <span style={{ fontSize: '0.82rem', color: '#b45309', fontWeight: 600, flex: 1, minWidth: 0 }}>
-                        Sweep {id} → <span className="admin-code">{saved[`${id.toLowerCase()}_address`]}</span> ?
+                        Sweep {sweepUsd ? `$${sweepUsd} of ${id}` : `all ${id}`} → <span className="admin-code">{saved[`${id.toLowerCase()}_address`]}</span> ?
                       </span>
+                      <input className="admin-input" type="number" min="0.01" step="0.01" placeholder="USD, empty = all"
+                        value={sweepUsd} onChange={e => setSweepUsd(e.target.value)} style={{ width: 140, padding: '4px 8px' }} aria-label="Amount to sweep in USD" />
                       <div className="admin-gap-actions">
                         <button type="button" className="admin-btn admin-btn-success admin-btn-sm" onClick={() => doSweep(id)}>Yes, sweep</button>
                         <button type="button" className="admin-btn admin-btn-secondary admin-btn-sm" onClick={() => setSweepConfirm(null)}>Cancel</button>

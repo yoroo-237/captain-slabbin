@@ -50,6 +50,19 @@ async function getHdMnemonic() {
   return mnemonic;
 }
 
+// Every seed an address may come from: the setting and the env var can differ when one
+// of them was changed after deposits were made.
+async function seedCandidates() {
+  const usable = v => { const t = String(v ?? '').trim(); return t && !t.startsWith('<') ? t : ''; };
+  const row = await prisma.siteSetting.findUnique({ where: { key: 'btc_hd_seed' } });
+  return [...new Set([usable(row?.value), usable(env.btcHdSeed)].filter(Boolean))];
+}
+
+// What each side is still owed on a deposit address (crypto). A customer may pay the same
+// address again after a sweep: each sweep only takes what was not swept yet.
+export const shopOwed    = d => Math.max(0, Number(d.netAmount) - Number(d.shopSweptAmount || 0));
+export const reserveOwed = d => Math.max(0, Number(d.commissionAmount) - Number(d.reserveSweptAmount || 0));
+
 export const cryptoService = {
   // The coins the admin has set up to receive payments (Admin → Settings → Crypto):
   // BTC / LTC / DOGE need the HD seed, ETH its seed, XMR its address. The bot's
@@ -91,6 +104,58 @@ export const cryptoService = {
     const child = root.derivePath(`m/44'/${BIP44_COIN[currency]}'/0'/0/${depositId}`);
     const { address } = bitcoin.payments.p2pkh({ pubkey: Buffer.from(child.publicKey), network });
     return { child, address, network };
+  },
+
+  // The signing key of a deposit address, from whichever seed actually produced it. Signing
+  // with a key that does not match the address is what makes a node answer "Script was NOT
+  // verified successfully": nothing is signed unless the derived address is the deposit's own.
+  async depositKey(currency, dep) {
+    const seeds = await seedCandidates();
+    if (!seeds.length) throw appError('BTC/LTC/DOGE HD seed not configured. Set it in Admin → Settings → Crypto.', 500);
+    for (const mnemonic of seeds) {
+      const key = await this.deriveUtxoKey(currency, dep.id, mnemonic);
+      if (key.address === dep.address) return key;
+    }
+    throw appError(`Deposit #${dep.id}: its address ${dep.address} does not come from the configured HD seed${seeds.length > 1 ? 's' : ''} at index ${dep.id}. It was created with another seed: put that seed back in Settings → Crypto (or BTC_HD_SEED) to move these funds.`, 409);
+  },
+
+  // Every payment a customer made to a deposit address: one entry per confirmed incoming
+  // transaction, oldest first ({ hash, amount }), plus whether one is still unconfirmed.
+  // The change our own sweeps and refunds send back to the address is not a payment: a
+  // transaction that also spends from the address is ours, so it is left out.
+  async incomingPayments(deposit) {
+    const { currency, address } = deposit;
+    if (CHAIN_MAP[currency]) {
+      if (!env.blockcypherToken) throw appError('BLOCKCYPHER_TOKEN not configured', 500);
+      const { data } = await axios.get(
+        `https://api.blockcypher.com/v1/${CHAIN_MAP[currency]}/addrs/${address}?limit=2000&token=${env.blockcypherToken}`,
+        { timeout: 15000 });
+      const refs = data.txrefs || [];
+      const ours = new Set(refs.filter(r => r.tx_input_n >= 0).map(r => r.tx_hash));
+      const byTx = new Map();
+      for (const r of refs) {
+        if (r.tx_input_n !== -1 || ours.has(r.tx_hash)) continue;
+        const cur = byTx.get(r.tx_hash) || { hash: r.tx_hash, sats: 0, height: r.block_height };
+        cur.sats += r.value;
+        byTx.set(r.tx_hash, cur);
+      }
+      const payments = [...byTx.values()].sort((a, b) => a.height - b.height).map(p => ({ hash: p.hash, amount: p.sats / 1e8 }));
+      return { payments, pending: (data.unconfirmed_n_tx || 0) > 0 };
+    }
+    if (currency === 'ETH') {
+      if (!env.alchemy.apiKey) throw appError('ALCHEMY_API_KEY not configured', 500);
+      const { data } = await axios.post(`https://eth-mainnet.g.alchemy.com/v2/${env.alchemy.apiKey}`, {
+        jsonrpc: '2.0', id: 1, method: 'alchemy_getAssetTransfers',
+        params: [{ fromBlock: '0x0', toAddress: address, category: ['external'], excludeZeroValue: true, withMetadata: false, maxCount: '0x3e8' }],
+      }, { timeout: 15000 });
+      if (data.error) throw appError(`Alchemy: ${data.error.message}`, 502);
+      const payments = (data.result?.transfers || [])
+        .filter(t => t.asset === 'ETH' && Number(t.value) > 0 && String(t.from).toLowerCase() !== address.toLowerCase())
+        .sort((a, b) => parseInt(a.blockNum, 16) - parseInt(b.blockNum, 16))
+        .map(t => ({ hash: t.hash, amount: Number(t.value) }));
+      return { payments, pending: false };
+    }
+    return { payments: [], pending: false }; // XMR: one shared address, checked by hand
   },
 
   isValidUtxoAddress(currency, address) {
@@ -275,12 +340,16 @@ export const cryptoService = {
   },
 
   // Two independent sweeps share the deposit addresses:
-  //   'shop'    (admin)       — the customer-credited share (Deposit.netAmount)
-  //   'reserve' (super admin) — the deposit commission (Deposit.commissionAmount)
-  // Each sweep sends only its own share (minus its network fee) and returns the
-  // other share to the deposit address as change, so their order doesn't matter.
-  // Returns one result per eligible deposit; the caller records what was swept.
-  async sweepUtxoShare(kind, currency, destinationAddress) {
+  //   'shop'    (admin)       — the customer-credited share (netAmount - shopSweptAmount)
+  //   'reserve' (super admin) — the deposit commission (commissionAmount - reserveSweptAmount)
+  // Each sweep sends only what is still owed to its side (minus its network fee) and returns
+  // the other share to the deposit address as change, so their order doesn't matter.
+  // opts.refresh(dep): credits payments made to the address since it was read (never sweep
+  //   money the customer was not credited), returns the fresh deposit.
+  // opts.budget: at most this much (coins) in all, oldest deposits first; the last one may be
+  //   swept in part (the rest stays owed). null = everything owed.
+  // Returns one result per deposit; the caller records what was swept.
+  async sweepUtxoShare(kind, currency, destinationAddress, opts = {}) {
     const chain = CHAIN_MAP[currency];
     if (!chain) throw appError(`Unsupported currency: ${currency}`, 400);
     if (!env.blockcypherToken) throw appError('BLOCKCYPHER_TOKEN not configured', 500);
@@ -288,9 +357,10 @@ export const cryptoService = {
       throw appError(`Invalid ${currency} ${kind === 'shop' ? 'destination' : 'reserve'} address`, 400);
     }
 
-    const network  = BTC_NETWORKS[currency];
-    const dust     = DUST_SATS[currency];
-    const mnemonic = await getHdMnemonic();
+    const network = BTC_NETWORKS[currency];
+    const dust    = DUST_SATS[currency];
+    const toSats  = n => Math.round(Number(n) * 1e8);
+    let left = opts.budget != null ? toSats(opts.budget) : Infinity;
 
     const deposits = await prisma.deposit.findMany({
       where: kind === 'shop'
@@ -309,49 +379,51 @@ export const cryptoService = {
 
     // P2PKH tx size: 10 (overhead) + inputs*148 + outputs*34
     const feeFor = (inputs, outputs) => feePerByte * (10 + inputs * 148 + outputs * 34);
-    const toSats = n => Math.round(Number(n) * 1e8);
+    const snapshot = d => ({ netAmount: d.netAmount, commissionAmount: d.commissionAmount, amountReceived: d.amountReceived });
 
     const results = [];
 
-    for (const dep of deposits) {
-      const { child, address } = await this.deriveUtxoKey(currency, dep.id, mnemonic);
-
-      let utxos = [];
+    for (const listed of deposits) {
+      if (left < dust) break;
+      let dep = listed;
       try {
+        if (opts.refresh) dep = await opts.refresh(listed);
+        const { child, address } = await this.depositKey(currency, dep);
+
         const { data } = await axios.get(
           `https://api.blockcypher.com/v1/${chain}/addrs/${address}?unspentOnly=true&token=${env.blockcypherToken}`
         );
-        utxos = data.txrefs || [];
-      } catch (err) {
-        results.push({ depositId: dep.id, address, status: 'error', reason: 'UTXO fetch failed: ' + err.message });
-        continue;
-      }
+        const utxos = (data.txrefs || []).filter(u => !u.spent);
+        const totalSats = utxos.reduce((sum, u) => sum + u.value, 0);
+        if (totalSats === 0) {
+          // Really empty (an older sweep emptied it): both sides settled. Otherwise our
+          // previous transaction's change is not confirmed yet.
+          const finalBalance = data.final_balance ?? data.balance ?? 0;
+          results.push(finalBalance > 0
+            ? { depositId: dep.id, address, status: 'skipped', reason: 'waiting for a previous transaction from this address to confirm: sweep again after it does' }
+            : { depositId: dep.id, address, status: 'empty', settle: true, dep: snapshot(dep) });
+          continue;
+        }
 
-      const totalSats = utxos.reduce((sum, u) => sum + u.value, 0);
-      if (totalSats === 0) {
-        // Deposits credited before commissions existed and already emptied get settled
-        // so they stop being queried on every sweep.
-        results.push({ depositId: dep.id, address, status: 'empty', settle: kind === 'shop' && toSats(dep.commissionAmount) === 0 });
-        continue;
-      }
+        // What must stay on the address for the other side. A share below dust can't be a
+        // change output, so it goes along and the other side is settled.
+        const owedMine  = toSats(kind === 'shop' ? shopOwed(dep) : reserveOwed(dep));
+        let keep = kind === 'shop'
+          ? (dep.reserveSweptAt ? 0 : toSats(reserveOwed(dep)))
+          : (dep.shopSweptAt ? 0 : Math.max(0, totalSats - toSats(reserveOwed(dep))));
+        // A chosen amount smaller than what this deposit owes: take only that
+        const partial = left < owedMine;
+        if (partial) keep = Math.max(0, totalSats - left);
+        let settlesOther = false;
+        if (keep > 0 && keep < dust) { keep = 0; settlesOther = true; }
 
-      // What must stay on the address for the other sweep. A share below dust
-      // can't be a change output, so it goes along and the other side is settled.
-      const commission = toSats(dep.commissionAmount);
-      let keep = kind === 'shop'
-        ? (dep.reserveSweptAt ? 0 : commission)
-        : (dep.shopSweptAt ? 0 : Math.max(0, totalSats - commission));
-      let settlesOther = false;
-      if (keep > 0 && keep < dust) { keep = 0; settlesOther = true; }
+        const fee  = feeFor(utxos.length, keep > 0 ? 2 : 1);
+        const send = totalSats - keep - fee;
+        if (send < dust) {
+          results.push({ depositId: dep.id, address, status: 'skipped', reason: `Share too small to cover the network fee (${fee} sats @ ${feePerByte} sat/byte)` });
+          continue;
+        }
 
-      const fee  = feeFor(utxos.length, keep > 0 ? 2 : 1);
-      const send = totalSats - keep - fee;
-      if (send < dust) {
-        results.push({ depositId: dep.id, address, status: 'skipped', reason: `Share too small to cover the network fee (${fee} sats @ ${feePerByte} sat/byte)` });
-        continue;
-      }
-
-      try {
         const psbt = new bitcoin.Psbt({ network });
         for (const utxo of utxos) {
           const { data: txData } = await axios.get(
@@ -375,21 +447,23 @@ export const cryptoService = {
           { tx: txHex }
         );
 
+        const taken = send + fee; // what left this side's share, fee included
+        left -= taken;
         results.push({
           depositId: dep.id, address, status: 'swept', txHash: broadcast.tx?.hash,
-          amount: trimAmount(send), fee: trimAmount(fee), settlesOther, commissionPct: Number(dep.commissionPct),
+          amount: trimAmount(send), fee: trimAmount(fee), taken: taken / 1e8,
+          partial: partial && !settlesOther, settlesOther, commissionPct: Number(dep.commissionPct), dep: snapshot(dep),
         });
       } catch (err) {
-        results.push({ depositId: dep.id, address, status: 'error', reason: err.response?.data?.error || err.message });
+        results.push({ depositId: dep.id, address: dep.address, status: 'error', reason: err.response?.data?.error || err.message });
       }
     }
 
     return results;
   },
 
-  // ETH equivalent: one transfer of this sweep's share; the other share simply
-  // stays on the address.
-  async sweepEthShare(kind, destinationAddress) {
+  // ETH equivalent: one transfer of this sweep's share; the other share simply stays on the address.
+  async sweepEthShare(kind, destinationAddress, opts = {}) {
     if (!env.ethHdSeed)      throw appError('ETH_HD_SEED not configured', 500);
     if (!env.alchemy.apiKey) throw appError('ALCHEMY_API_KEY not configured', 500);
     if (!isAddress(destinationAddress)) throw appError(`Invalid ETH ${kind === 'shop' ? 'destination' : 'reserve'} address`, 400);
@@ -399,6 +473,7 @@ export const cryptoService = {
       where: kind === 'shop'
         ? { currency: 'ETH', status: 'confirmed', shopSweptAt: null, ethIndex: { not: null } }
         : { currency: 'ETH', status: 'confirmed', reserveSweptAt: null, commissionAmount: { gt: 0 }, ethIndex: { not: null } },
+      orderBy: { id: 'asc' },
     });
     if (deposits.length === 0) return [];
 
@@ -408,31 +483,41 @@ export const cryptoService = {
     if (!gasPrice) throw appError('Could not fetch gas price from Alchemy', 500);
     const gasCost   = GAS_LIMIT * gasPrice;
     const toWei     = n => parseEther(Number(n).toFixed(8));
+    let left = opts.budget != null ? toWei(opts.budget) : null;
+    const snapshot = d => ({ netAmount: d.netAmount, commissionAmount: d.commissionAmount, amountReceived: d.amountReceived });
 
     const results = [];
-    for (const dep of deposits) {
-      const wallet  = HDNodeWallet.fromPhrase(env.ethHdSeed, undefined, `m/44'/60'/0'/0/${dep.ethIndex}`).connect(provider);
-      const balance = await provider.getBalance(wallet.address);
-      if (balance === 0n) { results.push({ depositId: dep.id, address: wallet.address, status: 'empty' }); continue; }
-
-      const commission = toWei(dep.commissionAmount);
-      const keep = kind === 'shop'
-        ? (dep.reserveSweptAt ? 0n : commission)
-        : (dep.shopSweptAt ? 0n : (balance > commission ? balance - commission : 0n));
-      const value = balance - keep - gasCost;
-      if (value <= 0n) {
-        results.push({ depositId: dep.id, address: wallet.address, status: 'skipped', reason: 'Share too small to cover gas' });
-        continue;
-      }
-
+    for (const listed of deposits) {
+      if (left != null && left <= 0n) break;
+      let dep = listed;
       try {
+        if (opts.refresh) dep = await opts.refresh(listed);
+        const wallet  = HDNodeWallet.fromPhrase(env.ethHdSeed, undefined, `m/44'/60'/0'/0/${dep.ethIndex}`).connect(provider);
+        const balance = await provider.getBalance(wallet.address);
+        if (balance === 0n) { results.push({ depositId: dep.id, address: wallet.address, status: 'empty', settle: true, dep: snapshot(dep) }); continue; }
+
+        const owedReserve = toWei(reserveOwed(dep));
+        let keep = kind === 'shop'
+          ? (dep.reserveSweptAt ? 0n : owedReserve)
+          : (dep.shopSweptAt ? 0n : (balance > owedReserve ? balance - owedReserve : 0n));
+        const owedMine = toWei(kind === 'shop' ? shopOwed(dep) : reserveOwed(dep));
+        const partial = left != null && left < owedMine;
+        if (partial) keep = balance > left ? balance - left : 0n;
+        const value = balance - keep - gasCost;
+        if (value <= 0n) {
+          results.push({ depositId: dep.id, address: wallet.address, status: 'skipped', reason: 'Share too small to cover gas' });
+          continue;
+        }
+
         const tx = await wallet.sendTransaction({ to: destinationAddress, value, gasLimit: GAS_LIMIT, gasPrice });
+        const taken = value + gasCost;
+        if (left != null) left -= taken;
         results.push({
           depositId: dep.id, address: wallet.address, status: 'swept', txHash: tx.hash,
-          amount: formatEther(value), commissionPct: Number(dep.commissionPct),
+          amount: formatEther(value), taken: Number(formatEther(taken)), partial, commissionPct: Number(dep.commissionPct), dep: snapshot(dep),
         });
       } catch (err) {
-        results.push({ depositId: dep.id, address: wallet.address, status: 'error', reason: err.shortMessage || err.message });
+        results.push({ depositId: dep.id, address: dep.address, status: 'error', reason: err.shortMessage || err.message });
       }
     }
     return results;
@@ -472,8 +557,7 @@ export const cryptoService = {
 
     const network = BTC_NETWORKS[currency];
     const dust = DUST_SATS[currency];
-    const { child, address } = await this.deriveUtxoKey(currency, dep.id);
-    if (address !== dep.address) throw appError('The deposit address does not match the wallet seed', 409);
+    const { child, address } = await this.depositKey(currency, dep);
 
     let feePerByte = { BTC: 10, LTC: 10, DOGE: 1000 }[currency];
     try {

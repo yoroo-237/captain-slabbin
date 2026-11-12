@@ -60,25 +60,15 @@ export const walletController = {
     });
     if (!deposit) return res.status(404).json({ success: false, error: 'Deposit not found' });
 
-    // Already confirmed or expired — return as-is
-    if (!['awaiting', 'partial'].includes(deposit.status)) {
-      return res.json(ok({ deposit, blockchainResult: null }));
-    }
+    // XMR: one shared address, checked by hand
+    if (deposit.currency === 'XMR') return res.json(ok({ deposit, blockchainResult: null }));
 
-    // A bot order's ETH payments are counted by transaction, from the Alchemy webhook alone:
-    // read here as well, the same payment would be credited twice
-    if (deposit.orderId && deposit.currency === 'ETH') {
-      return res.json(ok({ deposit, blockchainResult: null }));
-    }
-
-    const result = await cryptoService.checkDepositOnChain(deposit);
-
-    if (result.confirmed) {
-      await walletService.confirmDeposit(deposit.id, result.cryptoAmount, null, { cumulative: true });
-    }
+    // Every payment on the address not counted yet is credited (each transaction once): the
+    // first one, and any later one (the customer may pay the same address again)
+    const result = await walletService.syncDeposit(deposit);
 
     const updated = await prisma.deposit.findUnique({ where: { id: deposit.id } });
-    res.json(ok({ deposit: updated, blockchainResult: result }));
+    res.json(ok({ deposit: updated, blockchainResult: { ...result, confirmed: updated.status === 'confirmed' } }));
   },
 
   async getTransactions(req, res) {

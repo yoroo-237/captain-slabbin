@@ -72,13 +72,16 @@ export default function AdminSuperDashboard() {
     }
   }
 
+  const [sweepUsd, setSweepUsd] = useState('') // amount to sweep in USD, '' = everything owed
+
   async function doSweep(currency) {
     setSweepConfirm(null)
     setSweeping(currency)
     setSweepResult(null)
     try {
       const url = currency === 'ETH' ? '/admin/superadmin/eth/sweep' : `/admin/superadmin/utxo/sweep/${currency}`
-      setSweepResult(await adminFetch(url, { method: 'POST' }))
+      setSweepResult(await adminFetch(url, { method: 'POST', body: JSON.stringify(sweepUsd ? { usd: Number(sweepUsd) } : {}) }))
+      setSweepUsd('')
       loadLogs()
     } catch (e) {
       setSweepResult({ currency, error: e.message })
@@ -164,8 +167,10 @@ export default function AdminSuperDashboard() {
               {sweepConfirm === id ? (
                 <>
                   <span style={{ fontSize: '0.82rem', color: '#b45309', fontWeight: 600, flex: 1, minWidth: 0 }}>
-                    Sweep {id} commission → <span className="admin-code">{reserveAddr}</span> ?
+                    Sweep {sweepUsd ? `$${sweepUsd} of the` : 'all the'} {id} commission → <span className="admin-code">{reserveAddr}</span> ?
                   </span>
+                  <input className="admin-input" type="number" min="0.01" step="0.01" placeholder="USD, empty = all"
+                        value={sweepUsd} onChange={e => setSweepUsd(e.target.value)} style={{ width: 140, padding: '4px 8px' }} aria-label="Amount to sweep in USD" />
                   <div className="admin-gap-actions">
                     <button type="button" className="admin-btn admin-btn-success admin-btn-sm" onClick={() => doSweep(id)}>Yes, sweep</button>
                     <button type="button" className="admin-btn admin-btn-secondary admin-btn-sm" onClick={() => setSweepConfirm(null)}>Cancel</button>
